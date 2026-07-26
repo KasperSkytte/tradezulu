@@ -1,0 +1,328 @@
+@import 'tailwindcss';
+
+/* Tell Tailwind that `dark:` follows our own class on <html>, not the OS. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans:
+    'Inter var', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono:
+    'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+  --radius-card: 0.875rem;
+
+  /* Brand ------------------------------------------------------------- */
+  --color-zulu-50: #f2f0ff;
+  --color-zulu-100: #e6e2ff;
+  --color-zulu-200: #cfc7ff;
+  --color-zulu-300: #b0a2ff;
+  --color-zulu-400: #8f78ff;
+  --color-zulu-500: #7c5cff;
+  --color-zulu-600: #6b41f5;
+  --color-zulu-700: #5a31d8;
+  --color-zulu-800: #4a2aae;
+  --color-zulu-900: #3d258a;
+
+  /*
+   * Result colours. The mark steps below were chosen by running the palette
+   * validator rather than by eye: the pairs are separated in *lightness* as
+   * well as hue, which is what keeps profit and loss distinguishable under
+   * red-green colour blindness (deuteranopia ΔE 16.0 light / 9.5 dark, where
+   * the naive #10b981 / #ef4444 pairing scores 6.5 and is effectively one
+   * colour). Colour is never the only signal anyway: every figure is signed
+   * and every bar grows from a zero baseline.
+   */
+  --color-gain-400: #34d399;
+  --color-gain-500: #12b06f;
+  --color-gain-600: #0e8a56;
+  --color-loss-400: #f87171;
+  --color-loss-500: #c93a48;
+  --color-loss-600: #a8232f;
+  --color-flat-400: #94a3b8;
+  --color-flat-500: #64748b;
+}
+
+/*
+ * Semantic surface tokens. Everything in the app refers to these, so the two
+ * themes stay consistent without a single hard-coded hex in a component.
+ */
+@layer base {
+  :root {
+    --tz-bg: #f6f7fb;
+    --tz-bg-subtle: #eef0f6;
+    --tz-surface: #ffffff;
+    --tz-surface-2: #f9fafc;
+    --tz-surface-hover: #f1f3f9;
+    --tz-border: #e3e6ef;
+    --tz-border-strong: #d2d7e4;
+    --tz-text: #10131c;
+    --tz-text-muted: #5f6880;
+    --tz-text-faint: #8b93a7;
+    --tz-shadow: 0 1px 2px rgb(16 19 28 / 0.06), 0 8px 24px -12px rgb(16 19 28 / 0.14);
+    --tz-grid: #e7eaf2;
+    color-scheme: light;
+
+    /* Chart marks (validated against this surface) and their text steps. */
+    --tz-gain: #1aa96f;
+    --tz-loss: #a8232f;
+    --tz-gain-text: #0f8a55;
+    --tz-loss-text: #a8232f;
+    --tz-flat: #64748b;
+  }
+
+  /* Colour-blind safe alternative: blue for profit, amber for loss.
+     Both pairs clear every validator check in their own mode. */
+  :root.cb {
+    --tz-gain: #1f6fd0;
+    --tz-loss: #b9700a;
+    --tz-gain-text: #1a62ba;
+    --tz-loss-text: #a5630a;
+  }
+  .dark.cb {
+    --tz-gain: #4593e8;
+    --tz-loss: #c58217;
+    --tz-gain-text: #6fadee;
+    --tz-loss-text: #dc9a2f;
+  }
+
+  .dark {
+    --tz-bg: #0b0d13;
+    --tz-bg-subtle: #0f1219;
+    --tz-surface: #141824;
+    --tz-surface-2: #191e2c;
+    --tz-surface-hover: #1d2333;
+    --tz-border: #232939;
+    --tz-border-strong: #303751;
+    --tz-text: #e9ebf2;
+    --tz-text-muted: #98a1b8;
+    --tz-text-faint: #6b7489;
+    --tz-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -16px rgb(0 0 0 / 0.7);
+    --tz-grid: #1f2532;
+    color-scheme: dark;
+
+    --tz-gain: #12b06f;
+    --tz-loss: #c93a48;
+    --tz-gain-text: #34d399;
+    --tz-loss-text: #f87171;
+    --tz-flat: #94a3b8;
+  }
+
+  * {
+    border-color: var(--tz-border);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--tz-bg);
+    color: var(--tz-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overscroll-behavior-y: none;
+  }
+
+  /* Tabular figures keep money columns from jittering. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  ::selection {
+    background: var(--color-zulu-500);
+    color: white;
+  }
+
+  /* Scrollbars that do not shout. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--tz-border-strong) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--tz-border-strong);
+    border-radius: 9999px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-zulu-500);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .tz-card {
+    background-color: var(--tz-surface);
+    border: 1px solid var(--tz-border);
+    border-radius: var(--radius-card);
+    box-shadow: var(--tz-shadow);
+  }
+
+  .tz-input {
+    background-color: var(--tz-surface-2);
+    border: 1px solid var(--tz-border);
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    color: var(--tz-text);
+    width: 100%;
+    transition:
+      border-color 120ms ease,
+      background-color 120ms ease;
+  }
+  .tz-input::placeholder {
+    color: var(--tz-text-faint);
+  }
+  .tz-input:hover {
+    border-color: var(--tz-border-strong);
+  }
+  .tz-input:focus {
+    outline: none;
+    border-color: var(--color-zulu-500);
+    box-shadow: 0 0 0 3px rgb(124 92 255 / 0.18);
+  }
+
+  .tz-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.9rem;
+    font-weight: 500;
+    font-size: 0.875rem;
+    white-space: nowrap;
+    transition:
+      background-color 120ms ease,
+      border-color 120ms ease,
+      opacity 120ms ease;
+    cursor: pointer;
+  }
+  .tz-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .tz-btn-primary {
+    background: var(--color-zulu-500);
+    color: white;
+  }
+  .tz-btn-primary:hover:not(:disabled) {
+    background: var(--color-zulu-600);
+  }
+
+  .tz-btn-ghost {
+    background: var(--tz-surface-2);
+    border: 1px solid var(--tz-border);
+    color: var(--tz-text);
+  }
+  .tz-btn-ghost:hover:not(:disabled) {
+    background: var(--tz-surface-hover);
+    border-color: var(--tz-border-strong);
+  }
+
+  .tz-btn-danger {
+    background: transparent;
+    border: 1px solid var(--color-loss-500);
+    color: var(--color-loss-500);
+  }
+  .tz-btn-danger:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--color-loss-500) 12%, transparent);
+  }
+
+  .tz-label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: var(--tz-text-muted);
+    margin-bottom: 0.35rem;
+  }
+
+  .tz-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    border-radius: 9999px;
+    padding: 0.12rem 0.55rem;
+    font-size: 0.7rem;
+    font-weight: 500;
+    line-height: 1.5;
+    white-space: nowrap;
+  }
+
+  .tz-code {
+    background-color: var(--tz-surface);
+    border: 1px solid var(--tz-border);
+    border-radius: 0.25rem;
+    padding: 0.05rem 0.3rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    white-space: nowrap;
+  }
+
+  .tz-skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--tz-surface-2) 25%,
+      var(--tz-surface-hover) 50%,
+      var(--tz-surface-2) 75%
+    );
+    background-size: 200% 100%;
+    animation: tz-shimmer 1.4s ease-in-out infinite;
+    border-radius: 0.5rem;
+  }
+}
+
+@keyframes tz-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes tz-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.tz-fade-in {
+  animation: tz-fade-in 180ms ease-out both;
+}
+
+/* Recharts leaves a focus ring on every surface; we style our own. */
+.recharts-wrapper:focus,
+.recharts-surface:focus {
+  outline: none;
+}
+
+@media print {
+  .tz-no-print {
+    display: none !important;
+  }
+}

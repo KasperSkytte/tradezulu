@@ -35,3 +35,6 @@ data/
 
 # Build artefacts
 backend/app/static/
+
+# Playwright / local tooling
+frontend/test-results/

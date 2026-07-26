@@ -1,0 +1,144 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { createContext, use, useEffect, useMemo } from 'react'
+import type { ReactNode } from 'react'
+import { api } from './api'
+import type { AppSettings } from './types'
+
+const FALLBACK: AppSettings = {
+  general: {
+    timezone: 'UTC',
+    currency: 'USD',
+    currency_symbol: '$',
+    week_starts_on: 'monday',
+    default_period: 'last_30_days',
+    date_format: 'yyyy-MM-dd',
+    theme: 'dark',
+    accent: 'violet',
+    colorblind_mode: false,
+  },
+  risk: {
+    breakeven_threshold_r: 0.1,
+    breakeven_handling: 'excluded',
+    breakeven_threshold_money: 1,
+    fallback_risk_mode: 'percent_of_balance',
+    fixed_risk_amount: 100,
+    risk_percent: 1,
+    account_size: 0,
+    include_commission_in_pnl: true,
+    include_swap_in_pnl: true,
+    r_uses_net_pnl: true,
+  },
+  stats: {
+    risk_free_rate: 0,
+    trading_days_per_year: 252,
+    sharpe_basis: 'daily',
+    min_trades_for_score: 10,
+  },
+  zulu_score: { weights: {}, targets: {} },
+  mt5: {
+    sync_mode: 'ea',
+    bridge_url: '',
+    bridge_timeout_seconds: 60,
+    auto_sync_on_load: true,
+    auto_sync_min_interval_seconds: 120,
+    history_days_on_full_sync: 730,
+  },
+  charts: {
+    provider: 'local',
+    default_timeframe: 'M15',
+    candles_before: 120,
+    candles_after: 60,
+    tradingview_prefix: '',
+    symbol_map: {},
+  },
+}
+
+interface SettingsState {
+  settings: AppSettings
+  loading: boolean
+  currency: string
+  weekStartsOn: 0 | 1
+  save: (patch: DeepPartial<AppSettings>) => Promise<AppSettings>
+  saving: boolean
+  setTheme: (theme: 'dark' | 'light' | 'system') => void
+}
+
+export type DeepPartial<T> = {
+  [K in keyof T]?: T[K] extends Record<string, unknown> ? DeepPartial<T[K]> : T[K]
+}
+
+const SettingsContext = createContext<SettingsState | null>(null)
+
+function applyTheme(theme: 'dark' | 'light' | 'system') {
+  const dark =
+    theme === 'dark' ||
+    (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+  document.documentElement.classList.toggle('dark', dark)
+  document
+    .querySelector('meta[name="theme-color"]')
+    ?.setAttribute('content', dark ? '#0b0d13' : '#f6f7fb')
+  localStorage.setItem('tz-theme', theme)
+}
+
+export function SettingsProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient()
+  const { data, isLoading } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api.get<AppSettings>('/settings'),
+    staleTime: 60_000,
+  })
+
+  const mutation = useMutation({
+    mutationFn: (patch: DeepPartial<AppSettings>) => api.put<AppSettings>('/settings', patch),
+    onSuccess: (next) => {
+      queryClient.setQueryData(['settings'], next)
+      // Risk and timezone changes rewrite every derived number server-side.
+      void queryClient.invalidateQueries({ queryKey: ['stats'] })
+      void queryClient.invalidateQueries({ queryKey: ['trades'] })
+      void queryClient.invalidateQueries({ queryKey: ['calendar'] })
+    },
+  })
+
+  const settings = data ?? FALLBACK
+
+  useEffect(() => {
+    if (data) applyTheme(data.general.theme)
+  }, [data])
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('cb', settings.general.colorblind_mode)
+  }, [settings.general.colorblind_mode])
+
+  // Follow the OS while the user has picked "system".
+  useEffect(() => {
+    if (settings.general.theme !== 'system') return
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const listener = () => applyTheme('system')
+    media.addEventListener('change', listener)
+    return () => media.removeEventListener('change', listener)
+  }, [settings.general.theme])
+
+  const value = useMemo<SettingsState>(
+    () => ({
+      settings,
+      loading: isLoading,
+      currency: settings.general.currency_symbol || '$',
+      weekStartsOn: settings.general.week_starts_on === 'sunday' ? 0 : 1,
+      save: (patch) => mutation.mutateAsync(patch),
+      saving: mutation.isPending,
+      setTheme: (theme) => {
+        applyTheme(theme)
+        void mutation.mutateAsync({ general: { theme } })
+      },
+    }),
+    [settings, isLoading, mutation],
+  )
+
+  return <SettingsContext value={value}>{children}</SettingsContext>
+}
+
+export function useSettings(): SettingsState {
+  const context = use(SettingsContext)
+  if (!context) throw new Error('useSettings must be used inside <SettingsProvider>')
+  return context
+}
