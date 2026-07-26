@@ -260,10 +260,12 @@ def compute_derived(
     tz_name: str = "UTC",
 ) -> Trade:
     """Recompute net P&L, risk, R multiples, outcome and bucket date in place."""
-    trade.net_pnl = effective_net_pnl(trade, risk_cfg)
+    trade.net_pnl = round(effective_net_pnl(trade, risk_cfg), 2)
 
     risk_amount, _source = compute_risk_amount(trade, risk_cfg, account_size)
-    trade.risk_amount = risk_amount
+    # Money, so round it: floating point noise like 120.00000000000001 would
+    # otherwise end up in the risk field on the trade page.
+    trade.risk_amount = round(risk_amount, 2) if risk_amount is not None else None
 
     # Planned R needs both a stop and a target.
     if trade.initial_stop and trade.initial_target and trade.entry_price:
@@ -274,8 +276,8 @@ def compute_derived(
         trade.planned_r = None
 
     pnl_for_r = trade.net_pnl if risk_cfg.get("r_uses_net_pnl", True) else trade.gross_profit
-    if risk_amount and risk_amount > 0 and trade.closed_at is not None:
-        trade.realized_r = round(pnl_for_r / risk_amount, 4)
+    if trade.risk_amount and trade.risk_amount > 0 and trade.closed_at is not None:
+        trade.realized_r = round(pnl_for_r / trade.risk_amount, 4)
     else:
         trade.realized_r = None
 

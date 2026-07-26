@@ -349,13 +349,17 @@ def get_candles(
     _user: CurrentUser,
     db: DbSession,
     config: AppConfig,
-    symbol: str,
+    symbol: str | None = None,
     timeframe: str = "M15",
     start: datetime | None = None,
     end: datetime | None = None,
     trade_id: int | None = None,
 ) -> CandleResponse:
-    """Candles for the chart replay, from our cache or the bridge if configured."""
+    """Candles for the chart replay, from our cache or the bridge if configured.
+
+    Either ``trade_id`` (which picks the symbol and the window from the trade)
+    or an explicit ``symbol`` is required.
+    """
     if trade_id:
         trade = db.get(Trade, trade_id)
         if trade is None:
@@ -366,6 +370,11 @@ def get_candles(
         after = int(config["charts"].get("candles_after", 60))
         start = trade.opened_at - timedelta(seconds=span * before)
         end = (trade.closed_at or trade.opened_at) + timedelta(seconds=span * after)
+
+    if not symbol:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Provide either a trade_id or a symbol"
+        )
 
     if start is None or end is None:
         end = end or datetime.now(timezone.utc).replace(tzinfo=None)

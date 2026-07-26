@@ -21,7 +21,13 @@ import {
   createChart,
   createSeriesMarkers,
 } from 'lightweight-charts'
-import type { IChartApi, ISeriesApi, Time } from 'lightweight-charts'
+import type {
+  IChartApi,
+  IPriceLine,
+  ISeriesApi,
+  ISeriesMarkersPluginApi,
+  Time,
+} from 'lightweight-charts'
 import { CandlestickChart, ExternalLink } from 'lucide-react'
 import { api } from '../lib/api'
 import { useSettings } from '../lib/settings'
@@ -81,6 +87,8 @@ function LocalReplay({ trade, timeframe }: { trade: TradeDetail; timeframe: stri
   const container = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
+  const priceLines = useRef<IPriceLine[]>([])
+  const markers = useRef<ISeriesMarkersPluginApi<Time> | null>(null)
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['candles', trade.id, timeframe],
@@ -150,6 +158,10 @@ function LocalReplay({ trade, timeframe }: { trade: TradeDetail; timeframe: stri
     const loss = token('--tz-loss', '#c93a48')
     const accent = token('--color-zulu-400', '#8f78ff')
 
+    for (const line of priceLines.current) series.removePriceLine(line)
+    priceLines.current = []
+    markers.current?.setMarkers([])
+
     series.setData(
       data.candles.map((candle) => ({
         time: (Date.parse(candle.time) / 1000) as Time,
@@ -161,47 +173,47 @@ function LocalReplay({ trade, timeframe }: { trade: TradeDetail; timeframe: stri
     )
 
     // Entry, exit, stop and target as price lines.
-    series.createPriceLine({
+    priceLines.current.push(series.createPriceLine({
       price: trade.entry_price,
       color: accent,
       lineWidth: 2,
       lineStyle: LineStyle.Solid,
       axisLabelVisible: true,
       title: 'Entry',
-    })
+    }))
     if (trade.exit_price !== null) {
-      series.createPriceLine({
+      priceLines.current.push(series.createPriceLine({
         price: trade.exit_price,
         color: trade.net_pnl >= 0 ? gain : loss,
         lineWidth: 2,
         lineStyle: LineStyle.Solid,
         axisLabelVisible: true,
         title: 'Exit',
-      })
+      }))
     }
     if (trade.initial_stop) {
-      series.createPriceLine({
+      priceLines.current.push(series.createPriceLine({
         price: trade.initial_stop,
         color: loss,
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
         axisLabelVisible: true,
         title: 'Stop',
-      })
+      }))
     }
     if (trade.initial_target) {
-      series.createPriceLine({
+      priceLines.current.push(series.createPriceLine({
         price: trade.initial_target,
         color: gain,
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
         axisLabelVisible: true,
         title: 'Target',
-      })
+      }))
     }
 
     // Every individual fill gets an arrow so scale-ins are visible.
-    createSeriesMarkers(
+    markers.current = createSeriesMarkers(
       series,
       trade.executions
         .map((execution) => ({
@@ -217,31 +229,36 @@ function LocalReplay({ trade, timeframe }: { trade: TradeDetail; timeframe: stri
     chart.timeScale().fitContent()
   }, [data, trade])
 
-  if (isLoading) return <Skeleton className="h-[380px]" />
-
-  if (isError || !data?.candles.length) {
-    return (
-      <div className="flex h-[380px] items-center justify-center rounded-lg border border-dashed border-[var(--tz-border-strong)]">
-        <EmptyState
-          icon={<CandlestickChart size={32} strokeWidth={1.4} />}
-          title="No candles stored for this window"
-          description={
-            <>
-              The TradeZuluSync Expert Advisor uploads candles around each closed trade — set
-              <code className="mx-1 rounded bg-[var(--tz-surface-2)] px-1 py-0.5 text-xs">
-                UploadCandles = true
-              </code>
-              on it, or switch to the TradingView tab above.
-            </>
-          }
-        />
-      </div>
-    )
-  }
+  const hasCandles = Boolean(data?.candles.length)
 
   return (
     <div>
-      <div ref={container} className="h-[380px] w-full" />
+      <div className="relative h-[440px] w-full">
+        {/* Always mounted: lightweight-charts needs a live element to attach
+            to, and the states below sit on top of it rather than replacing it. */}
+        <div ref={container} className="h-full w-full" />
+
+        {isLoading && <Skeleton className="absolute inset-0" />}
+
+        {!isLoading && (isError || !hasCandles) && (
+          <div className="absolute inset-0 flex items-center justify-center rounded-lg border border-dashed border-[var(--tz-border-strong)] bg-[var(--tz-surface)]">
+            <EmptyState
+              icon={<CandlestickChart size={32} strokeWidth={1.4} />}
+              title="No candles stored for this window"
+              description={
+                <>
+                  The TradeZuluSync Expert Advisor uploads candles around each closed trade — set
+                  <code className="mx-1 rounded bg-[var(--tz-surface-2)] px-1 py-0.5 text-xs">
+                    UploadCandles = true
+                  </code>
+                  on it, or switch to the TradingView tab above.
+                </>
+              }
+            />
+          </div>
+        )}
+      </div>
+
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--tz-text-muted)]">
         <Legend color="var(--color-zulu-400)" label={`Entry ${price(trade.entry_price, trade.digits)}`} />
         {trade.exit_price !== null && (
@@ -259,7 +276,11 @@ function LocalReplay({ trade, timeframe }: { trade: TradeDetail; timeframe: stri
             label={`Target ${price(trade.initial_target, trade.digits)}`}
           />
         )}
-        <span className="ml-auto">{data.candles.length} candles · source: {data.source}</span>
+        {hasCandles && (
+          <span className="ml-auto">
+            {data?.candles.length} candles · source: {data?.source}
+          </span>
+        )}
       </div>
     </div>
   )
@@ -322,7 +343,7 @@ function TradingViewChart({ trade, timeframe }: { trade: TradeDetail; timeframe:
 
   return (
     <div>
-      <div className="tradingview-widget-container h-[420px] w-full" ref={container} />
+      <div className="tradingview-widget-container h-[460px] w-full" ref={container} />
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--tz-text-muted)]">
         <span>
           Entry {price(trade.entry_price, trade.digits)}
