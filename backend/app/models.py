@@ -1,0 +1,298 @@
+"""SQLAlchemy ORM models for TradeZulu."""
+
+from __future__ import annotations
+
+from datetime import date, datetime, timezone
+from typing import Any
+
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    event,
+)
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class Base(DeclarativeBase):
+    type_annotation_map = {dict[str, Any]: JSON}
+
+
+@event.listens_for(Base, "init", propagate=True)
+def _apply_scalar_defaults(target, _args, kwargs) -> None:
+    """Give freshly constructed objects their column defaults immediately.
+
+    SQLAlchemy normally only applies defaults at INSERT time, which means a
+    transient row has ``None`` where the schema says ``0.0``. Statistics code
+    then trips over ``None + float``, so we fill scalar defaults up front.
+    """
+    for column in target.__table__.columns:
+        default = column.default
+        if default is None or column.key in kwargs or not default.is_scalar:
+            continue
+        kwargs[column.key] = default.arg
+
+
+class User(Base):
+    __tablename__ = "user"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Bumped on password change so existing sessions are invalidated.
+    token_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+
+class Account(Base):
+    """A broker account. Usually just one, but multiples cost nothing."""
+
+    __tablename__ = "account"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    login: Mapped[str] = mapped_column(String(64), nullable=False)
+    name: Mapped[str] = mapped_column(String(120), default="")
+    broker: Mapped[str] = mapped_column(String(120), default="")
+    server: Mapped[str] = mapped_column(String(120), default="")
+    currency: Mapped[str] = mapped_column(String(8), default="USD")
+    leverage: Mapped[int] = mapped_column(Integer, default=0)
+    balance: Mapped[float] = mapped_column(Float, default=0.0)
+    equity: Mapped[float] = mapped_column(Float, default=0.0)
+    # Starting balance used for percentage based metrics; 0 => infer.
+    initial_balance: Mapped[float] = mapped_column(Float, default=0.0)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_sync_source: Mapped[str] = mapped_column(String(32), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    __table_args__ = (UniqueConstraint("login", "server", name="uq_account_login_server"),)
+
+    trades: Mapped[list[Trade]] = relationship(back_populates="account")
+
+
+class Deal(Base):
+    """Raw MT5 deal rows. Kept so trades can always be re-aggregated."""
+
+    __tablename__ = "deal"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("account.id", ondelete="CASCADE"))
+    ticket: Mapped[int] = mapped_column(Integer, nullable=False)
+    order_id: Mapped[int] = mapped_column(Integer, default=0)
+    position_id: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    symbol: Mapped[str] = mapped_column(String(32), default="")
+    # 0 = buy, 1 = sell, 2 = balance, ... (DEAL_TYPE_*)
+    deal_type: Mapped[int] = mapped_column(Integer, default=0)
+    # 0 = in, 1 = out, 2 = inout, 3 = out_by (DEAL_ENTRY_*)
+    entry: Mapped[int] = mapped_column(Integer, default=0)
+    volume: Mapped[float] = mapped_column(Float, default=0.0)
+    price: Mapped[float] = mapped_column(Float, default=0.0)
+    profit: Mapped[float] = mapped_column(Float, default=0.0)
+    commission: Mapped[float] = mapped_column(Float, default=0.0)
+    swap: Mapped[float] = mapped_column(Float, default=0.0)
+    fee: Mapped[float] = mapped_column(Float, default=0.0)
+    sl: Mapped[float] = mapped_column(Float, default=0.0)
+    tp: Mapped[float] = mapped_column(Float, default=0.0)
+    magic: Mapped[int] = mapped_column(Integer, default=0)
+    comment: Mapped[str] = mapped_column(String(255), default="")
+    time: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    # Money value of one full price unit for one lot (tick_value / tick_size).
+    value_per_unit: Mapped[float] = mapped_column(Float, default=0.0)
+    digits: Mapped[int] = mapped_column(Integer, default=5)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("account_id", "ticket", name="uq_deal_account_ticket"),
+        Index("ix_deal_account_time", "account_id", "time"),
+    )
+
+
+class Tag(Base):
+    __tablename__ = "tag"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    color: Mapped[str] = mapped_column(String(16), default="#7c8cf8")
+    # mistake | setup | emotion | custom
+    category: Mapped[str] = mapped_column(String(24), default="custom")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    trades: Mapped[list[Trade]] = relationship(
+        secondary="trade_tag", back_populates="tags", lazy="selectin"
+    )
+
+
+class TradeTag(Base):
+    __tablename__ = "trade_tag"
+
+    trade_id: Mapped[int] = mapped_column(
+        ForeignKey("trade.id", ondelete="CASCADE"), primary_key=True
+    )
+    tag_id: Mapped[int] = mapped_column(ForeignKey("tag.id", ondelete="CASCADE"), primary_key=True)
+
+
+class Trade(Base):
+    """One position: every deal sharing an MT5 position_id, aggregated."""
+
+    __tablename__ = "trade"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("account.id", ondelete="CASCADE"), index=True
+    )
+    position_id: Mapped[int] = mapped_column(Integer, default=0, index=True)
+
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    direction: Mapped[str] = mapped_column(String(5), nullable=False)  # long | short
+
+    opened_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    # Local trading date of the close (or open, while running), used by the calendar.
+    trade_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+
+    volume: Mapped[float] = mapped_column(Float, default=0.0)
+    closed_volume: Mapped[float] = mapped_column(Float, default=0.0)
+    entry_price: Mapped[float] = mapped_column(Float, default=0.0)
+    exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    gross_profit: Mapped[float] = mapped_column(Float, default=0.0)
+    commission: Mapped[float] = mapped_column(Float, default=0.0)
+    swap: Mapped[float] = mapped_column(Float, default=0.0)
+    fee: Mapped[float] = mapped_column(Float, default=0.0)
+    net_pnl: Mapped[float] = mapped_column(Float, default=0.0)
+
+    # Money per 1.0 of price movement, for one lot.
+    value_per_unit: Mapped[float] = mapped_column(Float, default=0.0)
+    digits: Mapped[int] = mapped_column(Integer, default=5)
+
+    # Plan -------------------------------------------------------------
+    initial_stop: Mapped[float | None] = mapped_column(Float, nullable=True)
+    initial_target: Mapped[float | None] = mapped_column(Float, nullable=True)
+    stop_source: Mapped[str] = mapped_column(String(16), default="none")  # mt5|manual|none
+    target_source: Mapped[str] = mapped_column(String(16), default="none")
+    # Manual override of the dollar risk; wins over the stop-derived value.
+    risk_override: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Derived (recomputed whenever inputs or settings change) -------------
+    risk_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    planned_r: Mapped[float | None] = mapped_column(Float, nullable=True)
+    realized_r: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # win | loss | breakeven | open
+    outcome: Mapped[str] = mapped_column(String(12), default="open", index=True)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Journal ------------------------------------------------------------
+    notes: Mapped[str] = mapped_column(Text, default="")
+    setup: Mapped[str] = mapped_column(String(120), default="")
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 1..5
+    excluded: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Provenance ----------------------------------------------------------
+    source: Mapped[str] = mapped_column(String(16), default="mt5")
+    magic: Mapped[int] = mapped_column(Integer, default=0)
+    comment: Mapped[str] = mapped_column(String(255), default="")
+    is_manual: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    account: Mapped[Account] = relationship(back_populates="trades")
+    tags: Mapped[list[Tag]] = relationship(
+        secondary="trade_tag", back_populates="trades", lazy="selectin"
+    )
+    executions: Mapped[list[Execution]] = relationship(
+        back_populates="trade", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("account_id", "position_id", name="uq_trade_account_position"),
+        Index("ix_trade_account_closed", "account_id", "closed_at"),
+    )
+
+
+class Execution(Base):
+    """A single fill inside a trade — used for the entry/exit markers on charts."""
+
+    __tablename__ = "execution"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    trade_id: Mapped[int] = mapped_column(ForeignKey("trade.id", ondelete="CASCADE"), index=True)
+    ticket: Mapped[int] = mapped_column(Integer, default=0)
+    kind: Mapped[str] = mapped_column(String(8), default="in")  # in | out
+    side: Mapped[str] = mapped_column(String(4), default="buy")  # buy | sell
+    volume: Mapped[float] = mapped_column(Float, default=0.0)
+    price: Mapped[float] = mapped_column(Float, default=0.0)
+    time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    profit: Mapped[float] = mapped_column(Float, default=0.0)
+    commission: Mapped[float] = mapped_column(Float, default=0.0)
+    swap: Mapped[float] = mapped_column(Float, default=0.0)
+
+    trade: Mapped[Trade] = relationship(back_populates="executions")
+
+
+class Candle(Base):
+    """Cached OHLC used by the local chart replay."""
+
+    __tablename__ = "candle"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(8), nullable=False)  # M1, M5, M15, H1, ...
+    time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    open: Mapped[float] = mapped_column(Float, default=0.0)
+    high: Mapped[float] = mapped_column(Float, default=0.0)
+    low: Mapped[float] = mapped_column(Float, default=0.0)
+    close: Mapped[float] = mapped_column(Float, default=0.0)
+    volume: Mapped[float] = mapped_column(Float, default=0.0)
+
+    __table_args__ = (
+        UniqueConstraint("symbol", "timeframe", "time", name="uq_candle_key"),
+        Index("ix_candle_lookup", "symbol", "timeframe", "time"),
+    )
+
+
+class DayNote(Base):
+    __tablename__ = "day_note"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    day: Mapped[date] = mapped_column(Date, unique=True, nullable=False)
+    content: Mapped[str] = mapped_column(Text, default="")
+    mood: Mapped[str] = mapped_column(String(24), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class Setting(Base):
+    __tablename__ = "setting"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class SyncLog(Base):
+    __tablename__ = "sync_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source: Mapped[str] = mapped_column(String(24), default="")
+    status: Mapped[str] = mapped_column(String(16), default="ok")
+    deals_received: Mapped[int] = mapped_column(Integer, default=0)
+    deals_new: Mapped[int] = mapped_column(Integer, default=0)
+    trades_upserted: Mapped[int] = mapped_column(Integer, default=0)
+    message: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
