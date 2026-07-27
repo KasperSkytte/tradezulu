@@ -395,3 +395,73 @@ export interface SyncLogEntry {
   message: string
   created_at: string
 }
+
+
+export interface CopySettings {
+  mode: string
+  multiplier: number
+  fixed_lot: number
+  risk_percent: number
+  max_lot: number
+  min_lot: number
+  scale: number
+  mirror_stops: boolean
+  max_risk_percent_per_trade: number
+  max_lot_per_trade: number
+  require_stop_loss: boolean
+  max_open_positions: number
+  max_same_direction: number
+  max_positions_per_symbol: number
+  max_total_lots: number
+  max_daily_drawdown_percent: number
+  equity_stop_percent: number
+  equity_stop_amount: number
+  breach_action: string
+  take_profit_at_amount: number
+  take_profit_at_r: number
+  daily_profit_target_percent: number
+  max_day_share_of_profit_percent: number
+  allowed_symbols: string[]
+  blocked_symbols: string[]
+}
+
+export interface SlaveAccount {
+  id: number
+  login: string
+  name: string
+  broker: string
+  server: string
+  currency: string
+  role: string
+  balance: number
+  equity: number
+  is_default: boolean
+  last_sync_at: string | null
+  copy_enabled: boolean
+  copy_dry_run: boolean
+  copy_halted: boolean
+  copy_halt_reason: string
+  copy_halted_at: string | null
+  has_password: boolean
+  symbol_prefix: string
+  symbol_suffix: string
+  symbol_map: Record<string, string>
+  settings: CopySettings
+  open_copies: number
+}
+
+export interface CopyEvent {
+  id: number
+  slave_account_id: number | null
+  master_position_id: number
+  action: string
+  outcome: string
+  symbol: string
+  direction: string
+  volume: number
+  price: number
+  rule: string
+  message: string
+  latency_ms: number
+  created_at: string
+}

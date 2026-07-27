@@ -336,3 +336,109 @@ class CandleResponse(BaseModel):
     timeframe: str
     candles: list[CandleOut]
     source: str = "local"
+
+
+# --- copier -----------------------------------------------------------------
+
+
+class CopySettingsOut(BaseModel):
+    """The whole per-slave rule set, flat so a form can bind to it directly."""
+
+    model_config = ConfigDict(extra="allow")
+
+    mode: str = "balance_ratio"
+    multiplier: float = 1.0
+    fixed_lot: float = 0.01
+    risk_percent: float = 1.0
+    max_lot: float = 0.0
+    min_lot: float = 0.0
+    scale: float = 1.0
+    mirror_stops: bool = True
+
+    max_risk_percent_per_trade: float = 0.0
+    max_lot_per_trade: float = 0.0
+    require_stop_loss: bool = False
+    max_open_positions: int = 0
+    max_same_direction: int = 0
+    max_positions_per_symbol: int = 0
+    max_total_lots: float = 0.0
+
+    max_daily_drawdown_percent: float = 0.0
+    equity_stop_percent: float = 0.0
+    equity_stop_amount: float = 0.0
+    breach_action: str = "close_all"
+
+    take_profit_at_amount: float = 0.0
+    take_profit_at_r: float = 0.0
+    daily_profit_target_percent: float = 0.0
+    max_day_share_of_profit_percent: float = 0.0
+
+    allowed_symbols: list[str] = Field(default_factory=list)
+    blocked_symbols: list[str] = Field(default_factory=list)
+
+
+class SlaveAccountIn(BaseModel):
+    login: str = Field(default="", max_length=64)
+    server: str = Field(default="", max_length=120)
+    name: str = Field(default="", max_length=120)
+    broker: str = Field(default="", max_length=120)
+    currency: str = Field(default="USD", max_length=8)
+    # Omit to keep the stored password; "" clears it and disarms the account.
+    password: str | None = Field(default=None, max_length=200)
+    symbol_prefix: str = Field(default="", max_length=16)
+    symbol_suffix: str = Field(default="", max_length=16)
+    symbol_map: dict[str, str] = Field(default_factory=dict)
+    settings: dict[str, Any] | None = None
+
+    @field_validator("login", mode="before")
+    @classmethod
+    def _stringify_login(cls, value: Any) -> str:
+        return "" if value is None else str(value)
+
+
+class SlaveAccountOut(BaseModel):
+    id: int
+    login: str
+    name: str
+    broker: str
+    server: str
+    currency: str
+    role: str
+    balance: float
+    equity: float
+    is_default: bool
+    last_sync_at: datetime | None
+
+    copy_enabled: bool
+    copy_dry_run: bool
+    copy_halted: bool
+    copy_halt_reason: str
+    copy_halted_at: datetime | None
+    has_password: bool
+
+    symbol_prefix: str
+    symbol_suffix: str
+    symbol_map: dict[str, str]
+    settings: CopySettingsOut
+    open_copies: int
+
+
+class SlaveArmIn(BaseModel):
+    enabled: bool
+    dry_run: bool = True
+
+
+class CopyEventOut(ORMModel):
+    id: int
+    slave_account_id: int | None
+    master_position_id: int
+    action: str
+    outcome: str
+    symbol: str
+    direction: str
+    volume: float
+    price: float
+    rule: str
+    message: str
+    latency_ms: int
+    created_at: datetime

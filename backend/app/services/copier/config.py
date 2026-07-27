@@ -1,0 +1,151 @@
+"""Turning a slave account's stored JSON into the engine's dataclasses.
+
+The database keeps one loose ``copy_settings`` document per account rather
+than thirty columns, so the shape can grow without a migration. This module is
+the single place that knows how that document maps onto :class:`SizingConfig`
+and :class:`RiskConfig`, and it is forgiving in one direction only: unknown
+keys are ignored, missing keys take the default, but a key that is present and
+nonsense is *not* quietly turned into a permissive value.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from .risk import BreachAction, RiskConfig
+from .sizing import SizingConfig, SizingMode
+from .symbols import SymbolRules
+
+
+def _float(source: dict[str, Any], key: str, default: float) -> float:
+    value = source.get(key, default)
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return default
+    # A negative limit is meaningless and would read as "no limit" downstream.
+    return out if out >= 0 else default
+
+
+def _int(source: dict[str, Any], key: str, default: int) -> int:
+    value = source.get(key, default)
+    try:
+        out = int(value)
+    except (TypeError, ValueError):
+        return default
+    return out if out >= 0 else default
+
+
+def _bool(source: dict[str, Any], key: str, default: bool) -> bool:
+    value = source.get(key, default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _symbols(source: dict[str, Any], key: str) -> list[str]:
+    value = source.get(key) or []
+    if isinstance(value, str):
+        value = [part for part in value.replace(",", " ").split() if part]
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip().upper() for item in value if str(item).strip()]
+
+
+def sizing_from(settings: dict[str, Any] | None) -> SizingConfig:
+    data = settings or {}
+    raw_mode = str(data.get("mode", SizingMode.BALANCE_RATIO.value)).strip().lower()
+    try:
+        mode = SizingMode(raw_mode)
+    except ValueError:
+        mode = SizingMode.BALANCE_RATIO
+
+    return SizingConfig(
+        mode=mode,
+        fixed_lot=_float(data, "fixed_lot", 0.01),
+        multiplier=_float(data, "multiplier", 1.0),
+        risk_percent=_float(data, "risk_percent", 1.0),
+        max_lot=_float(data, "max_lot", 0.0),
+        min_lot=_float(data, "min_lot", 0.0),
+        scale=_float(data, "scale", 1.0) or 1.0,
+    )
+
+
+def risk_from(settings: dict[str, Any] | None) -> RiskConfig:
+    data = settings or {}
+    raw_action = str(data.get("breach_action", BreachAction.CLOSE_ALL.value)).strip().lower()
+    try:
+        action = BreachAction(raw_action)
+    except ValueError:
+        action = BreachAction.CLOSE_ALL
+
+    return RiskConfig(
+        max_risk_percent_per_trade=_float(data, "max_risk_percent_per_trade", 0.0),
+        max_lot_per_trade=_float(data, "max_lot_per_trade", 0.0),
+        require_stop_loss=_bool(data, "require_stop_loss", False),
+        max_open_positions=_int(data, "max_open_positions", 0),
+        max_same_direction=_int(data, "max_same_direction", 0),
+        max_positions_per_symbol=_int(data, "max_positions_per_symbol", 0),
+        max_total_lots=_float(data, "max_total_lots", 0.0),
+        max_daily_drawdown_percent=_float(data, "max_daily_drawdown_percent", 0.0),
+        equity_stop_percent=_float(data, "equity_stop_percent", 0.0),
+        equity_stop_amount=_float(data, "equity_stop_amount", 0.0),
+        breach_action=action,
+        take_profit_at_amount=_float(data, "take_profit_at_amount", 0.0),
+        take_profit_at_r=_float(data, "take_profit_at_r", 0.0),
+        daily_profit_target_percent=_float(data, "daily_profit_target_percent", 0.0),
+        max_day_share_of_profit_percent=_float(data, "max_day_share_of_profit_percent", 0.0),
+        allowed_symbols=_symbols(data, "allowed_symbols"),
+        blocked_symbols=_symbols(data, "blocked_symbols"),
+    )
+
+
+def symbol_rules_from(prefix: str, suffix: str, overrides: dict[str, Any] | None) -> SymbolRules:
+    clean: dict[str, str] = {}
+    for key, value in (overrides or {}).items():
+        key, value = str(key).strip(), str(value).strip()
+        if key and value:
+            clean[key.upper()] = value
+    return SymbolRules(overrides=clean, prefix=(prefix or "").strip(), suffix=(suffix or "").strip())
+
+
+def mirror_stops_enabled(settings: dict[str, Any] | None) -> bool:
+    return _bool(settings or {}, "mirror_stops", True)
+
+
+def defaults() -> dict[str, Any]:
+    """The settings a freshly added slave starts with.
+
+    Deliberately conservative: scale by balance so a small account is not
+    handed a large account's lot size, and cap single-trade risk. Nothing here
+    matters until the account is armed, but it is what the form shows.
+    """
+    return {
+        "mode": SizingMode.BALANCE_RATIO.value,
+        "multiplier": 1.0,
+        "fixed_lot": 0.01,
+        "risk_percent": 1.0,
+        "max_lot": 0.0,
+        "min_lot": 0.0,
+        "scale": 1.0,
+        "mirror_stops": True,
+        "max_risk_percent_per_trade": 2.0,
+        "max_lot_per_trade": 0.0,
+        "require_stop_loss": False,
+        "max_open_positions": 0,
+        "max_same_direction": 0,
+        "max_positions_per_symbol": 0,
+        "max_total_lots": 0.0,
+        "max_daily_drawdown_percent": 0.0,
+        "equity_stop_percent": 0.0,
+        "equity_stop_amount": 0.0,
+        "breach_action": BreachAction.CLOSE_ALL.value,
+        "take_profit_at_amount": 0.0,
+        "take_profit_at_r": 0.0,
+        "daily_profit_target_percent": 0.0,
+        "max_day_share_of_profit_percent": 0.0,
+        "allowed_symbols": [],
+        "blocked_symbols": [],
+    }

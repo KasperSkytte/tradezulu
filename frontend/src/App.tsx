@@ -21,6 +21,9 @@ const TradeDetailPage = lazy(() =>
 const CalendarPage = lazy(() =>
   import('./pages/CalendarPage').then((module) => ({ default: module.CalendarPage })),
 )
+const AccountsPage = lazy(() =>
+  import('./pages/AccountsPage').then((m) => ({ default: m.AccountsPage })),
+)
 const ReportsPage = lazy(() =>
   import('./pages/ReportsPage').then((module) => ({ default: module.ReportsPage })),
 )
@@ -78,6 +81,14 @@ export function App() {
               element={
                 <Suspense fallback={<Spinner />}>
                   <TradeDetailPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="accounts"
+              element={
+                <Suspense fallback={<Spinner />}>
+                  <AccountsPage />
                 </Suspense>
               }
             />

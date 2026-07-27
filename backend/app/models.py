@@ -91,6 +91,9 @@ class Account(Base):
     copy_halted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # Sizing and risk settings, shaped like SizingConfig and RiskConfig.
     copy_settings: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    # A slave needs a trade-enabled password; an investor one cannot place
+    # orders. Encrypted at rest with the same key as the master's.
+    password_enc: Mapped[str] = mapped_column(Text, default="")
     # Broker symbol differences: suffix/prefix plus explicit overrides.
     symbol_suffix: Mapped[str] = mapped_column(String(16), default="")
     symbol_prefix: Mapped[str] = mapped_column(String(16), default="")
