@@ -313,7 +313,9 @@ function TradingViewChart({ trade, timeframe }: { trade: TradeDetail; timeframe:
 
     const dark = document.documentElement.classList.contains('dark')
     const widget = document.createElement('div')
-    widget.className = 'tradingview-widget-container__widget h-full w-full'
+    widget.className = 'tradingview-widget-container__widget'
+    widget.style.height = '100%'
+    widget.style.width = '100%'
     element.appendChild(widget)
 
     const script = document.createElement('script')
@@ -345,7 +347,16 @@ function TradingViewChart({ trade, timeframe }: { trade: TradeDetail; timeframe:
 
   return (
     <div>
-      <div className="tradingview-widget-container h-[460px] w-full" ref={container} />
+      {/* The embed takes the container over and forces height:100% on it, so
+          the concrete height has to live on a parent for that to resolve —
+          without this wrapper it collapses to a 150px strip. */}
+      <div style={{ height: 460 }} className="w-full">
+        <div
+          className="tradingview-widget-container w-full"
+          style={{ height: '100%' }}
+          ref={container}
+        />
+      </div>
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--tz-text-muted)]">
         <span>
           Entry {price(trade.entry_price, trade.digits)}
