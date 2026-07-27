@@ -8,7 +8,7 @@ recompute a few thousand trades, which takes well under a second. A 2 vCPU /
 ## First run
 
 ```bash
-git clone https://github.com/<you>/tradezulu.git /opt/tradezulu
+git clone https://github.com/KasperSkytte/tradezulu.git /opt/tradezulu
 cd /opt/tradezulu
 
 cp .env.example .env
