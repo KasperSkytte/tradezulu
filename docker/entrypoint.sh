@@ -39,6 +39,9 @@ case "${1:-serve}" in
     export TZ_DEMO=1
     exec "$0" serve
     ;;
+  set-password | list-users)
+    exec python -m app.cli "$@"
+    ;;
   shell)
     exec /bin/bash
     ;;

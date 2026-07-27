@@ -35,8 +35,16 @@ docker compose --profile bridge up -d
 ```
 
 Open <http://localhost:8420> and sign in. Everything lives in one SQLite file
-under `./data`. The admin user is created on the **first** start only; change
-the password afterwards in Settings.
+under `./data`.
+
+The admin user is created on the **first** start only, so editing those
+variables later has no effect — change the password in Settings, or from
+outside if you are locked out:
+
+```bash
+docker compose exec tradezulu set-password --username you --password 'a new one'
+docker compose exec tradezulu list-users            # if you forgot the name
+```
 
 **Just want a look first?** This fills a throwaway database with example trades:
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator
 
-from sqlalchemy import create_engine, event, select
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -48,6 +48,35 @@ def get_db() -> Iterator[Session]:
         db.close()
 
 
+def _warn_if_admin_env_is_ignored(db: Session, existing: User | None) -> None:
+    """Say plainly when TZ_ADMIN_USER cannot log in.
+
+    The admin user is seeded once and then owned by the database, so editing
+    the variable later has no effect. Silently ignoring it strands people on a
+    login screen that only says the username is wrong, so name the mismatch
+    and give the command that fixes it.
+    """
+    if existing is None or not settings.admin_username:
+        return
+
+    wanted = settings.admin_username
+    if db.scalar(select(User).where(func.lower(User.username) == wanted.lower())):
+        return
+
+    names = ", ".join(sorted(user.username for user in db.scalars(select(User))))
+    log.warning(
+        "TZ_ADMIN_USER is %r but this database has no such user (it has: %s). "
+        "The admin user is only created on the first start, so changing the "
+        "variable afterwards has no effect. To take over that name, run: "
+        "docker compose exec tradezulu set-password --username %s "
+        "--rename-from %s --password '<new password>'",
+        wanted,
+        names,
+        wanted,
+        names.split(", ")[0],
+    )
+
+
 def init_db() -> None:
     """Create tables and seed the first user, default account and tag list."""
     sqlite_path = settings.sqlite_path
@@ -65,6 +94,7 @@ def init_db() -> None:
 
     with SessionLocal() as db:
         user = db.scalar(select(User).limit(1))
+        _warn_if_admin_env_is_ignored(db, user)
         if user is None:
             password = settings.admin_password
             if not password:

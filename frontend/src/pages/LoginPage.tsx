@@ -114,10 +114,6 @@ export function LoginPage() {
             Sign in
           </button>
         </form>
-
-        <p className="mt-5 text-center text-xs text-[var(--tz-text-faint)]">
-          Private instance. Credentials are set with TZ_ADMIN_USER and TZ_ADMIN_PASSWORD.
-        </p>
       </div>
     </div>
   )
