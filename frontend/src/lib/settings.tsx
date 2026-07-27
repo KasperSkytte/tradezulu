@@ -13,7 +13,7 @@ const FALLBACK: AppSettings = {
     default_period: 'last_30_days',
     date_format: 'yyyy-MM-dd',
     theme: 'dark',
-    accent: 'violet',
+    accent: 'jade',
     colorblind_mode: false,
   },
   risk: {

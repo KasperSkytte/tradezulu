@@ -2,19 +2,57 @@
 
 # TradeZulu
 
-**A private trading journal for MetaTrader 5.**
-Syncs your deals, works out what you actually risked, and tells you which habits are costing you money.
+**A private trade copier and trading journal for MetaTrader 5, in one.**
+Copies one account's trades to any number of others under your own risk rules — and journals every one of them.
 
 </div>
 
 ---
 
-TradeZulu is a self-hosted alternative to TradeZella and Edgewonk. It is a single
-Docker container behind your own nginx, it stores everything in one SQLite file,
-and it costs nothing to run — no accounts, no subscriptions, no third-party
-service holding your trading history.
+Self-hosted, in a single Docker container behind your own nginx, storing
+everything in one SQLite file. Nothing to subscribe to, and no third party
+holding your trading history or your account credentials.
 
-## What it does
+Two halves of the same thing:
+
+* **The copier** watches one master account and mirrors its trades onto any
+  number of slave accounts, each with its own position sizing, risk limits and
+  prop-firm rules. Any broker, any account size.
+* **The journal** records everything that happens — on the master and on every
+  slave — and works out what you actually risked, what you actually made, and
+  which habits are costing you money.
+
+## The copier
+
+- **One master, any number of slaves.** Add accounts with a server, a number
+  and a password. Each slave runs its own headless terminal, so ten or twenty
+  accounts across ten or twenty different brokers is a matter of memory, not
+  architecture.
+- **Sizing that fits the account** — fixed lots, a multiplier, the ratio of
+  balances or equity, or a fixed percentage of the slave's equity risked
+  against the master's stop distance. A slave ten times the size trades ten
+  times bigger; one a tenth the size trades a tenth. Lots always round *down*
+  to the broker's step, and a size that lands under the minimum is refused
+  rather than rounded up into a trade that risks more than you allowed.
+- **Risk limits per account** — max risk per trade, max lot, max open
+  positions, max positions facing the same way, max per symbol, max total
+  lots, and a requirement that the master had a stop at all.
+- **Account guards** — an equity stop by amount or by percentage below peak, a
+  daily drawdown limit measured from the day's opening equity, and a daily
+  profit target. When one trips, the account flattens and stops copying.
+- **Prop-firm friendly** — bank a winner automatically once it passes a money
+  amount or an R multiple, so a single outsized trade never breaks a
+  consistency rule, plus a cap on how much of total profit one day may be.
+- **Mirrors your management** — stop and target moves on the master follow
+  through to every slave, and a close is a close everywhere.
+- **Symbols across brokers** — `EURUSD`, `EURUSD.r`, `FX_EURUSD` and friends
+  are resolved per account. It never invents a symbol the broker does not
+  list, and refuses an ambiguous match rather than guessing.
+- **Nothing is live until you say so.** Every slave starts disabled and in
+  dry-run, recording exactly what it would have done. You watch it, then arm
+  it, one account at a time.
+
+## The journal
 
 - **Syncs from MetaTrader 5 with just your account details** — a trade server,
   an account number and an investor password, entered once. No plugin to
@@ -44,6 +82,8 @@ service holding your trading history.
 - **Chart replay** — candles stored by the Expert Advisor are replayed with your
   real entry, exit, stop and target drawn on them; a free TradingView widget is
   one click away when you want the full drawing toolset.
+- **Every account, together or apart** — statistics for the master, for any
+  slave, or for all of them combined, with balance and equity curves each.
 - **Installable on your phone** — it is a PWA, so "Add to home screen" gives you
   an app icon and a full-screen layout.
 
@@ -214,6 +254,7 @@ image.
 
 ```
 backend/     FastAPI application, SQLite models, statistics engine, tests
+             app/services/copier/ — sizing, risk gates and copy decisions
 frontend/    React + Vite single-page app, built into the container
 mt5-bridge/  Headless MetaTrader 5 under Wine — what account-details sync uses
 mt5/         TradeZuluSync.mq5 — the Expert Advisor alternative
@@ -225,4 +266,4 @@ docs/        MetaTrader guide, metric definitions, deployment notes
 
 MIT — see [LICENSE](LICENSE).
 
-TradeZulu is not affiliated with MetaQuotes, TradeZella, Edgewonk or TradingView.
+TradeZulu is not affiliated with MetaQuotes or TradingView.

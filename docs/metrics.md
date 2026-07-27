@@ -163,8 +163,7 @@ grinding over lottery tickets.
 
 ## The Zulu Score
 
-One 0–100 number, in the spirit of TradeZella's Zella Score, built from six
-components. Each is scored 0–100 against a target you set, then combined as a
+One 0–100 number, built from six components. Each is scored 0–100 against a target you set, then combined as a
 weighted average. Setting a weight to 0 removes a component entirely.
 
 | Component | Score | Default target |

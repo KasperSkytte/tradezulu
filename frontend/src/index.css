@@ -12,17 +12,21 @@
 
   --radius-card: 0.875rem;
 
-  /* Brand ------------------------------------------------------------- */
-  --color-zulu-50: #f2f0ff;
-  --color-zulu-100: #e6e2ff;
-  --color-zulu-200: #cfc7ff;
-  --color-zulu-300: #b0a2ff;
-  --color-zulu-400: #8f78ff;
-  --color-zulu-500: #7c5cff;
-  --color-zulu-600: #6b41f5;
-  --color-zulu-700: #5a31d8;
-  --color-zulu-800: #4a2aae;
-  --color-zulu-900: #3d258a;
+  /* Brand --------------------------------------------------------------
+   * A jade green. Steps are picked by job, not by taste: 700 is the button
+   * fill because white text on it clears 5.3:1, while 400/500 are the bright
+   * steps used for marks on the dark surface.
+   */
+  --color-zulu-50: #ecfdf5;
+  --color-zulu-100: #d0fbe8;
+  --color-zulu-200: #a3f5d3;
+  --color-zulu-300: #6ae9b9;
+  --color-zulu-400: #2fd8a0;
+  --color-zulu-500: #12b98a;
+  --color-zulu-600: #0a9a70;
+  --color-zulu-700: #087a58;
+  --color-zulu-800: #06603f;
+  --color-zulu-900: #054b33;
 
   /*
    * Result colours. The mark steps below were chosen by running the palette
@@ -69,6 +73,13 @@
     --tz-gain-text: #0f8a55;
     --tz-loss-text: #a8232f;
     --tz-flat: #64748b;
+    /* The replay chart draws entry alongside exit. With a green accent the
+       two would read as one colour, so entry gets a hue of its own. */
+    --tz-entry: #1f6fd0;
+
+    /* The bright accent steps are for the dark surface; on white they need a
+       darker one to stay legible as text. */
+    --color-zulu-400: #0a9a70;
   }
 
   /* Colour-blind safe alternative: blue for profit, amber for loss.
@@ -106,6 +117,9 @@
     --tz-gain-text: #34d399;
     --tz-loss-text: #f87171;
     --tz-flat: #94a3b8;
+    --tz-entry: #4593e8;
+
+    --color-zulu-400: #2fd8a0;
   }
 
   * {
@@ -196,7 +210,7 @@
   .tz-input:focus {
     outline: none;
     border-color: var(--color-zulu-500);
-    box-shadow: 0 0 0 3px rgb(124 92 255 / 0.18);
+    box-shadow: 0 0 0 3px rgb(18 185 138 / 0.22);
   }
 
   .tz-btn {
@@ -221,11 +235,12 @@
   }
 
   .tz-btn-primary {
-    background: var(--color-zulu-500);
+    /* 700 rather than 500: white on the brighter steps is only 2.5:1. */
+    background: var(--color-zulu-700);
     color: white;
   }
   .tz-btn-primary:hover:not(:disabled) {
-    background: var(--color-zulu-600);
+    background: var(--color-zulu-800);
   }
 
   .tz-btn-ghost {

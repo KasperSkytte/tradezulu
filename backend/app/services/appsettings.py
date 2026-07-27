@@ -27,7 +27,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "default_period": "last_30_days",
         "date_format": "yyyy-MM-dd",
         "theme": "dark",  # dark | light | system
-        "accent": "violet",
+        "accent": "jade",
         # Swaps the profit/loss green-red pair for a blue-amber pair that
         # stays distinguishable with red-green colour blindness.
         "colorblind_mode": False,

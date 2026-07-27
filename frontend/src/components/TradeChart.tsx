@@ -156,7 +156,9 @@ function LocalReplay({ trade, timeframe }: { trade: TradeDetail; timeframe: stri
       styles.getPropertyValue(name).trim() || fallback
     const gain = token('--tz-gain', '#12b06f')
     const loss = token('--tz-loss', '#c93a48')
-    const accent = token('--color-zulu-400', '#8f78ff')
+    // Entry is deliberately not the brand colour: with a green accent it
+    // would be indistinguishable from the exit line on a winning trade.
+    const entry = token('--tz-entry', '#4593e8')
 
     for (const line of priceLines.current) series.removePriceLine(line)
     priceLines.current = []
@@ -175,7 +177,7 @@ function LocalReplay({ trade, timeframe }: { trade: TradeDetail; timeframe: stri
     // Entry, exit, stop and target as price lines.
     priceLines.current.push(series.createPriceLine({
       price: trade.entry_price,
-      color: accent,
+      color: entry,
       lineWidth: 2,
       lineStyle: LineStyle.Solid,
       axisLabelVisible: true,
@@ -219,7 +221,7 @@ function LocalReplay({ trade, timeframe }: { trade: TradeDetail; timeframe: stri
         .map((execution) => ({
           time: (Date.parse(execution.time) / 1000) as Time,
           position: execution.side === 'buy' ? ('belowBar' as const) : ('aboveBar' as const),
-          color: execution.kind === 'in' ? accent : execution.profit >= 0 ? gain : loss,
+          color: execution.kind === 'in' ? entry : execution.profit >= 0 ? gain : loss,
           shape: execution.side === 'buy' ? ('arrowUp' as const) : ('arrowDown' as const),
           text: `${execution.kind === 'in' ? 'In' : 'Out'} ${execution.volume}`,
         }))
@@ -260,7 +262,7 @@ function LocalReplay({ trade, timeframe }: { trade: TradeDetail; timeframe: stri
       </div>
 
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--tz-text-muted)]">
-        <Legend color="var(--color-zulu-400)" label={`Entry ${price(trade.entry_price, trade.digits)}`} />
+        <Legend color="var(--tz-entry)" label={`Entry ${price(trade.entry_price, trade.digits)}`} />
         {trade.exit_price !== null && (
           <Legend
             color={trade.net_pnl >= 0 ? 'var(--tz-gain)' : 'var(--tz-loss)'}

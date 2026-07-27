@@ -44,7 +44,7 @@ export function LoginPage() {
             Trade<span className="text-zulu-400">Zulu</span>
           </h1>
           <p className="mt-1 text-sm text-[var(--tz-text-muted)]">
-            Your trading journal. Sign in to continue.
+            Your trade copier and journal. Sign in to continue.
           </p>
         </div>
 

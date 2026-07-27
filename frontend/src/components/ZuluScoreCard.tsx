@@ -15,7 +15,7 @@ const AXIS_LABELS: Record<string, string> = {
 
 const SCORE_BANDS = [
   { min: 80, label: 'Excellent', color: 'var(--tz-gain)' },
-  { min: 60, label: 'Solid', color: 'var(--color-zulu-400)' },
+  { min: 60, label: 'Solid', color: 'var(--tz-entry)' },
   { min: 40, label: 'Developing', color: '#eab308' },
   { min: 0, label: 'Needs work', color: 'var(--tz-loss)' },
 ]

@@ -4,8 +4,8 @@ export function ZuluMark({ className }: { className?: string }) {
     <svg viewBox="0 0 32 32" className={className} role="img" aria-label="TradeZulu">
       <defs>
         <linearGradient id="tz-mark" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#8f78ff" />
-          <stop offset="100%" stopColor="#5a31d8" />
+          <stop offset="0%" stopColor="#2fd8a0" />
+          <stop offset="100%" stopColor="#087a58" />
         </linearGradient>
       </defs>
       <rect width="32" height="32" rx="8" fill="url(#tz-mark)" />
@@ -17,7 +17,7 @@ export function ZuluMark({ className }: { className?: string }) {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      <circle cx="23" cy="22" r="2.6" fill="#34d399" />
+      <circle cx="23" cy="22" r="2.6" fill="#ecfdf5" />
     </svg>
   )
 }
