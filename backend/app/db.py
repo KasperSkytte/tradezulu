@@ -10,6 +10,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from .config import settings
+from .migrations import sync_schema
 from .models import Account, Base, Tag, User
 from .services.appsettings import DEFAULT_TAGS
 
@@ -54,6 +55,11 @@ def init_db() -> None:
         sqlite_path.parent.mkdir(parents=True, exist_ok=True)
 
     Base.metadata.create_all(engine)
+
+    # create_all leaves existing tables untouched, so a release that adds a
+    # column has to reconcile them itself or every upgrade breaks on startup.
+    for change in sync_schema(engine):
+        log.info("Schema: added %s", change)
 
     from .security import hash_password  # imported late to avoid a cycle
 

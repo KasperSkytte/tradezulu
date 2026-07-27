@@ -209,6 +209,26 @@ Only deployment-level settings live in `.env`:
 | `TZ_DEMO` | unset | Generate example trades on an empty database. |
 | `TZ_LOG_LEVEL` | `INFO` | `DEBUG` for more detail. |
 
+## Upgrading
+
+```bash
+git pull
+docker compose --profile bridge up -d --build
+```
+
+The schema is reconciled on every start: columns and indexes a new version
+adds are created on the database you already have, and the change is logged.
+The step is additive only — it never drops, renames or retypes anything — so
+your history is not at risk and an older database simply catches up.
+
+Back the file up first if you want to be certain; it is a single file:
+
+```bash
+docker compose stop tradezulu
+cp ./data/tradezulu.db ./data/tradezulu.db.bak
+docker compose --profile bridge up -d --build
+```
+
 ## How the numbers are worked out
 
 Short version: MetaTrader records *deals*, not trades. TradeZulu groups every
