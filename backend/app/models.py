@@ -58,12 +58,14 @@ class User(Base):
 
 
 class Account(Base):
-    """A broker account. Usually just one, but multiples cost nothing."""
+    """A broker account: the master you trade, or a slave that follows it."""
 
     __tablename__ = "account"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     login: Mapped[str] = mapped_column(String(64), nullable=False)
+    # master | slave | standalone. Exactly one master copies to N slaves.
+    role: Mapped[str] = mapped_column(String(16), default="master", index=True)
     name: Mapped[str] = mapped_column(String(120), default="")
     broker: Mapped[str] = mapped_column(String(120), default="")
     server: Mapped[str] = mapped_column(String(120), default="")
@@ -77,6 +79,26 @@ class Account(Base):
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_sync_source: Mapped[str] = mapped_column(String(32), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    # --- copier ---------------------------------------------------------
+    # Slaves start disabled and in dry-run: nothing reaches a broker until
+    # both are deliberately turned on, one account at a time.
+    copy_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    copy_dry_run: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Set when a guard trips; cleared by the user or at the next trading day.
+    copy_halted: Mapped[bool] = mapped_column(Boolean, default=False)
+    copy_halt_reason: Mapped[str] = mapped_column(String(255), default="")
+    copy_halted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Sizing and risk settings, shaped like SizingConfig and RiskConfig.
+    copy_settings: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    # Broker symbol differences: suffix/prefix plus explicit overrides.
+    symbol_suffix: Mapped[str] = mapped_column(String(16), default="")
+    symbol_prefix: Mapped[str] = mapped_column(String(16), default="")
+    symbol_map: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    # Equity at the start of the current trading day, for the daily guards.
+    day_start_equity: Mapped[float] = mapped_column(Float, default=0.0)
+    day_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    peak_equity: Mapped[float] = mapped_column(Float, default=0.0)
 
     __table_args__ = (UniqueConstraint("login", "server", name="uq_account_login_server"),)
 
@@ -282,6 +304,88 @@ class Setting(Base):
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class CopyLink(Base):
+    """One copied position: which slave trade mirrors which master trade."""
+
+    __tablename__ = "copy_link"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    slave_account_id: Mapped[int] = mapped_column(
+        ForeignKey("account.id", ondelete="CASCADE"), index=True
+    )
+    master_position_id: Mapped[int] = mapped_column(Integer, index=True)
+    slave_position_id: Mapped[int] = mapped_column(Integer, default=0, index=True)
+
+    symbol: Mapped[str] = mapped_column(String(32), default="")
+    slave_symbol: Mapped[str] = mapped_column(String(32), default="")
+    direction: Mapped[str] = mapped_column(String(5), default="long")
+    master_volume: Mapped[float] = mapped_column(Float, default=0.0)
+    slave_volume: Mapped[float] = mapped_column(Float, default=0.0)
+    open_price: Mapped[float] = mapped_column(Float, default=0.0)
+    stop_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    take_profit: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # open | closed | failed | skipped
+    status: Mapped[str] = mapped_column(String(16), default="open", index=True)
+    sizing_reason: Mapped[str] = mapped_column(String(255), default="")
+    close_reason: Mapped[str] = mapped_column(String(255), default="")
+    dry_run: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    opened_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "slave_account_id", "master_position_id", name="uq_copy_link_slave_master"
+        ),
+    )
+
+
+class CopyEvent(Base):
+    """The copier's audit trail. Every decision, taken or refused."""
+
+    __tablename__ = "copy_event"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    slave_account_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    master_position_id: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    # open | close | modify | skip | halt | resume | error
+    action: Mapped[str] = mapped_column(String(16), default="open", index=True)
+    # ok | skipped | halted | failed | dry_run
+    outcome: Mapped[str] = mapped_column(String(16), default="ok", index=True)
+    symbol: Mapped[str] = mapped_column(String(32), default="")
+    direction: Mapped[str] = mapped_column(String(5), default="")
+    volume: Mapped[float] = mapped_column(Float, default=0.0)
+    price: Mapped[float] = mapped_column(Float, default=0.0)
+    #: The rule that refused it, when one did.
+    rule: Mapped[str] = mapped_column(String(64), default="")
+    message: Mapped[str] = mapped_column(Text, default="")
+    latency_ms: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+    __table_args__ = (Index("ix_copy_event_account_time", "slave_account_id", "created_at"),)
+
+
+class EquityPoint(Base):
+    """Periodic balance/equity samples, so every account has a real curve."""
+
+    __tablename__ = "equity_point"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("account.id", ondelete="CASCADE"), index=True
+    )
+    time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    balance: Mapped[float] = mapped_column(Float, default=0.0)
+    equity: Mapped[float] = mapped_column(Float, default=0.0)
+    open_positions: Mapped[int] = mapped_column(Integer, default=0)
+
+    __table_args__ = (
+        UniqueConstraint("account_id", "time", name="uq_equity_point"),
+        Index("ix_equity_account_time", "account_id", "time"),
+    )
 
 
 class SyncLog(Base):
