@@ -36,7 +36,7 @@ const FALLBACK: AppSettings = {
   },
   zulu_score: { weights: {}, targets: {} },
   mt5: {
-    sync_mode: 'ea',
+    sync_mode: 'bridge',
     bridge_url: '',
     bridge_timeout_seconds: 60,
     auto_sync_on_load: true,

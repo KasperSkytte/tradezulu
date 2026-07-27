@@ -2,11 +2,13 @@
 
 Two directions are supported and they can be used at the same time:
 
-* **push** - the ``TradeZuluSync`` Expert Advisor running inside your terminal
-  POSTs new deals to ``/api/mt5/ingest`` using an API key. Nothing needs to be
-  reachable from the server side, and no broker credentials are stored here.
-* **pull** - an optional ``mt5-bridge`` container runs the MetaTrader5 Python
-  package next to a headless terminal; the Sync button asks it for new deals.
+* **pull** (the default) - you enter a server, an account number and an
+  investor password once. The ``mt5-bridge`` container runs a headless
+  MetaTrader 5 terminal, this server logs it in and asks it for deals. The
+  password is encrypted at rest and only ever travels to the bridge.
+* **push** - the ``TradeZuluSync`` Expert Advisor inside a terminal you already
+  run POSTs deals here with an API key. No credentials are stored at all, but
+  it needs that terminal to be running.
 """
 
 from __future__ import annotations
@@ -20,10 +22,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..config import settings as env_settings
 from ..deps import AppConfig, CurrentUser, DbSession, get_default_account, require_ingest_auth
 from ..models import Account, Candle, Deal, SyncLog, Trade
 from ..schemas import (
     CandleResponse,
+    MT5CredentialsIn,
+    MT5CredentialsOut,
     MT5IngestRequest,
     MT5IngestResponse,
     SyncStatus,
@@ -32,6 +37,12 @@ from ..services.aggregation import (
     _parse_time,
     rebuild_trades,
     upsert_deals,
+)
+from ..services.credentials import (
+    clear_credentials,
+    credentials_status,
+    get_credentials,
+    save_credentials,
 )
 
 log = logging.getLogger(__name__)
@@ -220,29 +231,151 @@ def cursor(db: DbSession, login: Annotated[str | None, Query()] = None) -> dict[
     }
 
 
+# --- talking to the bridge --------------------------------------------------
+
+
+def _bridge_base(config: dict[str, Any]) -> str:
+    base = str(config["mt5"].get("bridge_url", "")).rstrip("/")
+    if not base:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "No bridge URL is configured. Set it in Settings -> MetaTrader 5.",
+        )
+    return base
+
+
+def _bridge_headers() -> dict[str, str]:
+    return {"X-Bridge-Token": env_settings.bridge_token} if env_settings.bridge_token else {}
+
+
+def _bridge_connect(db: Session, config: dict[str, Any]) -> dict[str, Any]:
+    """Hand the stored credentials to the bridge and log in.
+
+    The password leaves this process only here, over the internal compose
+    network, on its way to the terminal that needs it.
+    """
+    creds = get_credentials(db)
+    if not (creds["server"] and creds["login"] and creds["password"]):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "No MetaTrader account is configured. Add the server, account number "
+            "and investor password in Settings -> MetaTrader 5.",
+        )
+
+    base = _bridge_base(config)
+    timeout = float(config["mt5"].get("bridge_timeout_seconds", 60))
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            response = client.post(f"{base}/connect", json=creds, headers=_bridge_headers())
+            payload = response.json()
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            f"Could not reach the MetaTrader bridge at {base}: {exc}. Is the "
+            "bridge container running? (docker compose --profile bridge up -d)",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, f"The bridge returned invalid JSON: {exc}"
+        ) from exc
+
+    if response.status_code >= 400 or not payload.get("ok"):
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            str(payload.get("error") or "MetaTrader refused the login."),
+        )
+    return payload.get("account") or {}
+
+
+def _bridge_health(config: dict[str, Any]) -> dict[str, Any] | None:
+    base = str(config["mt5"].get("bridge_url", "")).rstrip("/")
+    if not base:
+        return None
+    try:
+        with httpx.Client(timeout=8.0) as client:
+            return client.get(f"{base}/health", headers=_bridge_headers()).json()
+    except (httpx.HTTPError, ValueError):
+        return None
+
+
+# --- credentials ------------------------------------------------------------
+
+
+@router.get("/credentials", response_model=MT5CredentialsOut)
+def read_credentials(_user: CurrentUser, db: DbSession) -> dict[str, Any]:
+    """Everything about the stored account except the password itself."""
+    return credentials_status(db)
+
+
+@router.put("/credentials", response_model=MT5CredentialsOut)
+def write_credentials(
+    payload: MT5CredentialsIn, _user: CurrentUser, db: DbSession
+) -> dict[str, Any]:
+    save_credentials(db, payload.server, payload.login, payload.password)
+    db.commit()
+    return credentials_status(db)
+
+
+@router.delete("/credentials", response_model=MT5CredentialsOut)
+def delete_credentials(_user: CurrentUser, db: DbSession, config: AppConfig) -> dict[str, Any]:
+    clear_credentials(db)
+    db.commit()
+    # Best effort: tell the bridge to log out and forget them too.
+    base = str(config["mt5"].get("bridge_url", "")).rstrip("/")
+    if base:
+        try:
+            with httpx.Client(timeout=8.0) as client:
+                client.post(f"{base}/disconnect", headers=_bridge_headers())
+        except httpx.HTTPError:
+            log.info("bridge was not reachable while clearing credentials")
+    return credentials_status(db)
+
+
+@router.post("/connect")
+def connect(_user: CurrentUser, db: DbSession, config: AppConfig) -> dict[str, Any]:
+    """Log the bridge in and report what the broker says back."""
+    account_info = _bridge_connect(db, config)
+    if account_info:
+        account = _resolve_account(db, account_info)
+        db.commit()
+        return {"ok": True, "account": account_info, "account_id": account.id}
+    return {"ok": True, "account": account_info}
+
+
 @router.get("/status", response_model=SyncStatus)
 def status_(_user: CurrentUser, db: DbSession, config: AppConfig) -> SyncStatus:
     account = get_default_account(db)
     mode = config["mt5"].get("sync_mode", "ea")
 
+    creds = credentials_status(db)
     bridge_reachable: bool | None = None
+    bridge_connected: bool | None = None
     message = ""
+
     if mode == "bridge":
-        try:
-            with httpx.Client(timeout=5.0) as client:
-                response = client.get(f"{config['mt5']['bridge_url'].rstrip('/')}/health")
-                bridge_reachable = response.status_code == 200
-                if not bridge_reachable:
-                    message = f"Bridge responded with HTTP {response.status_code}"
-        except httpx.HTTPError as exc:
-            bridge_reachable = False
-            message = f"Bridge unreachable: {exc}"
+        health = _bridge_health(config)
+        bridge_reachable = health is not None
+        if health is None:
+            message = (
+                "The bridge container is not answering. Start it with "
+                "'docker compose --profile bridge up -d'."
+            )
+        else:
+            bridge_connected = bool(health.get("connected"))
+            if not bridge_connected:
+                message = str(health.get("error") or "").strip() or (
+                    "The bridge is running but not logged in yet."
+                    if creds["configured"]
+                    else "Add your account under Settings -> MetaTrader 5."
+                )
 
     if account is None:
         return SyncStatus(
             account_id=None, login=None, name=None, balance=None, equity=None, currency=None,
             last_sync_at=None, last_sync_source=None, total_deals=0, total_trades=0,
-            open_trades=0, sync_mode=mode, bridge_reachable=bridge_reachable, message=message,
+            open_trades=0, sync_mode=mode, bridge_reachable=bridge_reachable,
+            bridge_connected=bridge_connected, credentials_configured=creds["configured"],
+            message=message,
         )
 
     return SyncStatus(
@@ -267,6 +400,8 @@ def status_(_user: CurrentUser, db: DbSession, config: AppConfig) -> SyncStatus:
         ) or 0,
         sync_mode=mode,
         bridge_reachable=bridge_reachable,
+        bridge_connected=bridge_connected,
+        credentials_configured=creds["configured"],
         message=message,
     )
 
@@ -287,9 +422,11 @@ def sync_now(
             "TradeZuluSync Expert Advisor push deals to this server.",
         )
 
-    base = str(mt5_cfg.get("bridge_url", "")).rstrip("/")
-    if not base:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No bridge URL configured")
+    base = _bridge_base(config)
+
+    # Hand over the credentials first; the bridge is stateless about them
+    # across restarts, so this makes a cold container recover on its own.
+    _bridge_connect(db, config)
 
     account = get_default_account(db)
     if full or account is None or account.last_sync_at is None:
@@ -302,9 +439,12 @@ def sync_now(
     timeout = float(mt5_cfg.get("bridge_timeout_seconds", 60))
     try:
         with httpx.Client(timeout=timeout) as client:
-            info = client.get(f"{base}/account").json()
+            headers = _bridge_headers()
+            info = client.get(f"{base}/account", headers=headers).json()
             deals = client.get(
-                f"{base}/deals", params={"from_ts": int(since.timestamp())}
+                f"{base}/deals",
+                params={"from_ts": int(since.timestamp())},
+                headers=headers,
             ).json()
     except httpx.HTTPError as exc:
         db.add(SyncLog(source="bridge", status="error", message=str(exc)))
@@ -437,6 +577,7 @@ def _fetch_candles_from_bridge(
         with httpx.Client(timeout=float(config["mt5"].get("bridge_timeout_seconds", 60))) as client:
             payload = client.get(
                 f"{base}/candles",
+                headers=_bridge_headers(),
                 params={
                     "symbol": symbol,
                     "timeframe": timeframe,

@@ -48,21 +48,26 @@ export function SyncButton() {
     return () => clearTimeout(timer)
   }, [flash])
 
-  // In bridge mode the server can pull, so refresh once when the app opens.
+  // With account details configured the server can pull on its own, so bring
+  // the journal up to date when the app opens rather than making them click.
   useEffect(() => {
     if (autoSyncDone.current) return
     if (settings.mt5.sync_mode !== 'bridge' || !settings.mt5.auto_sync_on_load) return
-    const lastSync = status?.last_sync_at ? new Date(status.last_sync_at).getTime() : 0
+    if (!status?.credentials_configured) return
+    const lastSync = status.last_sync_at ? new Date(status.last_sync_at).getTime() : 0
     const minInterval = (settings.mt5.auto_sync_min_interval_seconds || 120) * 1000
     if (Date.now() - lastSync < minInterval) return
     autoSyncDone.current = true
     sync.mutate()
-  }, [settings.mt5, status?.last_sync_at, sync])
+  }, [settings.mt5, status, sync])
 
-  const pushMode = settings.mt5.sync_mode === 'ea'
-  const title = pushMode
-    ? `The Expert Advisor pushes deals to TradeZulu. Last received ${relative(status?.last_sync_at)}. Click to re-check.`
-    : `Pull new deals from the MetaTrader 5 bridge. Last sync ${relative(status?.last_sync_at)}.`
+  // Only "account details" mode can actually fetch; the others just re-read.
+  const canPull = settings.mt5.sync_mode === 'bridge' && Boolean(status?.credentials_configured)
+  const title = canPull
+    ? `Fetch new deals from MetaTrader. Last sync ${relative(status?.last_sync_at)}.`
+    : settings.mt5.sync_mode === 'ea'
+      ? `The Expert Advisor pushes deals to TradeZulu. Last received ${relative(status?.last_sync_at)}. Click to re-read.`
+      : 'Re-read the journal. Add your account under Settings → MetaTrader 5 to sync automatically.'
 
   return (
     <div className="flex items-center gap-2">
@@ -83,17 +88,17 @@ export function SyncButton() {
         className="tz-btn tz-btn-ghost"
         disabled={sync.isPending}
         onClick={() => {
-          if (pushMode) {
-            // Nothing to pull; just re-read whatever the EA has delivered.
+          if (canPull) {
+            sync.mutate()
+          } else {
+            // Nothing to fetch; just re-read whatever has arrived already.
             void queryClient.invalidateQueries()
             setFlash({ kind: 'ok', text: 'Refreshed' })
-          } else {
-            sync.mutate()
           }
         }}
       >
         <RefreshCw size={15} className={clsx(sync.isPending && 'animate-spin')} />
-        <span className="hidden sm:inline">{pushMode ? 'Refresh' : 'Sync'}</span>
+        <span className="hidden sm:inline">{canPull ? 'Sync' : 'Refresh'}</span>
       </button>
     </div>
   )

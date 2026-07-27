@@ -1,15 +1,20 @@
 """HTTP bridge in front of the MetaTrader5 Python package.
 
-Runs *inside* Wine next to a headless MetaTrader 5 terminal and exposes the
-handful of read-only endpoints TradeZulu's pull sync needs:
+Runs *inside* Wine next to a headless MetaTrader 5 terminal. MetaTrader's
+client-server protocol is proprietary, so a real terminal is the only way to
+reach a trading account with nothing but a server, a login and a password —
+this container is that terminal, kept out of sight.
 
-    GET /health
-    GET /account
-    GET /deals?from_ts=&to_ts=
-    GET /candles?symbol=&timeframe=&from_ts=&to_ts=
+    GET  /health                     is the terminal up and logged in?
+    POST /connect                    log in with {server, login, password}
+    POST /disconnect                 log out and forget the credentials
+    GET  /account                    balance, currency, leverage
+    GET  /deals?from_ts=&to_ts=      deal history
+    GET  /candles?symbol=&...        OHLC for the replay chart
 
-Only ever reads. Log in with the *investor* password if your broker offers
-one — it is read-only by construction, so this container can never trade.
+Everything is read-only: no endpoint can place, modify or close an order.
+Log in with the broker's *investor* password and that is guaranteed rather
+than merely intended.
 """
 
 from __future__ import annotations
@@ -36,11 +41,11 @@ logging.basicConfig(
 )
 log = logging.getLogger("mt5-bridge")
 
-LOGIN = os.getenv("MT5_LOGIN", "").strip()
-PASSWORD = os.getenv("MT5_PASSWORD", "").strip()
-SERVER = os.getenv("MT5_SERVER", "").strip()
 TERMINAL = os.getenv("MT5_TERMINAL_PATH", "").strip()
 PORT = int(os.getenv("BRIDGE_PORT", "8080"))
+# Optional shared secret. The bridge is not published outside the compose
+# network, but defence in depth is free.
+TOKEN = os.getenv("BRIDGE_TOKEN", "").strip()
 
 TIMEFRAMES = {
     "M1": mt5.TIMEFRAME_M1,
@@ -53,38 +58,119 @@ TIMEFRAMES = {
     "W1": mt5.TIMEFRAME_W1,
 }
 
-_lock = threading.Lock()
-_connected = False
 
+class Terminal:
+    """Owns the single MetaTrader connection and the credentials in use."""
 
-def connect() -> bool:
-    """Initialise the terminal connection, reconnecting if it dropped."""
-    global _connected
-    with _lock:
-        if _connected and mt5.terminal_info() is not None:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._connected = False
+        self._error = ""
+        self._credentials: dict[str, str] = {
+            "server": os.getenv("MT5_SERVER", "").strip(),
+            "login": os.getenv("MT5_LOGIN", "").strip(),
+            "password": os.getenv("MT5_PASSWORD", "").strip(),
+        }
+
+    # -- state -----------------------------------------------------------
+    @property
+    def error(self) -> str:
+        return self._error
+
+    @property
+    def has_credentials(self) -> bool:
+        return all(self._credentials.get(field) for field in ("server", "login", "password"))
+
+    def describe(self) -> dict:
+        return {
+            "connected": self._connected,
+            "configured": self.has_credentials,
+            "server": self._credentials.get("server", ""),
+            "login": self._credentials.get("login", ""),
+            "error": self._error,
+        }
+
+    # -- connection ------------------------------------------------------
+    def set_credentials(self, server: str, login: str, password: str) -> None:
+        with self._lock:
+            self._credentials = {
+                "server": server.strip(),
+                "login": str(login).strip(),
+                "password": password,
+            }
+            self._connected = False
+            mt5.shutdown()
+
+    def disconnect(self) -> None:
+        with self._lock:
+            mt5.shutdown()
+            self._connected = False
+            self._credentials = {"server": "", "login": "", "password": ""}
+            self._error = ""
+
+    def ensure(self, force: bool = False) -> bool:
+        """Connect if needed. Safe to call on every request."""
+        with self._lock:
+            if not force and self._connected and mt5.terminal_info() is not None:
+                return True
+
+            if not self.has_credentials:
+                self._error = (
+                    "No account configured. Enter the server, login and investor "
+                    "password in TradeZulu under Settings -> MetaTrader 5."
+                )
+                self._connected = False
+                return False
+
+            kwargs: dict = {
+                "login": int(self._credentials["login"]),
+                "password": self._credentials["password"],
+                "server": self._credentials["server"],
+                # Long enough for the terminal to start and reach the broker.
+                "timeout": int(os.getenv("MT5_INIT_TIMEOUT_MS", "120000")),
+            }
+            if TERMINAL:
+                kwargs["path"] = TERMINAL
+
+            mt5.shutdown()
+            if not mt5.initialize(**kwargs):
+                code, message = mt5.last_error()
+                self._error = self._explain(code, message)
+                log.error("initialize() failed: %s (%s)", message, code)
+                self._connected = False
+                return False
+
+            info = mt5.account_info()
+            if info is None:
+                code, message = mt5.last_error()
+                self._error = self._explain(code, message)
+                self._connected = False
+                return False
+
+            log.info("connected to %s as %s (%s)", info.server, info.login, info.currency)
+            self._error = ""
+            self._connected = True
             return True
 
-        kwargs: dict = {}
-        if TERMINAL:
-            kwargs["path"] = TERMINAL
-        if LOGIN and PASSWORD and SERVER:
-            kwargs.update(login=int(LOGIN), password=PASSWORD, server=SERVER)
+    @staticmethod
+    def _explain(code: int, message: str) -> str:
+        """Turn MetaTrader's terse errors into something actionable."""
+        hints = {
+            -6: "The broker rejected the login. Check the account number, the "
+                "password and that the server name matches exactly.",
+            -8: "The terminal did not answer in time. It may still be starting "
+                "up — try again in a minute.",
+            -10: "The terminal could not be started. Check the container logs.",
+            -2: "The terminal is not installed where the bridge expects it.",
+        }
+        hint = hints.get(code)
+        return f"{message} ({code}){'. ' + hint if hint else ''}"
 
-        mt5.shutdown()
-        if not mt5.initialize(**kwargs):
-            log.error("initialize() failed: %s", mt5.last_error())
-            _connected = False
-            return False
 
-        info = mt5.account_info()
-        if info is None:
-            log.error("account_info() is empty: %s", mt5.last_error())
-            _connected = False
-            return False
+terminal = Terminal()
 
-        log.info("connected to %s as %s (%s)", info.server, info.login, info.currency)
-        _connected = True
-        return True
+
+# --- payload builders -------------------------------------------------------
 
 
 def account_payload() -> dict:
@@ -100,6 +186,8 @@ def account_payload() -> dict:
         "leverage": int(info.leverage),
         "balance": float(info.balance),
         "equity": float(info.equity),
+        # Investor logins report trade_allowed = False, which is what we want.
+        "trade_allowed": bool(getattr(info, "trade_allowed", False)),
     }
 
 
@@ -188,6 +276,9 @@ def candles_payload(symbol: str, timeframe: str, from_ts: int, to_ts: int) -> li
     ]
 
 
+# --- HTTP -------------------------------------------------------------------
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -202,7 +293,56 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def do_GET(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
+    def _authorised(self) -> bool:
+        if not TOKEN:
+            return True
+        if self.headers.get("X-Bridge-Token", "") == TOKEN:
+            return True
+        self._respond({"error": "unauthorised"}, 401)
+        return False
+
+    def _read_json(self) -> dict:
+        length = int(self.headers.get("Content-Length") or 0)
+        if length <= 0:
+            return {}
+        try:
+            return json.loads(self.rfile.read(length).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            return {}
+
+    # -- routes ----------------------------------------------------------
+    def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler naming
+        if not self._authorised():
+            return
+        path = urlparse(self.path).path
+
+        if path == "/connect":
+            body = self._read_json()
+            server = str(body.get("server") or "").strip()
+            login = str(body.get("login") or "").strip()
+            password = str(body.get("password") or "")
+            if not (server and login and password):
+                self._respond({"error": "server, login and password are all required"}, 400)
+                return
+
+            terminal.set_credentials(server, login, password)
+            if terminal.ensure(force=True):
+                self._respond({"ok": True, "account": account_payload()})
+            else:
+                self._respond({"ok": False, "error": terminal.error}, 502)
+            return
+
+        if path == "/disconnect":
+            terminal.disconnect()
+            self._respond({"ok": True})
+            return
+
+        self._respond({"error": "not found"}, 404)
+
+    def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler naming
+        if not self._authorised():
+            return
+
         url = urlparse(self.path)
         query = parse_qs(url.query)
 
@@ -213,15 +353,18 @@ class Handler(BaseHTTPRequestHandler):
                 return default
 
         if url.path == "/health":
-            ok = connect()
-            self._respond(
-                {"status": "ok" if ok else "disconnected", "connected": ok},
-                200 if ok else 503,
-            )
+            # Always 200: "reachable but not logged in" is a distinct state
+            # from "not reachable", and the UI needs to tell them apart.
+            connected = terminal.ensure() if terminal.has_credentials else False
+            payload = terminal.describe()
+            payload["status"] = "ok" if connected else "disconnected"
+            if connected:
+                payload["account"] = account_payload()
+            self._respond(payload)
             return
 
-        if not connect():
-            self._respond({"error": "not connected to MetaTrader 5"}, 503)
+        if not terminal.ensure():
+            self._respond({"error": terminal.error or "not connected"}, 503)
             return
 
         try:
@@ -240,13 +383,14 @@ class Handler(BaseHTTPRequestHandler):
                 if not symbol:
                     self._respond({"error": "symbol is required"}, 400)
                     return
+                timeframe = query.get("timeframe", ["M15"])[0]
                 self._respond(
                     {
                         "symbol": symbol,
-                        "timeframe": query.get("timeframe", ["M15"])[0],
+                        "timeframe": timeframe,
                         "candles": candles_payload(
                             symbol,
-                            query.get("timeframe", ["M15"])[0],
+                            timeframe,
                             number("from_ts", int(time.time()) - 86400 * 5),
                             number("to_ts", int(time.time())),
                         ),
@@ -260,14 +404,12 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> int:
-    log.info("MT5 bridge starting on port %s", PORT)
-    for attempt in range(1, 31):
-        if connect():
-            break
-        log.info("terminal not ready yet (attempt %d/30), waiting…", attempt)
-        time.sleep(10)
+    log.info("MT5 bridge listening on port %s", PORT)
+    if terminal.has_credentials:
+        log.info("credentials supplied by environment; connecting")
+        terminal.ensure()
     else:
-        log.error("Could not reach MetaTrader 5. Check MT5_LOGIN/MT5_PASSWORD/MT5_SERVER.")
+        log.info("waiting for credentials from TradeZulu (Settings -> MetaTrader 5)")
 
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     try:

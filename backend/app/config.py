@@ -60,9 +60,12 @@ class Settings:
         # Lowered only by the test suite; 12 is the sensible production value.
         self.bcrypt_rounds: int = max(4, min(16, _env_int("TZ_BCRYPT_ROUNDS", 12)))
 
-        # MT5 ingest ------------------------------------------------------
+        # MT5 ------------------------------------------------------------
         # Expert Advisors authenticate with this key instead of a session cookie.
         self.ingest_token: str = os.getenv("TZ_INGEST_TOKEN", "").strip()
+        # Shared secret for the bridge container, which lives on the internal
+        # compose network and is never published.
+        self.bridge_token: str = os.getenv("TZ_BRIDGE_TOKEN", "").strip()
 
         # Misc ------------------------------------------------------------
         self.cors_origins: list[str] = [

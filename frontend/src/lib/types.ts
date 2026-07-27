@@ -308,7 +308,33 @@ export interface SyncStatus {
   open_trades: number
   sync_mode: string
   bridge_reachable: boolean | null
+  bridge_connected: boolean | null
+  credentials_configured: boolean
   message: string
+}
+
+export interface MT5Credentials {
+  configured: boolean
+  server: string
+  login: string
+  /** False when TZ_SECRET_KEY changed since the password was saved. */
+  password_readable: boolean
+}
+
+export interface MT5ConnectResult {
+  ok: boolean
+  account?: {
+    login: string
+    name: string
+    server: string
+    company: string
+    currency: string
+    leverage: number
+    balance: number
+    equity: number
+    trade_allowed: boolean
+  }
+  account_id?: number
 }
 
 export interface Account {

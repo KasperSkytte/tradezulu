@@ -13,12 +13,15 @@ cd /opt/tradezulu
 
 cp .env.example .env
 openssl rand -base64 48   # -> TZ_SECRET_KEY
-openssl rand -hex 24      # -> TZ_INGEST_TOKEN
+openssl rand -hex 24      # -> TZ_BRIDGE_TOKEN
 $EDITOR .env              # also set TZ_ADMIN_USER and TZ_ADMIN_PASSWORD
 
-docker compose up -d
+docker compose --profile bridge up -d
 docker compose logs -f tradezulu
 ```
+
+Leave `--profile bridge` off if you plan to use the Expert Advisor instead of
+account-details sync; the journal runs perfectly well on its own.
 
 `TZ_ADMIN_USER` and `TZ_ADMIN_PASSWORD` create the user on the **first** start
 only. Afterwards, change it in Settings → Security. There is no registration
@@ -135,9 +138,21 @@ services:
           memory: 512M
 ```
 
-The optional bridge container is the greedy one — Wine plus a MetaTrader
-terminal wants roughly 1.5–2 GB and a couple of GB of disk. Give it its own
-limits, or skip it and use the Expert Advisor.
+The bridge container is the greedy one — Wine plus a MetaTrader terminal wants
+roughly 1.5–2 GB of RAM and a couple of GB of disk, though it is nearly idle
+between syncs:
+
+```yaml
+  mt5-bridge:
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+```
+
+Its `mt5-wine` volume is a cache, not data: deleting it costs you another
+first boot and nothing else.
 
 ## Health and logs
 
@@ -160,5 +175,12 @@ Set `TZ_LOG_LEVEL=DEBUG` for verbose output when something is misbehaving.
 - `TZ_INGEST_TOKEN` is the only credential the Expert Advisor holds, and it can
   only add deals. It cannot read your journal or change settings.
 - The container runs as an unprivileged user and writes only to `/data`.
-- No broker credentials are stored anywhere unless you opt into the bridge, and
-  there you should use the read-only investor password.
+- Your MetaTrader password, if you use account-details sync, is encrypted with
+  AES-GCM under a key derived from `TZ_SECRET_KEY`, is never returned by any
+  API, and travels only to the terminal container on the internal network. Use
+  the broker's **investor** password and it is read-only by construction, so
+  the terminal cannot place an order regardless.
+- Changing `TZ_SECRET_KEY` deliberately makes that stored password unreadable.
+  TradeZulu detects this and asks for it again rather than carrying on.
+- The `mt5-bridge` container is never published to the network; only TradeZulu
+  can reach it, and `TZ_BRIDGE_TOKEN` gates even that.

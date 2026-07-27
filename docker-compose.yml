@@ -1,9 +1,11 @@
-# TradeZulu — copy .env.example to .env, edit it, then: docker compose up -d
+# TradeZulu — copy .env.example to .env, edit it, then:
 #
-# The default setup is a single container. The optional MetaTrader 5 bridge
-# only starts when you ask for it:
+#   docker compose --profile bridge up -d       journal + MetaTrader terminal
+#   docker compose up -d                        journal only
 #
-#   docker compose --profile bridge up -d
+# The bridge is the container that lets you sync with nothing but a server, an
+# account number and an investor password. Leave it out only if you would
+# rather run the TradeZuluSync Expert Advisor in a terminal of your own.
 
 services:
   tradezulu:
@@ -23,6 +25,7 @@ services:
       TZ_DATABASE_URL: sqlite:////data/tradezulu.db
       TZ_STATIC_DIR: /app/static
       PORT: 8420
+      TZ_BRIDGE_TOKEN: ${TZ_BRIDGE_TOKEN:-}
     ports:
       # Bound to localhost: nginx on the host is what faces the network.
       - "127.0.0.1:${TZ_PORT:-8420}:8420"
@@ -35,9 +38,12 @@ services:
       retries: 3
       start_period: 20s
 
-  # Optional: a headless MetaTrader 5 under Wine so the server can *pull*
-  # deals. Only needed if you cannot run the TradeZuluSync Expert Advisor.
-  # Heavy (a few GB) and slow on first boot.
+  # A headless MetaTrader 5 under Wine. MetaTrader's protocol is proprietary,
+  # so a real terminal is the only way to reach an account with just a server,
+  # a login and a password -- this is that terminal, kept out of sight.
+  #
+  # Your account details are entered in the TradeZulu UI, not here: they are
+  # stored encrypted in the journal and handed over on connect.
   mt5-bridge:
     profiles: ["bridge"]
     build:
@@ -46,17 +52,20 @@ services:
     container_name: tradezulu-mt5-bridge
     restart: unless-stopped
     environment:
-      MT5_LOGIN: ${MT5_LOGIN:-}
-      # Use the broker's *investor* password: it is read-only, so this
-      # container cannot place a trade even if something goes wrong.
-      MT5_PASSWORD: ${MT5_PASSWORD:-}
-      MT5_SERVER: ${MT5_SERVER:-}
       BRIDGE_PORT: 8080
+      TZ_BRIDGE_TOKEN: ${TZ_BRIDGE_TOKEN:-}
+      BRIDGE_TOKEN: ${TZ_BRIDGE_TOKEN:-}
+      # Set to 1 and publish 5900 if a broker ever needs a dialog answered.
+      ENABLE_VNC: ${MT5_ENABLE_VNC:-0}
+      # Only needed for a broker whose build the generic installer cannot fetch.
+      MT5_SETUP_URL: ${MT5_SETUP_URL:-}
     volumes:
+      # Holds Wine, the terminal and its cache. Keep it: a fresh one means
+      # another 5-15 minute first boot.
       - mt5-wine:/wine
     expose:
       - "8080"
-    # Never publish this port to the network; only TradeZulu should reach it.
+    # Deliberately not published: only TradeZulu should be able to reach it.
 
 volumes:
   tradezulu-data:

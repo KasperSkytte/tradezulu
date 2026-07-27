@@ -23,9 +23,11 @@ RUN dpkg --add-architecture i386 && \
         cabextract \
         curl \
         procps \
+        unzip \
         wine \
         wine64 \
         winbind \
+        x11vnc \
         xauth \
         xvfb \
     && rm -rf /var/lib/apt/lists/*
@@ -35,7 +37,9 @@ COPY bridge.py /opt/bridge/bridge.py
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 VOLUME ["/wine"]
-EXPOSE 8080
+# 8080 is the bridge API. 5900 is an optional VNC view of the terminal, only
+# started with ENABLE_VNC=1 and useful when a broker wants a dialog answered.
+EXPOSE 8080 5900
 
 HEALTHCHECK --interval=60s --timeout=10s --start-period=10m --retries=3 \
     CMD curl -fsS "http://127.0.0.1:${BRIDGE_PORT}/health" || exit 1

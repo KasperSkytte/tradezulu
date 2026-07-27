@@ -239,6 +239,27 @@ class MT5IngestResponse(BaseModel):
     message: str = ""
 
 
+class MT5CredentialsIn(BaseModel):
+    server: str = Field(min_length=1, max_length=120)
+    login: str = Field(min_length=1, max_length=64)
+    # Omit to keep the stored password; send "" to clear it.
+    password: str | None = Field(default=None, max_length=200)
+
+    @field_validator("login", mode="before")
+    @classmethod
+    def _stringify_login(cls, value: Any) -> str:
+        return str(value)
+
+
+class MT5CredentialsOut(BaseModel):
+    """Never carries the password, only whether one is stored and usable."""
+
+    configured: bool
+    server: str
+    login: str
+    password_readable: bool
+
+
 class SyncStatus(BaseModel):
     account_id: int | None
     login: str | None
@@ -253,6 +274,8 @@ class SyncStatus(BaseModel):
     open_trades: int
     sync_mode: str
     bridge_reachable: bool | None = None
+    bridge_connected: bool | None = None
+    credentials_configured: bool = False
     message: str = ""
 
 

@@ -24,6 +24,7 @@ import { money, num, relative } from '../lib/format'
 import { PERIOD_OPTIONS } from '../lib/period'
 import type { Account, AppSettings, SyncStatus, SystemInfo, Tag } from '../lib/types'
 import { Button, Card, CardHeader, Field, SegmentedControl, Skeleton, Toggle } from '../components/ui'
+import { MT5Account } from '../components/MT5Account'
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: Palette },
@@ -532,58 +533,65 @@ function SyncSection() {
 
         <Field
           label="How deals reach TradeZulu"
-          hint="Push is the simplest and needs nothing exposed to the internet: the Expert Advisor inside your terminal calls this server."
+          hint="Account details is the simplest: you enter a server, an account number and an investor password once, and TradeZulu keeps itself up to date. It needs the mt5-bridge container, which runs a headless MetaTrader for you."
         >
           <SegmentedControl
             value={settings.mt5.sync_mode}
             onChange={(value) => void apply({ mt5: { sync_mode: value } })}
             options={[
-              { value: 'ea', label: 'Expert Advisor pushes' },
-              { value: 'bridge', label: 'Server pulls (bridge)' },
-              { value: 'off', label: 'Manual import only' },
+              { value: 'bridge', label: 'Account details' },
+              { value: 'ea', label: 'Expert Advisor' },
+              { value: 'off', label: 'Manual import' },
             ]}
           />
         </Field>
 
         {settings.mt5.sync_mode === 'bridge' && (
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <Field label="Bridge URL">
-              <input
-                className="tz-input"
-                defaultValue={settings.mt5.bridge_url}
-                onBlur={(event) => void apply({ mt5: { bridge_url: event.target.value } })}
-              />
-            </Field>
-            <Field label="History to pull on a full sync (days)">
-              <NumberField
-                value={settings.mt5.history_days_on_full_sync}
-                step={30}
-                onCommit={(value) => void apply({ mt5: { history_days_on_full_sync: value } })}
-              />
-            </Field>
-            <div className="sm:col-span-2">
-              <Toggle
-                label="Sync automatically when the app opens"
-                checked={settings.mt5.auto_sync_on_load}
-                onChange={(value) => void apply({ mt5: { auto_sync_on_load: value } })}
-              />
-              {status?.bridge_reachable === false && (
-                <p className="mt-1 flex items-center gap-1.5 text-sm text-[var(--tz-loss-text)]">
-                  <AlertTriangle size={14} /> {status.message || 'Bridge is not reachable'}
-                </p>
-              )}
-              {status?.bridge_reachable && (
-                <p className="mt-1 flex items-center gap-1.5 text-sm text-[var(--tz-gain-text)]">
-                  <Check size={14} /> Bridge is reachable
-                </p>
-              )}
+          <div className="mt-4 space-y-4">
+            <MT5Account status={status} />
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field
+                label="Terminal container URL"
+                hint="Where the headless MetaTrader lives. The default matches docker-compose.yml."
+              >
+                <input
+                  className="tz-input"
+                  defaultValue={settings.mt5.bridge_url}
+                  onBlur={(event) => void apply({ mt5: { bridge_url: event.target.value } })}
+                />
+              </Field>
+              <Field label="History to pull on a full sync (days)">
+                <NumberField
+                  value={settings.mt5.history_days_on_full_sync}
+                  step={30}
+                  onCommit={(value) => void apply({ mt5: { history_days_on_full_sync: value } })}
+                />
+              </Field>
             </div>
+
+            <Toggle
+              label="Sync automatically when the app opens"
+              description="Also refreshes in the background while the journal is open."
+              checked={settings.mt5.auto_sync_on_load}
+              onChange={(value) => void apply({ mt5: { auto_sync_on_load: value } })}
+            />
+
+            {status?.bridge_reachable && status.bridge_connected && (
+              <p className="flex items-center gap-1.5 text-sm text-[var(--tz-gain-text)]">
+                <Check size={14} /> Terminal is running and logged in.
+              </p>
+            )}
           </div>
         )}
 
         {settings.mt5.sync_mode === 'ea' && (
           <div className="mt-4 rounded-lg border border-[var(--tz-border)] bg-[var(--tz-surface-2)] p-4">
-            <p className="mb-3 text-sm font-medium">Set up the Expert Advisor</p>
+            <p className="mb-1 text-sm font-medium">Set up the Expert Advisor</p>
+            <p className="mb-3 text-sm text-[var(--tz-text-muted)]">
+              The alternative to entering account details: nothing is stored here, but a
+              MetaTrader terminal has to be running on a machine of yours.
+            </p>
             <ol className="list-decimal space-y-2 pl-5 text-sm text-[var(--tz-text-muted)]">
               <li>
                 Copy <code className="tz-code">mt5/TradeZuluSync.mq5</code> into

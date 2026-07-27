@@ -77,10 +77,11 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         },
     },
     "mt5": {
-        # ea      -> the Expert Advisor pushes to /api/mt5/ingest
-        # bridge  -> this server pulls from a MetaTrader5 bridge service
+        # bridge  -> this server logs a headless terminal in with your account
+        #            details and pulls deals (the default: nothing to install)
+        # ea      -> the TradeZuluSync Expert Advisor pushes to /api/mt5/ingest
         # off     -> manual import only
-        "sync_mode": "ea",
+        "sync_mode": "bridge",
         "bridge_url": "http://mt5-bridge:8080",
         "bridge_timeout_seconds": 60,
         "auto_sync_on_load": True,

@@ -1,6 +1,12 @@
 # TradeZuluSync
 
-The Expert Advisor that feeds your TradeZulu journal.
+An Expert Advisor that feeds your TradeZulu journal.
+
+**You probably do not need this.** TradeZulu's default is to sync with just a
+trade server, an account number and an investor password — see
+[`../docs/metatrader.md`](../docs/metatrader.md). Use this instead when you
+would rather no password were stored anywhere, and you already keep a terminal
+running.
 
 It reads deal history and, optionally, candles, and POSTs them to your journal.
 It never places, modifies or closes an order — there is no trading code in it at
