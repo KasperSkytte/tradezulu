@@ -2,7 +2,10 @@
 # with SQLite on a volume. No database server, no reverse proxy inside.
 
 # --- stage 1: build the frontend ------------------------------------------
-FROM node:24-alpine AS frontend
+# Pinned to the *build* platform: the output is platform-independent
+# JavaScript, so a multi-arch release does not need to run Vite and its Rust
+# native modules under QEMU emulation.
+FROM --platform=$BUILDPLATFORM node:24-alpine AS frontend
 
 WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json* ./

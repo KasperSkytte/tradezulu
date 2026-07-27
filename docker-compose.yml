@@ -7,9 +7,9 @@
 
 services:
   tradezulu:
-    # Published by GitHub Actions on every release.
-    image: ghcr.io/${TZ_IMAGE_OWNER:-kasper}/tradezulu:${TZ_IMAGE_TAG:-latest}
-    # Building locally instead:  docker compose build
+    # Built locally by default. Once the repository is on GitHub, a release
+    # publishes this same image and `docker compose pull` will fetch it.
+    image: ghcr.io/${TZ_IMAGE_OWNER:-local}/tradezulu:${TZ_IMAGE_TAG:-latest}
     build:
       context: .
       args:

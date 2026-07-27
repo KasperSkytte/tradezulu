@@ -37,16 +37,29 @@ const SECTIONS = [
 
 type SectionId = (typeof SECTIONS)[number]['id']
 
+function sectionFromHash(): SectionId | null {
+  const hash = window.location.hash.replace('#', '')
+  return SECTIONS.find((entry) => entry.id === hash)?.id ?? null
+}
+
 export function SettingsPage() {
-  const [section, setSection] = useState<SectionId>(() => {
-    const hash = window.location.hash.replace('#', '')
-    return (SECTIONS.find((entry) => entry.id === hash)?.id ?? 'general') as SectionId
-  })
+  const [section, setSection] = useState<SectionId>(() => sectionFromHash() ?? 'general')
   const { loading } = useSettings()
 
   useEffect(() => {
     window.history.replaceState(null, '', `#${section}`)
   }, [section])
+
+  // Links such as /settings#sync must land on the right section even when the
+  // page is already open, which is only a hash change and not a remount.
+  useEffect(() => {
+    const onHashChange = () => {
+      const next = sectionFromHash()
+      if (next) setSection(next)
+    }
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
 
   if (loading) return <Skeleton className="h-[70vh]" />
 
