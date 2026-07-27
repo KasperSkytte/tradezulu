@@ -47,6 +47,22 @@ if [ ! -d "${WINEPREFIX}/drive_c" ]; then
   wineserver -w
 fi
 
+# The /wine volume outlives the image, so a prefix built by one Wine version
+# gets handed to the next one on upgrade. Wine expects to be told about that:
+# without an update pass the prefix keeps the old built-in DLLs and registry,
+# and the failures that causes are silent and strange. Cheap when nothing
+# changed, so it runs whenever the recorded version does not match.
+wine_version="$(wine --version 2>/dev/null || echo unknown)"
+version_stamp="${WINEPREFIX}/.tradezulu-wine-version"
+if [ "$(cat "${version_stamp}" 2>/dev/null)" != "${wine_version}" ]; then
+  if [ -f "${version_stamp}" ]; then
+    log "Wine changed to ${wine_version}; updating the prefix"
+  fi
+  wineboot --update >/dev/null 2>&1 || true
+  wineserver -w
+  printf '%s' "${wine_version}" > "${version_stamp}" 2>/dev/null || true
+fi
+
 # Without this, a crashing Windows process opens winedbg and hangs forever
 # instead of dying — which would leave the container "up" but wedged, and
 # stop restart:unless-stopped from ever kicking in.
@@ -145,9 +161,13 @@ wine "${MT5_TERMINAL}" >/tmp/terminal.log 2>&1 &
 # The Python package reaches the terminal over a named pipe, so it has to be
 # genuinely running -- not merely spawned, and not a zombie.
 terminal_alive() {
-  pgrep -x terminal64.exe >/dev/null 2>&1 || return 1
+  # Match the *command line*, not the process name. Wine reports the running
+  # terminal with a comm of "main" while its args still say terminal64.exe, so
+  # pgrep -x finds nothing and a perfectly healthy terminal looks dead.
+  pid="$(pgrep -f 'terminal64\.exe' 2>/dev/null | head -n1)"
+  [ -n "${pid}" ] || return 1
   # A process that exited but has not been reaped is state Z and no use to us.
-  [ "$(ps -o stat= -C terminal64.exe 2>/dev/null | tr -d ' ' | head -c1)" != "Z" ]
+  [ "$(ps -o stat= -p "${pid}" 2>/dev/null | tr -d ' ' | head -c1)" != "Z" ]
 }
 
 for _ in $(seq 1 45); do
@@ -157,7 +177,8 @@ done
 
 if ! terminal_alive; then
   log "the terminal started and exited immediately."
-  log "This is usually Wine being too old for your MetaTrader build."
+  log "Wine too old for this MetaTrader build is the usual cause; the"
+  log "terminal needs bcryptprimitives.dll, which arrived in Wine 9."
   log "Wine in this image: $(wine --version 2>/dev/null || echo unknown)"
   if [ -s /tmp/terminal.log ]; then
     log "last lines of the terminal log:"

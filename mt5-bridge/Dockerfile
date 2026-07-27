@@ -7,6 +7,8 @@
 
 FROM debian:bookworm-slim
 
+ARG WINE_VERSION=10.0.0.0~bookworm-1
+
 ENV DEBIAN_FRONTEND=noninteractive \
     WINEPREFIX=/wine \
     WINEARCH=win64 \
@@ -17,8 +19,16 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     BRIDGE_PORT=8080
 
-# Debian's own Wine is 8.0, which current MetaTrader builds start on and then
-# exit from silently. WineHQ's package is the one that actually runs it.
+# Wine 10.0 specifically, and the pin is load-bearing:
+#
+#   * Debian's 8.0 installs MetaTrader fine but cannot run it -- terminal64.exe
+#     imports bcryptprimitives.dll, which Wine only grew in 9.x, so it dies at
+#     load time with status c0000135 and no visible error.
+#   * WineHQ's current 11.0 runs the terminal perfectly but its *installer*
+#     hangs for ever on a pipe read, having downloaded nothing.
+#
+# 10.0 is the one version verified to do both. Check both halves before
+# moving it: install from scratch, and confirm the terminal stays up.
 RUN dpkg --add-architecture i386 && \
     apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates curl gnupg && \
@@ -28,15 +38,26 @@ RUN dpkg --add-architecture i386 && \
     curl -fsSL -o /etc/apt/sources.list.d/winehq-bookworm.sources \
         https://dl.winehq.org/wine-builds/debian/dists/bookworm/winehq-bookworm.sources && \
     apt-get update && \
-    apt-get install -y --install-recommends winehq-stable && \
+    apt-get install -y --install-recommends \
+        "winehq-stable=${WINE_VERSION}" \
+        "wine-stable=${WINE_VERSION}" \
+        "wine-stable-amd64=${WINE_VERSION}" \
+        "wine-stable-i386:i386=${WINE_VERSION}" && \
     apt-get install -y --no-install-recommends \
+        cabextract \
         procps \
         unzip \
+        winbind \
         x11vnc \
         xauth \
         xvfb \
     && apt-get purge -y gnupg && apt-get install -y --no-install-recommends curl && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
+
+# winbind supplies ntlm_auth, which Wine shells out to for NTLM. Without it
+# anything behind an authenticating proxy hangs rather than failing, and the
+# symptom looks nothing like the cause. cabextract lets Wine unpack the
+# cabinets some installers ship.
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY bridge.py /opt/bridge/bridge.py
