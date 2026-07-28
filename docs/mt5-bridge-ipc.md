@@ -69,6 +69,51 @@ Given a working terminal and numpy pinned, its own environment — Python 3.9.13
 
 So the fault is not this image.
 
+## Round two: what the terminal actually does
+
+Running it as a **non-root user** is required and was missed for a long time.
+As root the journal stops at `MCP started` and the terminal never touches the
+network. As an ordinary user it goes further and discovers MQL5 Cloud servers,
+which is real network activity:
+
+```
+Tester  MQL5 Cloud Server "MQL5 Cloud Europe 3: 10 gbit" found
+Startup successfully initialized from start config ".../login.ini"
+```
+
+Three more requirements found by comparing against
+`bahadirumutiscimen/silicon-metatrader5`:
+
+* **a window manager.** On bare Xvfb the terminal creates *no windows at all*.
+  With openbox it builds its real main window. 0 windows to 40.
+* **vcrun2019** via winetricks. The package hunts for `VCRUNTIME140_1.dll`.
+* **an `[Expert]` section** in a startup ini with `AllowAlgoTrading=1` and
+  `EnableAlgoTrading=1`, plus `/config:` to apply it.
+
+With every one of those in place the terminal is genuinely healthy: build 6069
+branded for the broker, config accepted, credentials written to `accounts.dat`,
+one clean instance.
+
+And `mt5.initialize()` still returns `IPC timeout`, on both a 64-bit package
+(5.0.5735) and the 32-bit `5.0.36` the reference pins.
+
+## The specific thing that is wrong
+
+The terminal never opens a Python API endpoint, and never dials a broker:
+
+```
+listening TCP ports in the container:  22346      # MCP only
+established outbound connections:      0
+```
+
+`22346` is the terminal's own control port, not the API. So there is nothing
+for the package to connect to — which is exactly what an IPC timeout is. The
+journal ends at `MCP started` every time, with no authorisation line, even
+though the credentials were accepted and saved.
+
+That reframes the problem: it is not that the API cannot be reached, it is that
+the terminal never starts serving it.
+
 ## Where that leaves it
 
 Every known configuration fails identically on this host:
