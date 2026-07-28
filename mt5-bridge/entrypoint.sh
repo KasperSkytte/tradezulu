@@ -185,6 +185,17 @@ if [ ! -f "${MT5_TERMINAL}" ]; then
   fi
   wineserver -w
   rm -f "${WINEPREFIX}/mt5setup.exe"
+
+  # Look again. A broker's installer puts the terminal under its own name, so
+  # the path guessed before the install is the wrong one to judge it by --
+  # which previously reported "no terminal to run" over a perfectly good
+  # install sitting right next to it.
+  installed="$(find_terminal || true)"
+  if [ -n "${installed}" ]; then
+    MT5_TERMINAL="${installed}"
+    MT5_DIR="$(dirname "${installed}")"
+    log "installed to ${MT5_DIR}"
+  fi
 fi
 
 if [ ! -f "${MT5_TERMINAL}" ]; then
