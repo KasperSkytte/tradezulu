@@ -175,10 +175,16 @@ if ! wine "${WINE_PYTHON}" -c "import MetaTrader5, numpy" >/dev/null 2>&1; then
   die "python stack is not usable"
 fi
 
-log "launching the terminal"
-# Keep the output: a terminal that dies on startup is otherwise completely
-# silent, and the only symptom is an IPC timeout a minute later.
-wine "${MT5_TERMINAL}" >/tmp/terminal.log 2>&1 &
+# Deliberately *not* launching the terminal here.
+#
+# mt5.initialize(path=...) starts the terminal itself, and it starts it with
+# /portable -- a different instance, with a different data directory, from one
+# launched plainly. Starting our own first left two terminals competing, and
+# the API talked to neither. So the probe below owns the terminal: it is both
+# what starts it and what decides it is ready.
+export MT5_TERMINAL_PATH="${MT5_TERMINAL_PATH:-C:\\Program Files\\MetaTrader 5\\terminal64.exe}"
+
+log "starting the terminal through the Python API"
 
 # The Python package reaches the terminal over a named pipe, so it has to be
 # genuinely running -- not merely spawned, and not a zombie.
@@ -188,11 +194,16 @@ wine "${MT5_TERMINAL}" >/tmp/terminal.log 2>&1 &
 # terminal the Python API cannot reach, and hides the only fault that matters.
 # So ask the API the actual question.
 cat > /tmp/mt5_ready.py <<'PROBE'
+import os
 import sys
 
 import MetaTrader5 as mt5
 
-if mt5.initialize():
+# A cold terminal recompiles its bundled MQL5 examples before it answers --
+# two to three minutes on first run -- so the timeout has to outlast that or
+# every attempt fails for a reason that has nothing to do with the setup.
+path = os.environ.get("MT5_TERMINAL_PATH", "")
+if mt5.initialize(path, timeout=300000) if path else mt5.initialize(timeout=300000):
     info = mt5.terminal_info()
     print(f"ready build={getattr(info, 'build', '?')}")
     sys.exit(0)
@@ -206,13 +217,15 @@ terminal_alive() {
 
 # Each probe starts a Windows Python under Wine, so it is expensive: a
 # handful of patient attempts beats dozens of impatient ones.
-for _ in $(seq 1 12); do
+# The probe itself waits up to five minutes, so a couple of attempts is
+# plenty -- the first one does the launching and the waiting.
+for _ in $(seq 1 3); do
   terminal_alive && break
-  sleep 15
+  sleep 5
 done
 
 if ! terminal_alive; then
-  log "the terminal is running but its API never answered."
+  log "the terminal never became reachable through the Python API."
   log "Wine too old for this MetaTrader build is the usual cause; the"
   log "terminal needs bcryptprimitives.dll, which arrived in Wine 9."
   log "Wine in this image: $(wine --version 2>/dev/null || echo unknown)"
@@ -224,13 +237,24 @@ if ! terminal_alive; then
   fi
   log "Its last word on the matter:"
   log "  $(wine "${WINE_PYTHON}" 'Z:\\tmp\\mt5_ready.py' 2>&1 | tail -1)"
+  log ""
+  log "Ruled out already, so do not spend time on these again:"
+  log "  * Docker networking. A Windows process under Wine connects to"
+  log "    127.0.0.1 fine, and the terminal's own MCP port is listening."
+  log "  * The terminal being unhealthy. It logs 'MCP started', compiles its"
+  log "    131 bundled MQL5 files and runs LiveUpdate."
+  log "  * Racing the first-run compile. That blocks the API for two to three"
+  log "    minutes; the probe above already waits five."
+  log "  * Wine's Windows version. It is set to 10, as MetaTrader expects."
+  log "Still suspect: Wine's named-pipe support, which is what the Python"
+  log "package uses, and the package version (working setups elsewhere pin an"
+  log "old one against Python 3.9; this image has 3.11 and the current wheel)."
   die "the terminal is up but unreachable"
 fi
 
 log "terminal is up; giving it a moment to open its IPC pipe"
 sleep 15
 
-export MT5_TERMINAL_PATH="${MT5_TERMINAL_PATH:-C:\\Program Files\\MetaTrader 5\\terminal64.exe}"
 
 log "starting the bridge on port ${BRIDGE_PORT}"
 exec wine "${WINE_PYTHON}" "Z:\\opt\\bridge\\bridge.py"
