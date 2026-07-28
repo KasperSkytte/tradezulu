@@ -15,11 +15,13 @@ PYTHON_VERSION="${WINE_PYTHON_VERSION:-3.11.9}"
 # implement — importing it aborts the process before the bridge ever starts.
 # 1.26.4 is the last 1.x release and satisfies MetaTrader5's numpy>=1.7.
 NUMPY_SPEC="${WINE_NUMPY_SPEC:-numpy==1.26.4}"
-PYTHON_ZIP_URL="https://www.python.org/ftp/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-embed-amd64.zip"
-GET_PIP_URL="https://bootstrap.pypa.io/get-pip.py"
+PYTHON_EXE_URL="${WINE_PYTHON_URL:-https://www.python.org/ftp/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-amd64.exe}"
+WINE_MONO_URL="${WINE_MONO_URL:-https://dl.winehq.org/wine/wine-mono/10.3.0/wine-mono-10.3.0-x86.msi}"
 MT5_SETUP_URL="${MT5_SETUP_URL:-https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe}"
 
 PYTHON_DIR="${WINEPREFIX}/drive_c/Python"
+PYTHON_DIR_WIN="C:\\Python"
+WINE_PYTHON_UNIX="${PYTHON_DIR}/python.exe"
 WINE_PYTHON="${PYTHON_DIR}/python.exe"
 MT5_DIR="${WINEPREFIX}/drive_c/Program Files/MetaTrader 5"
 MT5_TERMINAL="${MT5_DIR}/terminal64.exe"
@@ -63,6 +65,12 @@ if [ "$(cat "${version_stamp}" 2>/dev/null)" != "${wine_version}" ]; then
   printf '%s' "${wine_version}" > "${version_stamp}" 2>/dev/null || true
 fi
 
+# Current MetaTrader builds expect Windows 10. Wine still reports 7 by default,
+# and the terminal starts either way -- it just never opens its IPC pipe, which
+# is a failure with no error attached to it.
+wine reg add 'HKEY_CURRENT_USER\Software\Wine' /v Version /t REG_SZ /d win10 /f \
+  >/dev/null 2>&1 || true
+
 # Without this, a crashing Windows process opens winedbg and hangs forever
 # instead of dying — which would leave the container "up" but wedged, and
 # stop restart:unless-stopped from ever kicking in.
@@ -73,25 +81,39 @@ wine reg add 'HKEY_CURRENT_USER\Software\Wine\WineDbg' \
 # The embeddable zip is used rather than the full installer: the installer is
 # an MSI wrapper that frequently fails under Wine, while the zip is just files.
 if [ ! -f "${WINE_PYTHON}" ]; then
-  log "installing Windows Python ${PYTHON_VERSION}"
-  mkdir -p "${PYTHON_DIR}"
-  curl -fsSL -o /tmp/python.zip "${PYTHON_ZIP_URL}" || die "could not download Python"
-  busybox unzip -q -o /tmp/python.zip -d "${PYTHON_DIR}" 2>/dev/null || \
-    unzip -q -o /tmp/python.zip -d "${PYTHON_DIR}" || die "could not unpack Python"
-  rm -f /tmp/python.zip
-
-  # The embeddable build disables site-packages by default; turn it back on so
-  # pip can install into it.
-  for pth in "${PYTHON_DIR}"/python*._pth; do
-    [ -f "$pth" ] || continue
-    sed -i 's/^#import site/import site/' "$pth"
-    grep -q '^Lib\\site-packages' "$pth" || echo 'Lib\site-packages' >> "$pth"
-  done
-
-  log "bootstrapping pip"
-  curl -fsSL -o "${PYTHON_DIR}/get-pip.py" "${GET_PIP_URL}" || die "could not download get-pip"
-  wine "${WINE_PYTHON}" 'C:\Python\get-pip.py' --no-warn-script-location >/dev/null 2>&1
+  # A *real* install, not the embeddable zip. The embeddable build has no
+  # registry entries, no site machinery and its own ._pth path rules, and the
+  # MetaTrader5 package's IPC layer does not come up under it -- the terminal
+  # runs and mt5.initialize() simply returns "IPC send failed" with nothing
+  # else to go on. Every working setup in the wild uses the full installer.
+  log "installing Windows Python ${PYTHON_VERSION} (full installer)"
+  curl -fsSL -o /tmp/python-setup.exe "${PYTHON_EXE_URL}" || die "could not download Python"
+  timeout "${PYTHON_INSTALL_TIMEOUT:-600}" wine /tmp/python-setup.exe /quiet \
+    InstallAllUsers=1 PrependPath=1 Include_test=0 "TargetDir=${PYTHON_DIR_WIN}" \
+    >/tmp/python-setup.log 2>&1 || true
   wineserver -w
+  rm -f /tmp/python-setup.exe
+
+  if [ ! -f "${WINE_PYTHON_UNIX}" ]; then
+    log "the Python installer did not produce ${PYTHON_DIR_WIN}\\python.exe"
+    [ -s /tmp/python-setup.log ] && tail -n 10 /tmp/python-setup.log | \
+      while IFS= read -r line; do log "  ${line}"; done
+    die "no Python to run the bridge with"
+  fi
+
+  log "upgrading pip"
+  wine "${WINE_PYTHON}" -m pip install --upgrade --no-cache-dir pip >/dev/null 2>&1
+  wineserver -w
+fi
+
+# Wine's Mono stand-in for .NET. The terminal installer and some broker builds
+# expect it to exist; without it they fail in ways that look like a hang.
+if [ ! -d "${WINEPREFIX}/drive_c/windows/mono" ] && [ -n "${WINE_MONO_URL}" ]; then
+  log "installing wine-mono"
+  curl -fsSL -o /tmp/mono.msi "${WINE_MONO_URL}" && \
+    WINEDLLOVERRIDES=mscoree=d wine msiexec /i /tmp/mono.msi /qn >/dev/null 2>&1 || true
+  wineserver -w
+  rm -f /tmp/mono.msi
 fi
 
 if ! wine "${WINE_PYTHON}" -c "import MetaTrader5, numpy" >/dev/null 2>&1; then
@@ -160,23 +182,37 @@ wine "${MT5_TERMINAL}" >/tmp/terminal.log 2>&1 &
 
 # The Python package reaches the terminal over a named pipe, so it has to be
 # genuinely running -- not merely spawned, and not a zombie.
+# Readiness is *not* "a process exists". Wine shows the launcher command line
+# immediately, so a process check passes about a second after launch and keeps
+# passing while the terminal fails to come up -- which reports success for a
+# terminal the Python API cannot reach, and hides the only fault that matters.
+# So ask the API the actual question.
+cat > /tmp/mt5_ready.py <<'PROBE'
+import sys
+
+import MetaTrader5 as mt5
+
+if mt5.initialize():
+    info = mt5.terminal_info()
+    print(f"ready build={getattr(info, 'build', '?')}")
+    sys.exit(0)
+print(f"not ready {mt5.last_error()}")
+sys.exit(1)
+PROBE
+
 terminal_alive() {
-  # Match the *command line*, not the process name. Wine reports the running
-  # terminal with a comm of "main" while its args still say terminal64.exe, so
-  # pgrep -x finds nothing and a perfectly healthy terminal looks dead.
-  pid="$(pgrep -f 'terminal64\.exe' 2>/dev/null | head -n1)"
-  [ -n "${pid}" ] || return 1
-  # A process that exited but has not been reaped is state Z and no use to us.
-  [ "$(ps -o stat= -p "${pid}" 2>/dev/null | tr -d ' ' | head -c1)" != "Z" ]
+  wine "${WINE_PYTHON}" 'Z:\tmp\mt5_ready.py' 2>/dev/null | grep -q '^ready'
 }
 
-for _ in $(seq 1 45); do
+# Each probe starts a Windows Python under Wine, so it is expensive: a
+# handful of patient attempts beats dozens of impatient ones.
+for _ in $(seq 1 12); do
   terminal_alive && break
-  sleep 2
+  sleep 15
 done
 
 if ! terminal_alive; then
-  log "the terminal started and exited immediately."
+  log "the terminal is running but its API never answered."
   log "Wine too old for this MetaTrader build is the usual cause; the"
   log "terminal needs bcryptprimitives.dll, which arrived in Wine 9."
   log "Wine in this image: $(wine --version 2>/dev/null || echo unknown)"
@@ -186,7 +222,9 @@ if ! terminal_alive; then
   else
     log "the terminal produced no output at all."
   fi
-  die "terminal will not stay running"
+  log "Its last word on the matter:"
+  log "  $(wine "${WINE_PYTHON}" 'Z:\\tmp\\mt5_ready.py' 2>&1 | tail -1)"
+  die "the terminal is up but unreachable"
 fi
 
 log "terminal is up; giving it a moment to open its IPC pipe"
