@@ -60,7 +60,7 @@ RUN dpkg --add-architecture i386 && \
 # cabinets some installers ship.
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-COPY bridge.py /opt/bridge/bridge.py
+COPY bridge.py pool.py worker.py /opt/bridge/
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 VOLUME ["/wine"]

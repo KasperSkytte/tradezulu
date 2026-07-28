@@ -15,12 +15,25 @@ from .config import settings
 from .db import init_db
 from .routers import accounts, auth, imports, mt5, stats, trades
 from .routers import settings as settings_router
+from .services.copier.service import CopierLoop
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level, logging.INFO),
     format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
 )
 log = logging.getLogger("tradezulu")
+
+
+copier_loop: CopierLoop | None = None
+
+
+def _bridge_url() -> str:
+    """The bridge URL, read fresh each pass so a settings change takes hold."""
+    from .db import SessionLocal
+    from .services.appsettings import get_app_settings
+
+    with SessionLocal() as db:
+        return str(get_app_settings(db)["mt5"].get("bridge_url", "")).strip()
 
 
 @asynccontextmanager
@@ -40,8 +53,16 @@ async def lifespan(_app: FastAPI):
         from .demo import seed_demo_data
 
         seed_demo_data()
+    # The copier only does work when a slave is enabled, so starting it
+    # unconditionally costs a sleeping thread and nothing else.
+    global copier_loop
+    copier_loop = CopierLoop(_bridge_url, settings.bridge_token)
+    copier_loop.start()
+
     log.info("TradeZulu %s ready (data dir: %s)", settings.version, settings.data_dir)
     yield
+    if copier_loop is not None:
+        copier_loop.stop()
 
 
 app = FastAPI(

@@ -20,10 +20,18 @@ than merely intended.
 from __future__ import annotations
 
 import json
+import re
 import logging
 import os
 import sys
 import threading
+
+# The embeddable Python we run under Wine ships a ._pth file, which turns off
+# the usual "add the script's own directory to sys.path". Without this the
+# sibling modules below are simply not importable.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from pool import WorkerError, WorkerPool  # noqa: E402 - must follow the path fix
 import time
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -279,6 +287,21 @@ def candles_payload(symbol: str, timeframe: str, from_ts: int, to_ts: int) -> li
 # --- HTTP -------------------------------------------------------------------
 
 
+# --- multi-account -------------------------------------------------------
+#
+# The journal needs one terminal; the copier needs one per slave. Rather than
+# two bridges, the single-account routes above stay exactly as they were and
+# the pool below serves everything under /accounts/<id>/.
+
+pool = WorkerPool()
+
+
+def _account_route(path: str) -> tuple[str, str] | None:
+    """Split /accounts/<id>/<action> into its parts."""
+    match = re.match(r"^/accounts/([^/]+)/([a-z_]+)$", path)
+    return (match.group(1), match.group(2)) if match else None
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -337,10 +360,63 @@ class Handler(BaseHTTPRequestHandler):
             self._respond({"ok": True})
             return
 
+        if path == "/accounts/configure":
+            # TradeZulu owns the account list; the bridge is told what to run.
+            body = self._read_json()
+            try:
+                self._respond({"ok": True, **pool.configure(body.get("accounts") or [])})
+            except Exception as exc:  # noqa: BLE001 - report, never crash the bridge
+                self._respond({"ok": False, "error": str(exc)}, 500)
+            return
+
+        route = _account_route(path)
+        if route:
+            account_id, action = route
+            if action not in {"connect", "open", "close", "modify", "restart"}:
+                self._respond({"error": "not found"}, 404)
+                return
+            try:
+                worker = pool.get(account_id)
+                if action == "restart":
+                    worker.restart()
+                    self._respond({"ok": True})
+                    return
+                self._respond({"ok": True, "result": worker.call(action, **self._read_json())})
+            except WorkerError as exc:
+                self._respond({"ok": False, "error": str(exc)}, 502)
+            except Exception as exc:  # noqa: BLE001
+                self._respond({"ok": False, "error": str(exc)}, 500)
+            return
+
         self._respond({"error": "not found"}, 404)
 
     def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler naming
         if not self._authorised():
+            return
+
+        if urlparse(self.path).path == "/accounts":
+            self._respond({"ok": True, "workers": pool.describe()})
+            return
+
+        route = _account_route(urlparse(self.path).path)
+        if route:
+            account_id, action = route
+            if action not in {"account", "positions", "symbols", "symbol_spec", "ping"}:
+                self._respond({"error": "not found"}, 404)
+                return
+            args = {}
+            if action == "symbol_spec":
+                symbol = parse_qs(urlparse(self.path).query).get("symbol", [""])[0]
+                if not symbol:
+                    self._respond({"error": "symbol is required"}, 400)
+                    return
+                args["symbol"] = symbol
+            try:
+                self._respond({"ok": True, "result": pool.get(account_id).call(action, **args)})
+            except WorkerError as exc:
+                self._respond({"ok": False, "error": str(exc)}, 502)
+            except Exception as exc:  # noqa: BLE001
+                self._respond({"ok": False, "error": str(exc)}, 500)
             return
 
         url = urlparse(self.path)
