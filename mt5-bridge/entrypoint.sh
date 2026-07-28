@@ -15,8 +15,17 @@ PYTHON_VERSION="${WINE_PYTHON_VERSION:-3.11.9}"
 # implement — importing it aborts the process before the bridge ever starts.
 # 1.26.4 is the last 1.x release and satisfies MetaTrader5's numpy>=1.7.
 NUMPY_SPEC="${WINE_NUMPY_SPEC:-numpy==1.26.4}"
+# Pinnable: the package's IPC layer is the part Wine struggles with, so being
+# able to move between wheel versions without rebuilding matters.
+MT5_PACKAGE_SPEC="${MT5_PACKAGE_SPEC:-MetaTrader5}"
 PYTHON_EXE_URL="${WINE_PYTHON_URL:-https://www.python.org/ftp/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-amd64.exe}"
 WINE_MONO_URL="${WINE_MONO_URL:-https://dl.winehq.org/wine/wine-mono/10.3.0/wine-mono-10.3.0-x86.msi}"
+# MetaQuotes serves every broker's build from one predictable shape:
+#   https://download.terminal.free/cdn/web/<company.path>/mt5/<name>setup.exe
+# e.g. vantage.markets.pty/mt5/vantagemarkets5setup.exe. A branded build
+# installs under its own name in Program Files, which is why the terminal is
+# discovered below rather than assumed. Brokers who ship no build of their own
+# (Falcon, for one) work with the generic default.
 MT5_SETUP_URL="${MT5_SETUP_URL:-https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe}"
 
 PYTHON_DIR="${WINEPREFIX}/drive_c/Python"
@@ -25,6 +34,15 @@ WINE_PYTHON_UNIX="${PYTHON_DIR}/python.exe"
 WINE_PYTHON="${PYTHON_DIR}/python.exe"
 MT5_DIR="${WINEPREFIX}/drive_c/Program Files/MetaTrader 5"
 MT5_TERMINAL="${MT5_DIR}/terminal64.exe"
+
+# A broker's own build installs under its own name, so the default above is
+# only a starting guess; anything already installed wins.
+existing_terminal="$(find "${WINEPREFIX}/drive_c/Program Files" -maxdepth 2 \
+  -name terminal64.exe 2>/dev/null | head -n1)"
+if [ -n "${existing_terminal}" ]; then
+  MT5_TERMINAL="${existing_terminal}"
+  MT5_DIR="$(dirname "${existing_terminal}")"
+fi
 
 log() { printf '%s  mt5-bridge: %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"; }
 die() { log "ERROR: $*"; exit 1; }
@@ -117,9 +135,9 @@ if [ ! -d "${WINEPREFIX}/drive_c/windows/mono" ] && [ -n "${WINE_MONO_URL}" ]; t
 fi
 
 if ! wine "${WINE_PYTHON}" -c "import MetaTrader5, numpy" >/dev/null 2>&1; then
-  log "installing the MetaTrader5 python package (with ${NUMPY_SPEC})"
+  log "installing ${MT5_PACKAGE_SPEC} (with ${NUMPY_SPEC})"
   wine "${WINE_PYTHON}" -m pip install --no-cache-dir --no-warn-script-location \
-    "${NUMPY_SPEC}" MetaTrader5 \
+    "${NUMPY_SPEC}" "${MT5_PACKAGE_SPEC}" \
     || die "could not install the MetaTrader5 package"
   wineserver -w
 fi
@@ -182,7 +200,22 @@ fi
 # launched plainly. Starting our own first left two terminals competing, and
 # the API talked to neither. So the probe below owns the terminal: it is both
 # what starts it and what decides it is ready.
-export MT5_TERMINAL_PATH="${MT5_TERMINAL_PATH:-C:\\Program Files\\MetaTrader 5\\terminal64.exe}"
+# Broker builds do not install to "MetaTrader 5" -- Vantage's lands in
+# "Vantage Markets MT5 Terminal", and every broker picks its own name. So find
+# the terminal rather than assuming where it is.
+if [ -z "${MT5_TERMINAL_PATH:-}" ]; then
+  found="$(find "${WINEPREFIX}/drive_c/Program Files" -maxdepth 2 -name terminal64.exe \
+           2>/dev/null | head -n1)"
+  if [ -n "${found}" ]; then
+    # /wine/drive_c/X/terminal64.exe -> C:\X\terminal64.exe
+    rest="${found#"${WINEPREFIX}/drive_c/"}"
+    MT5_TERMINAL_PATH="C:\\$(printf '%s' "${rest}" | tr '/' '\\')"
+    log "found the terminal at ${MT5_TERMINAL_PATH}"
+  else
+    MT5_TERMINAL_PATH="C:\\Program Files\\MetaTrader 5\\terminal64.exe"
+  fi
+fi
+export MT5_TERMINAL_PATH
 
 log "starting the terminal through the Python API"
 
