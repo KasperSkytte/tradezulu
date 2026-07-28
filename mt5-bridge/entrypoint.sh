@@ -58,6 +58,19 @@ log "starting virtual display"
 Xvfb :99 -screen 0 1280x1024x24 -nolisten tcp &
 sleep 2
 
+# A window manager, and it is load-bearing rather than cosmetic. On a bare X
+# server the terminal creates *no windows at all* and stalls right after it
+# logs "MCP started"; with a window manager running it builds its real main
+# window ("MetaTrader 5 - Netting - EURUSD,H1") and carries on. Nothing about
+# that is obvious from any error, because there isn't one.
+if command -v openbox >/dev/null 2>&1; then
+  openbox >/tmp/openbox.log 2>&1 &
+  sleep 2
+  log "window manager running"
+else
+  log "no window manager found; the terminal may never open its windows"
+fi
+
 if [ "${ENABLE_VNC:-0}" = "1" ]; then
   # Escape hatch: some brokers pop a dialog on first login, and a few require
   # confirming the terminal by hand once. Connect to :5900 to deal with it.
@@ -153,7 +166,7 @@ if [ ! -f "${MT5_TERMINAL}" ]; then
   log "downloading MetaTrader 5"
   log "  (MetaQuotes does not allow redistributing it, so it is fetched here"
   log "   rather than baked into the image)"
-  curl -fsSL -o /tmp/mt5setup.exe "${MT5_SETUP_URL}" || die "could not download MetaTrader"
+  curl -fsSL -o "${WINEPREFIX}/mt5setup.exe" "${MT5_SETUP_URL}" || die "could not download MetaTrader"
 
   # /auto installs without the wizard. It exits non-zero on some builds even
   # when it worked, so the file check below is what actually decides.
@@ -164,14 +177,14 @@ if [ ! -f "${MT5_TERMINAL}" ]; then
   # healthy-ish, which is the worst possible failure mode.
   install_timeout="${MT5_INSTALL_TIMEOUT:-600}"
   log "running the installer (up to ${install_timeout}s)"
-  timeout "${install_timeout}" wine /tmp/mt5setup.exe /auto >/tmp/mt5setup.log 2>&1 || true
+  timeout "${install_timeout}" wine "${WINEPREFIX}/mt5setup.exe" /auto >/tmp/mt5setup.log 2>&1 || true
   if [ ! -f "${MT5_TERMINAL}" ]; then
     log "installer did not finish within ${install_timeout}s; giving it a moment to settle"
     wineserver -k >/dev/null 2>&1 || true
     sleep 5
   fi
   wineserver -w
-  rm -f /tmp/mt5setup.exe
+  rm -f "${WINEPREFIX}/mt5setup.exe"
 fi
 
 if [ ! -f "${MT5_TERMINAL}" ]; then

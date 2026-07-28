@@ -45,6 +45,7 @@ RUN dpkg --add-architecture i386 && \
         "wine-stable-i386:i386=${WINE_VERSION}" && \
     apt-get install -y --no-install-recommends \
         cabextract \
+        openbox \
         procps \
         unzip \
         winbind \
@@ -54,6 +55,10 @@ RUN dpkg --add-architecture i386 && \
     && apt-get purge -y gnupg && apt-get install -y --no-install-recommends curl && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
+# openbox is not decoration: with a bare X server and no window manager the
+# terminal creates zero windows and stalls after "MCP started". With one it
+# builds its real main window and gets much further.
+#
 # winbind supplies ntlm_auth, which Wine shells out to for NTLM. Without it
 # anything behind an authenticating proxy hangs rather than failing, and the
 # symptom looks nothing like the cause. cabextract lets Wine unpack the
