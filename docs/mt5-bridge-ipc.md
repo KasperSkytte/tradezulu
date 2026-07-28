@@ -114,6 +114,27 @@ though the credentials were accepted and saved.
 That reframes the problem: it is not that the API cannot be reached, it is that
 the terminal never starts serving it.
 
+## mt5linux, tested end to end
+
+`mt5linux` is the package most often recommended for this, so it was set up
+exactly as documented: `MetaTrader5`, `rpyc` and `mt5linux` installed into the
+Wine Python, the server started inside Wine, and the client run from Linux.
+
+```
+server started on [0.0.0.0]:18812        # inside Wine
+client connected to the wine-side server  # from Linux
+INIT False (-10005, 'IPC timeout')
+```
+
+It works perfectly as a transport — the Linux client reaches the Wine-side
+Python and calls into it. But `mt5linux` is an RPyC wrapper around the same
+`MetaTrader5.initialize()`, so it inherits the same failure exactly. Tested
+both bare and with an explicit terminal path plus credentials.
+
+This is worth being clear about: mt5linux solves *calling MT5 from Linux
+Python*, which the bridge here already solved. It does not solve the terminal
+declining to serve its API, which is the actual fault.
+
 ## Where that leaves it
 
 Every known configuration fails identically on this host:
