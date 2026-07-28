@@ -36,9 +36,15 @@ MT5_DIR="${WINEPREFIX}/drive_c/Program Files/MetaTrader 5"
 MT5_TERMINAL="${MT5_DIR}/terminal64.exe"
 
 # A broker's own build installs under its own name, so the default above is
-# only a starting guess; anything already installed wins.
-existing_terminal="$(find "${WINEPREFIX}/drive_c/Program Files" -maxdepth 2 \
-  -name terminal64.exe 2>/dev/null | head -n1)"
+# only a starting guess; anything already installed wins. On a fresh volume
+# there is no prefix yet, hence the guard -- without it `find` fails, and
+# `set -e` kills the script before it has logged a single line.
+find_terminal() {
+  [ -d "${WINEPREFIX}/drive_c/Program Files" ] || return 0
+  find "${WINEPREFIX}/drive_c/Program Files" -maxdepth 2 -name terminal64.exe \
+    2>/dev/null | head -n1
+}
+existing_terminal="$(find_terminal || true)"
 if [ -n "${existing_terminal}" ]; then
   MT5_TERMINAL="${existing_terminal}"
   MT5_DIR="$(dirname "${existing_terminal}")"
@@ -204,8 +210,7 @@ fi
 # "Vantage Markets MT5 Terminal", and every broker picks its own name. So find
 # the terminal rather than assuming where it is.
 if [ -z "${MT5_TERMINAL_PATH:-}" ]; then
-  found="$(find "${WINEPREFIX}/drive_c/Program Files" -maxdepth 2 -name terminal64.exe \
-           2>/dev/null | head -n1)"
+  found="$(find_terminal || true)"
   if [ -n "${found}" ]; then
     # /wine/drive_c/X/terminal64.exe -> C:\X\terminal64.exe
     rest="${found#"${WINEPREFIX}/drive_c/"}"
