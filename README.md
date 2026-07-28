@@ -107,6 +107,13 @@ MetaTrader's protocol is proprietary, so a real terminal has to run somewhere �
 the `mt5-bridge` container is that terminal, headless. Its first boot downloads
 MetaTrader and takes 5–15 minutes; after that it starts in seconds.
 
+> **The bridge does not currently work.** The terminal runs, but MetaTrader's
+> Python API cannot reach it under Wine — `mt5.initialize()` returns an IPC
+> timeout. Published reference images fail the same way on the same machine, so
+> it is not specific to this one. Use the Expert Advisor below until it is
+> fixed; what was tried is written up in
+> [docs/mt5-bridge-ipc.md](docs/mt5-bridge-ipc.md).
+
 For the journal, use the **investor password**: it is read-only, so TradeZulu
 cannot trade your account even by accident. Copying to a slave account does
 need that account's full password, which is why slaves stay in dry-run until
