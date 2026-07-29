@@ -135,6 +135,54 @@ This is worth being clear about: mt5linux solves *calling MT5 from Linux
 Python*, which the bridge here already solved. It does not solve the terminal
 declining to serve its API, which is the actual fault.
 
+## The terminal never authorises, which is upstream of everything
+
+A clean container, fresh prefix, generic build, window manager, `-ac` on the X
+server, Windows 10 mode, the account supplied by startup ini:
+
+```
+Startup   successfully initialized from start config "...\acct.ini"
+Terminal  MetaTrader 5 x64 build 6070 started
+MCP       started on 127.0.0.1:22346
+Tester    MQL5 Cloud Server "MQL5 Cloud Europe 3: 10 gbit" found
+LiveUpdate 'mt5onnx64' downloaded and updated (68441 kb)
+```
+
+The terminal has real internet — it pulled a 68MB update and discovered the
+MQL5 cloud fleet. It reads the account config without error. And then:
+
+```
+established outbound connections:  0
+authorisation lines in the journal: none
+windows created:                    0
+```
+
+It never dials the broker. Copying the broker's `servers.dat` into the generic
+install does not change it, and the broker's own branded build — which does
+carry the server list — never initialises far enough to create a window at all,
+as root or as an ordinary user.
+
+So the ordering is: no broker connection, therefore no API to serve, therefore
+an IPC timeout. The IPC error was always a symptom.
+
+This also rules out the Expert Advisor as a way around it. An EA runs *inside*
+the terminal, so it inherits the same missing connection; it would load and
+have nothing to report.
+
+## What the working projects actually do
+
+Three were examined:
+
+| Project | Approach | Result here |
+|---|---|---|
+| `gmag11/MetaTrader5-Docker` | Wine + KasmVNC + mt5linux | built verbatim; fails identically |
+| `SmartLever/Docker_mt5` | Wine + Xdummy + a **ZMQ Expert Advisor** | uses an EA, not the Python API |
+| `im-mahdi-74/Dockerized-MetaTrader5...` | **`mcr.microsoft.com/windows/servercore`** | not Wine at all |
+
+The last one is the tell. The project built specifically to expose MetaTrader 5
+to Python from a container does it in a **Windows container**, where the Python
+API works natively. It does not attempt Wine.
+
 ## Where that leaves it
 
 Every known configuration fails identically on this host:
