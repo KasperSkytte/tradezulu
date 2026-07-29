@@ -224,6 +224,13 @@ serve an API.
 
 That is the wall. Everything upstream of the broker connection now works.
 
+## winhttp / wininet: no
+
+Native `winhttp.dll` (1.7MB) and `wininet.dll` (2.5MB) installed via winetricks
+and overridden to `native,builtin`. No change. Consistent with the winsock
+trace, which shows MetaTrader using raw sockets for the broker link rather than
+either of those.
+
 ## Where that leaves it
 
 Every known configuration fails identically on this host:
