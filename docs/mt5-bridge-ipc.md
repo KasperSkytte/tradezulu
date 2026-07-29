@@ -183,6 +183,47 @@ The last one is the tell. The project built specifically to expose MetaTrader 5
 to Python from a container does it in a **Windows container**, where the Python
 API works natively. It does not attempt Wine.
 
+## The GUI works, and my instrument was broken
+
+`xwininfo` was never installed in the test container. Every "0 windows" reading
+taken there was the shell reporting an empty result for a command that did not
+exist, and conclusions were drawn from it. With `x11-utils` installed the same
+container reports:
+
+```
+46 windows
+"MetaTrader 5 - Netting - EURUSD,H1"
+"Login"                                  <- a login dialog, open and waiting
+```
+
+The terminal had a complete working GUI the whole time and was **sitting at a
+login prompt**. It can be driven with `xdotool`: activating the dialog and
+typing fills Login, Password and Server correctly, and submitting it loads the
+account — the title bar becomes `22609000 - vantagemarkets-live - Netting`.
+
+So a headless MT5 needs, in addition to everything above:
+
+* `x11-utils` and `xdotool`, to see and drive the GUI at all, and
+* the login dialog answered, because a startup ini alone leaves it open.
+
+## And still no broker connection
+
+With the account loaded and the GUI live:
+
+```
+status bar:            0 / 0 Kb        <- no traffic
+chart data:            August 2024     <- cached, not live
+TCP sockets:           1 (127.0.0.1:22346, the MCP listener)
+journal, networking:   nothing at all
+```
+
+Submitting the login produces no error dialog, no journal line, and no socket.
+The terminal simply never attempts to reach the broker. `mt5.initialize()`
+continues to time out, which is consistent: there is no connected terminal to
+serve an API.
+
+That is the wall. Everything upstream of the broker connection now works.
+
 ## Where that leaves it
 
 Every known configuration fails identically on this host:
