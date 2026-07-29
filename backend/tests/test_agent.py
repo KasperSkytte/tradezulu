@@ -1,0 +1,295 @@
+"""The Expert Advisor protocol: report state, receive commands, report results.
+
+This is the copier's execution path with no MetaTrader anywhere — the EA is
+just an HTTP client, so the entire loop can be driven from a test.
+"""
+
+from __future__ import annotations
+
+import pytest
+from sqlalchemy import select
+
+from app.models import Account, CopyEvent, CopyLink
+
+
+def account_payload(login, server, **kwargs):
+    body = {
+        "login": login,
+        "server": server,
+        "name": "Test",
+        "currency": "USD",
+        "balance": 10_000.0,
+        "equity": 10_000.0,
+        "positions": [],
+        "symbols": [
+            {
+                "symbol": "EURUSD",
+                "volume_min": 0.01,
+                "volume_max": 100.0,
+                "volume_step": 0.01,
+                "value_per_unit": 100_000.0,
+                "digits": 5,
+            }
+        ],
+        "results": [],
+    }
+    body.update(kwargs)
+    return body
+
+
+def master_payload(**kwargs):
+    """The master is ten times the slave, so a copy is a tenth of the size."""
+    return account_payload("5000", "Master-Server", balance=100_000.0, equity=100_000.0, **kwargs)
+
+
+def position(position_id=1, ticket=1, symbol="EURUSD", direction="long",
+             volume=1.0, price=1.1000, sl=1.0980, tp=1.1060):
+    return {
+        "position_id": position_id,
+        "ticket": ticket,
+        "symbol": symbol,
+        "direction": direction,
+        "volume": volume,
+        "open_price": price,
+        "stop_loss": sl,
+        "take_profit": tp,
+        "profit": 0.0,
+    }
+
+
+@pytest.fixture()
+def master(db):
+    account = db.scalar(select(Account).where(Account.role == "master"))
+    account.login = "5000"
+    account.server = "Master-Server"
+    account.balance = account.equity = 100_000.0
+    db.commit()
+    return account
+
+
+@pytest.fixture()
+def slave(db, auth_client):
+    created = auth_client.post(
+        "/api/accounts",
+        json={"login": "9001", "server": "Slave-Server", "name": "Slave",
+              "password": "trade-password"},
+    ).json()
+    account = db.get(Account, created["id"])
+    account.copy_settings = {**(account.copy_settings or {}), "mode": "balance_ratio"}
+    db.commit()
+    return account
+
+
+def arm(auth_client, slave, *, dry_run=False):
+    return auth_client.post(
+        f"/api/accounts/{slave.id}/arm", json={"enabled": True, "dry_run": dry_run}
+    )
+
+
+class TestIdentification:
+    def test_an_unknown_terminal_is_refused(self, auth_client):
+        response = auth_client.post(
+            "/api/agent/poll", json=account_payload("999999", "Nowhere-Live")
+        )
+        assert response.status_code == 404
+        assert "Accounts" in response.json()["detail"]
+
+    def test_the_master_is_recognised(self, auth_client, master):
+        response = auth_client.post("/api/agent/poll", json=account_payload("5000", "Master-Server"))
+        assert response.status_code == 200
+        assert response.json()["role"] == "master"
+
+    def test_a_server_name_matches_case_insensitively(self, auth_client, master):
+        response = auth_client.post("/api/agent/poll", json=account_payload("5000", "master-server"))
+        assert response.status_code == 200
+
+    def test_the_same_login_at_a_different_broker_is_not_confused(self, auth_client, master, db):
+        db.add(Account(login="5000", server="Other-Broker", role="slave"))
+        db.commit()
+        response = auth_client.post("/api/agent/poll", json=account_payload("5000", "Other-Broker"))
+        assert response.json()["role"] == "slave"
+
+
+class TestMaster:
+    def test_the_master_is_never_given_commands(self, auth_client, master, slave):
+        arm(auth_client, slave)
+        response = auth_client.post(
+            "/api/agent/poll",
+            json=account_payload("5000", "Master-Server", positions=[position()]),
+        )
+        assert response.json()["commands"] == []
+
+    def test_its_positions_are_recorded_for_the_slaves(self, auth_client, master, db):
+        auth_client.post(
+            "/api/agent/poll",
+            json=account_payload("5000", "Master-Server", positions=[position()]),
+        )
+        db.refresh(master)
+        stored = (master.copy_settings or {}).get("_positions")
+        assert stored and stored[0]["symbol"] == "EURUSD"
+
+    def test_account_state_is_updated(self, auth_client, master, db):
+        auth_client.post(
+            "/api/agent/poll",
+            json=account_payload("5000", "Master-Server", balance=123_456.0, equity=123_000.0),
+        )
+        db.refresh(master)
+        assert master.balance == pytest.approx(123_456.0)
+
+
+class TestSlaveCommands:
+    def test_a_master_trade_becomes_an_open_command(self, auth_client, master, slave):
+        arm(auth_client, slave)
+        auth_client.post("/api/agent/poll", json=master_payload(positions=[position()]))
+
+        response = auth_client.post("/api/agent/poll",
+                                    json=account_payload("9001", "Slave-Server"))
+        commands = response.json()["commands"]
+        assert len(commands) == 1
+        assert commands[0]["action"] == "open"
+        assert commands[0]["symbol"] == "EURUSD"
+        assert commands[0]["volume"] == pytest.approx(0.10)  # 10k / 100k
+        assert commands[0]["id"]
+
+    def test_nothing_is_sent_while_disabled(self, auth_client, master, slave):
+        auth_client.post("/api/agent/poll", json=master_payload(positions=[position()]))
+        response = auth_client.post("/api/agent/poll",
+                                    json=account_payload("9001", "Slave-Server"))
+        assert response.json()["commands"] == []
+
+    def test_dry_run_sends_no_commands_but_records_the_decision(self, auth_client, master, slave, db):
+        arm(auth_client, slave, dry_run=True)
+        auth_client.post("/api/agent/poll", json=master_payload(positions=[position()]))
+        response = auth_client.post("/api/agent/poll",
+                                    json=account_payload("9001", "Slave-Server"))
+
+        assert response.json()["commands"] == []
+        events = db.scalars(
+            select(CopyEvent).where(CopyEvent.slave_account_id == slave.id,
+                                    CopyEvent.action == "open")
+        ).all()
+        assert any(e.outcome == "dry_run" for e in events)
+
+    def test_a_halted_account_gets_nothing(self, auth_client, master, slave, db):
+        arm(auth_client, slave)
+        slave.copy_halted = True
+        db.commit()
+        auth_client.post("/api/agent/poll", json=master_payload(positions=[position()]))
+        response = auth_client.post("/api/agent/poll",
+                                    json=account_payload("9001", "Slave-Server"))
+        assert response.json()["commands"] == []
+
+    def test_a_slave_polls_faster_than_a_master(self, auth_client, master, slave):
+        arm(auth_client, slave)
+        fast = auth_client.post("/api/agent/poll",
+                                json=account_payload("9001", "Slave-Server")).json()
+        slow = auth_client.post("/api/agent/poll",
+                                json=account_payload("5000", "Master-Server")).json()
+        assert fast["poll_seconds"] < slow["poll_seconds"]
+
+
+class TestResults:
+    def test_a_successful_open_creates_the_link(self, auth_client, master, slave, db):
+        arm(auth_client, slave)
+        auth_client.post("/api/agent/poll", json=master_payload(positions=[position()]))
+        command = auth_client.post(
+            "/api/agent/poll", json=account_payload("9001", "Slave-Server")
+        ).json()["commands"][0]
+
+        auth_client.post("/api/agent/poll", json=account_payload(
+            "9001", "Slave-Server",
+            results=[{
+                "id": command["id"], "action": "open", "ok": True, "ticket": 777,
+                "master_position_id": 1, "symbol": "EURUSD", "direction": "long",
+                "volume": 0.10, "price": 1.1001, "message": "filled",
+            }],
+            positions=[position(ticket=777, volume=0.10)],
+        ))
+
+        link = db.scalar(select(CopyLink).where(CopyLink.slave_account_id == slave.id))
+        assert link is not None
+        assert link.slave_position_id == 777
+        assert link.status == "open"
+
+    def test_a_failed_open_creates_no_link(self, auth_client, master, slave, db):
+        arm(auth_client, slave)
+        auth_client.post("/api/agent/poll", json=master_payload(positions=[position()]))
+        command = auth_client.post(
+            "/api/agent/poll", json=account_payload("9001", "Slave-Server")
+        ).json()["commands"][0]
+
+        auth_client.post("/api/agent/poll", json=account_payload(
+            "9001", "Slave-Server",
+            results=[{
+                "id": command["id"], "action": "open", "ok": False,
+                "master_position_id": 1, "retcode": 10019,
+                "message": "not enough money",
+            }],
+        ))
+
+        assert db.scalars(select(CopyLink)).all() == []
+        event = db.scalar(
+            select(CopyEvent).where(CopyEvent.slave_account_id == slave.id,
+                                    CopyEvent.outcome == "failed")
+        )
+        assert "not enough money" in event.message
+
+    def test_the_same_trade_is_not_sent_twice(self, auth_client, master, slave):
+        arm(auth_client, slave)
+        auth_client.post("/api/agent/poll", json=master_payload(positions=[position()]))
+        first = auth_client.post(
+            "/api/agent/poll", json=account_payload("9001", "Slave-Server")
+        ).json()["commands"]
+
+        auth_client.post("/api/agent/poll", json=account_payload(
+            "9001", "Slave-Server",
+            results=[{
+                "id": first[0]["id"], "action": "open", "ok": True, "ticket": 777,
+                "master_position_id": 1, "symbol": "EURUSD", "direction": "long",
+                "volume": 0.10, "price": 1.1001,
+            }],
+            positions=[position(ticket=777, volume=0.10)],
+        ))
+
+        second = auth_client.post(
+            "/api/agent/poll",
+            json=account_payload("9001", "Slave-Server", positions=[position(ticket=777, volume=0.10)]),
+        ).json()["commands"]
+        assert [c for c in second if c["action"] == "open"] == []
+
+    def test_a_closed_master_position_produces_a_close(self, auth_client, master, slave):
+        arm(auth_client, slave)
+        auth_client.post("/api/agent/poll", json=master_payload(positions=[position()]))
+        command = auth_client.post(
+            "/api/agent/poll", json=account_payload("9001", "Slave-Server")
+        ).json()["commands"][0]
+        auth_client.post("/api/agent/poll", json=account_payload(
+            "9001", "Slave-Server",
+            results=[{"id": command["id"], "action": "open", "ok": True, "ticket": 777,
+                      "master_position_id": 1, "symbol": "EURUSD", "direction": "long",
+                      "volume": 0.10, "price": 1.1001}],
+            positions=[position(ticket=777, volume=0.10)],
+        ))
+
+        # Master goes flat.
+        auth_client.post("/api/agent/poll", json=master_payload(positions=[]))
+        commands = auth_client.post(
+            "/api/agent/poll",
+            json=account_payload("9001", "Slave-Server", positions=[position(ticket=777, volume=0.10)]),
+        ).json()["commands"]
+
+        assert any(c["action"] == "close" and c["ticket"] == 777 for c in commands)
+
+
+class TestAuth:
+    def test_the_endpoint_needs_a_token(self, client):
+        response = client.post("/api/agent/poll", json=account_payload("5000", "Master-Server"))
+        assert response.status_code == 401
+
+    def test_the_ingest_token_is_accepted(self, client, master):
+        response = client.post(
+            "/api/agent/poll",
+            json=account_payload("5000", "Master-Server"),
+            headers={"X-API-Key": "test-ingest-token"},
+        )
+        assert response.status_code == 200

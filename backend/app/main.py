@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .db import init_db
-from .routers import accounts, auth, imports, mt5, stats, trades
+from .routers import accounts, agent, auth, imports, mt5, stats, trades
 from .routers import settings as settings_router
 from .services.copier.service import CopierLoop
 
@@ -98,6 +98,7 @@ async def security_headers(request: Request, call_next):
 api = APIRouter(prefix="/api")
 api.include_router(auth.router)
 api.include_router(accounts.router)
+api.include_router(agent.router)
 api.include_router(trades.router)
 api.include_router(stats.router)
 api.include_router(mt5.router)

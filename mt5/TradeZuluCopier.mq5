@@ -1,0 +1,562 @@
+//+------------------------------------------------------------------+
+//|                                            TradeZuluCopier.mq5   |
+//|                                                                  |
+//|  Copies trades between MetaTrader accounts, with TradeZulu doing  |
+//|  the deciding. Attach it to one chart on every terminal you want  |
+//|  involved -- the master and each slave -- and set nothing else.   |
+//|  The server already knows which account is which.                 |
+//|                                                                  |
+//|  There is no Python and no IPC here, deliberately. MetaTrader's   |
+//|  Python API does not work reliably under Wine, but an Expert      |
+//|  Advisor runs inside the terminal where none of that matters, and |
+//|  WebRequest is a first-class MetaTrader feature.                  |
+//|                                                                  |
+//|  BEFORE IT WILL RUN:                                              |
+//|    Tools -> Options -> Expert Advisors                            |
+//|      [x] Allow algorithmic trading                                |
+//|      [x] Allow WebRequest for listed URL   -> add your TradeZulu  |
+//|          origin, e.g. http://tradezulu.local:8420                 |
+//+------------------------------------------------------------------+
+#property copyright "TradeZulu"
+#property version   "1.00"
+#property strict
+#property description "Copies trades to and from a TradeZulu server."
+
+input group "Connection"
+input string ServerUrl        = "http://192.168.1.10:8420/api"; // TradeZulu API base URL (ends with /api)
+input string ApiKey           = "";                             // TZ_INGEST_TOKEN from the server's .env
+input int    RequestTimeoutMs = 15000;                          // WebRequest timeout (ms)
+
+input group "Behaviour"
+input int    PollSeconds      = 2;     // How often to report in. The server can ask for slower.
+input int    Slippage         = 20;    // Maximum deviation, in points
+input int    MagicNumber      = 0;     // Stamped on copied orders; 0 leaves it unset
+input bool   Verbose          = true;  // Log every command to the Experts tab
+
+//--- state ----------------------------------------------------------
+string g_status       = "starting";
+string g_pending      = "";   // results waiting to go back on the next poll
+int    g_done         = 0;
+int    g_failed       = 0;
+int    g_poll_seconds = 0;
+
+//+------------------------------------------------------------------+
+int OnInit()
+{
+   if(StringLen(ApiKey) == 0)
+   {
+      Print("TradeZulu: ApiKey is empty. Set it to the value of TZ_INGEST_TOKEN.");
+      return INIT_PARAMETERS_INCORRECT;
+   }
+   if(StringFind(ServerUrl, "http") != 0)
+   {
+      Print("TradeZulu: ServerUrl must start with http:// or https://");
+      return INIT_PARAMETERS_INCORRECT;
+   }
+   if(!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED))
+      Print("TradeZulu: algorithmic trading is switched off in this terminal. "
+            "Reads will work; orders will be refused until you allow it.");
+
+   g_poll_seconds = MathMax(1, PollSeconds);
+   EventSetTimer(1);   // first tick promptly, then settle to the agreed rate
+   Print("TradeZulu copier: started, reporting to ", ServerUrl);
+   return INIT_SUCCEEDED;
+}
+
+//+------------------------------------------------------------------+
+void OnDeinit(const int reason)
+{
+   EventKillTimer();
+   Comment("");
+   Print("TradeZulu copier: stopped (reason ", reason, ")");
+}
+
+//+------------------------------------------------------------------+
+void OnTimer()
+{
+   static bool first = true;
+   if(first)
+   {
+      first = false;
+      EventKillTimer();
+      EventSetTimer(g_poll_seconds);
+   }
+   Poll();
+   ShowStatus();
+}
+
+//--- JSON building --------------------------------------------------
+string JsonEscape(string text)
+{
+   StringReplace(text, "\\", "\\\\");
+   StringReplace(text, "\"", "\\\"");
+   StringReplace(text, "\n", " ");
+   StringReplace(text, "\r", " ");
+   StringReplace(text, "\t", " ");
+   return text;
+}
+
+string JStr(const string key, const string value)
+{
+   return StringFormat("\"%s\":\"%s\"", key, JsonEscape(value));
+}
+
+string JNum(const string key, const double value, const int digits = 8)
+{
+   return StringFormat("\"%s\":%s", key, DoubleToString(value, digits));
+}
+
+string JInt(const string key, const long value)
+{
+   return StringFormat("\"%s\":%I64d", key, value);
+}
+
+string JBool(const string key, const bool value)
+{
+   return StringFormat("\"%s\":%s", key, value ? "true" : "false");
+}
+
+//--- JSON reading ---------------------------------------------------
+// Small by design: the only JSON this EA ever parses is its own server's
+// reply, whose shape is fixed. A general parser would be more code than the
+// protocol deserves.
+string JsonValue(const string json, const string key, const int from = 0)
+{
+   string needle = "\"" + key + "\":";
+   int at = StringFind(json, needle, from);
+   if(at < 0)
+      return "";
+   int start = at + StringLen(needle);
+   while(start < StringLen(json) && StringGetCharacter(json, start) == ' ')
+      start++;
+   if(start >= StringLen(json))
+      return "";
+
+   if(StringGetCharacter(json, start) == '"')
+   {
+      int end = StringFind(json, "\"", start + 1);
+      if(end < 0)
+         return "";
+      return StringSubstr(json, start + 1, end - start - 1);
+   }
+   int end = start;
+   while(end < StringLen(json))
+   {
+      ushort c = StringGetCharacter(json, end);
+      if(c == ',' || c == '}' || c == ']')
+         break;
+      end++;
+   }
+   string raw = StringSubstr(json, start, end - start);
+   StringTrimLeft(raw);
+   StringTrimRight(raw);
+   return raw;
+}
+
+//--- what we tell the server ----------------------------------------
+string PositionsJson()
+{
+   string out = "";
+   int total = PositionsTotal();
+   for(int i = 0; i < total; i++)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0)
+         continue;
+      if(StringLen(out) > 0)
+         out += ",";
+      long type = PositionGetInteger(POSITION_TYPE);
+      out += "{" + JInt("position_id", (long)PositionGetInteger(POSITION_IDENTIFIER));
+      out += "," + JInt("ticket", (long)ticket);
+      out += "," + JStr("symbol", PositionGetString(POSITION_SYMBOL));
+      out += "," + JStr("direction", type == POSITION_TYPE_BUY ? "long" : "short");
+      out += "," + JNum("volume", PositionGetDouble(POSITION_VOLUME), 2);
+      out += "," + JNum("open_price", PositionGetDouble(POSITION_PRICE_OPEN), 8);
+      out += "," + JNum("stop_loss", PositionGetDouble(POSITION_SL), 8);
+      out += "," + JNum("take_profit", PositionGetDouble(POSITION_TP), 8);
+      out += "," + JNum("profit", PositionGetDouble(POSITION_PROFIT), 2);
+      out += "}";
+   }
+   return "[" + out + "]";
+}
+
+// Only the symbols that matter: what is open here, plus what Market Watch
+// shows. Sending the broker's entire catalogue would be a megabyte a tick.
+string SymbolsJson()
+{
+   string out = "";
+   int total = SymbolsTotal(true);
+   for(int i = 0; i < total && i < 200; i++)
+   {
+      string name = SymbolName(i, true);
+      if(StringLen(name) == 0)
+         continue;
+      double tick_size  = SymbolInfoDouble(name, SYMBOL_TRADE_TICK_SIZE);
+      double tick_value = SymbolInfoDouble(name, SYMBOL_TRADE_TICK_VALUE);
+      double per_unit   = (tick_size > 0.0) ? tick_value / tick_size : 0.0;
+
+      if(StringLen(out) > 0)
+         out += ",";
+      out += "{" + JStr("symbol", name);
+      out += "," + JNum("volume_min",  SymbolInfoDouble(name, SYMBOL_VOLUME_MIN), 4);
+      out += "," + JNum("volume_max",  SymbolInfoDouble(name, SYMBOL_VOLUME_MAX), 4);
+      out += "," + JNum("volume_step", SymbolInfoDouble(name, SYMBOL_VOLUME_STEP), 4);
+      out += "," + JNum("value_per_unit", per_unit, 6);
+      out += "," + JInt("digits", (long)SymbolInfoInteger(name, SYMBOL_DIGITS));
+      out += "}";
+   }
+   return "[" + out + "]";
+}
+
+string PollBody()
+{
+   string body = "{";
+   body += JStr("login",   IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)));
+   body += "," + JStr("server",   AccountInfoString(ACCOUNT_SERVER));
+   body += "," + JStr("name",     AccountInfoString(ACCOUNT_NAME));
+   body += "," + JStr("currency", AccountInfoString(ACCOUNT_CURRENCY));
+   body += "," + JNum("balance",     AccountInfoDouble(ACCOUNT_BALANCE), 2);
+   body += "," + JNum("equity",      AccountInfoDouble(ACCOUNT_EQUITY), 2);
+   body += "," + JNum("margin_free", AccountInfoDouble(ACCOUNT_MARGIN_FREE), 2);
+   body += "," + JBool("trade_allowed", TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) != 0);
+   body += ",\"positions\":" + PositionsJson();
+   body += ",\"symbols\":" + SymbolsJson();
+   body += ",\"results\":[" + g_pending + "]";
+   body += "}";
+   return body;
+}
+
+//--- the heartbeat --------------------------------------------------
+void Poll()
+{
+   string reply;
+   if(!HttpPost("/agent/poll", PollBody(), reply))
+   {
+      g_status = "server unreachable";
+      return;
+   }
+
+   // Everything we just reported was accepted, so stop resending it.
+   g_pending = "";
+
+   int wanted = (int)StringToInteger(JsonValue(reply, "poll_seconds"));
+   if(wanted > 0 && wanted != g_poll_seconds)
+   {
+      g_poll_seconds = wanted;
+      EventKillTimer();
+      EventSetTimer(g_poll_seconds);
+   }
+
+   string role = JsonValue(reply, "role");
+   bool   halted = JsonValue(reply, "halted") == "true";
+   g_status = halted ? "halted by the server" : role;
+
+   RunCommands(reply);
+}
+
+void RunCommands(const string reply)
+{
+   int at = StringFind(reply, "\"commands\":[");
+   if(at < 0)
+      return;
+   int cursor = at;
+   while(true)
+   {
+      int open_brace = StringFind(reply, "{", cursor);
+      if(open_brace < 0)
+         break;
+      int close_brace = StringFind(reply, "}", open_brace);
+      if(close_brace < 0)
+         break;
+      string cmd = StringSubstr(reply, open_brace, close_brace - open_brace + 1);
+      cursor = close_brace + 1;
+      Execute(cmd);
+   }
+}
+
+void Execute(const string cmd)
+{
+   string id      = JsonValue(cmd, "id");
+   string action  = JsonValue(cmd, "action");
+   string symbol  = JsonValue(cmd, "symbol");
+   string dirn    = JsonValue(cmd, "direction");
+   double volume  = StringToDouble(JsonValue(cmd, "volume"));
+   double sl      = StringToDouble(JsonValue(cmd, "stop_loss"));
+   double tp      = StringToDouble(JsonValue(cmd, "take_profit"));
+   long   ticket  = StringToInteger(JsonValue(cmd, "ticket"));
+   long   master  = StringToInteger(JsonValue(cmd, "master_position_id"));
+   string comment = JsonValue(cmd, "comment");
+
+   if(StringLen(id) == 0 || StringLen(action) == 0)
+      return;
+
+   if(Verbose)
+      Print("TradeZulu: ", action, " ", symbol, " ", DoubleToString(volume, 2),
+            " (master ", master, ")");
+
+   bool   ok = false;
+   string message = "";
+   ulong  got_ticket = 0;
+   double got_price = 0.0;
+   int    retcode = 0;
+
+   if(action == "open")
+      ok = DoOpen(symbol, dirn, volume, sl, tp, comment, got_ticket, got_price, retcode, message);
+   else if(action == "close")
+      ok = DoClose((ulong)ticket, retcode, message);
+   else if(action == "modify")
+      ok = DoModify((ulong)ticket, sl, tp, retcode, message);
+   else
+      message = "unknown command";
+
+   if(ok) g_done++; else g_failed++;
+
+   // Held until the next poll rather than sent immediately: one round trip
+   // instead of two, and a dropped result simply repeats.
+   string r = "{" + JStr("id", id) + "," + JStr("action", action);
+   r += "," + JBool("ok", ok);
+   r += "," + JInt("ticket", (long)got_ticket);
+   r += "," + JInt("master_position_id", master);
+   r += "," + JStr("symbol", symbol);
+   r += "," + JStr("direction", dirn);
+   r += "," + JNum("volume", volume, 2);
+   r += "," + JNum("price", got_price, 8);
+   r += "," + JInt("retcode", retcode);
+   r += "," + JStr("message", message);
+   r += "}";
+   if(StringLen(g_pending) > 0)
+      g_pending += ",";
+   g_pending += r;
+}
+
+//--- trading --------------------------------------------------------
+bool DoOpen(const string symbol, const string dirn, const double volume,
+            const double sl, const double tp, const string comment,
+            ulong &out_ticket, double &out_price, int &retcode, string &message)
+{
+   if(!SymbolSelect(symbol, true))
+   {
+      message = "this broker has no symbol " + symbol;
+      return false;
+   }
+
+   MqlTick tick;
+   if(!SymbolInfoTick(symbol, tick))
+   {
+      message = "no price for " + symbol;
+      return false;
+   }
+
+   bool is_long = (dirn == "long");
+
+   MqlTradeRequest  req;
+   MqlTradeResult   res;
+   ZeroMemory(req);
+   ZeroMemory(res);
+
+   req.action       = TRADE_ACTION_DEAL;
+   req.symbol       = symbol;
+   req.volume       = NormalizeVolume(symbol, volume);
+   req.type         = is_long ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+   req.price        = is_long ? tick.ask : tick.bid;
+   req.deviation    = Slippage;
+   req.magic        = MagicNumber;
+   req.comment      = comment;
+   req.type_time    = ORDER_TIME_GTC;
+   req.type_filling = FillingFor(symbol);
+   if(sl > 0.0) req.sl = sl;
+   if(tp > 0.0) req.tp = tp;
+
+   if(req.volume <= 0.0)
+   {
+      message = "volume rounds to zero for this broker";
+      return false;
+    }
+
+   if(!OrderSend(req, res))
+   {
+      retcode = (int)res.retcode;
+      message = StringFormat("order rejected (%d) %s", res.retcode, res.comment);
+      return false;
+   }
+   retcode    = (int)res.retcode;
+   out_ticket = res.order > 0 ? res.order : res.deal;
+   out_price  = res.price;
+
+   if(res.retcode != TRADE_RETCODE_DONE && res.retcode != TRADE_RETCODE_PLACED)
+   {
+      message = StringFormat("order not filled (%d) %s", res.retcode, res.comment);
+      return false;
+   }
+
+   // Prefer the position id: that is what a later close will need.
+   if(PositionSelectByTicket(out_ticket))
+      out_ticket = (ulong)PositionGetInteger(POSITION_TICKET);
+
+   message = "filled at " + DoubleToString(res.price, 8);
+   return true;
+}
+
+bool DoClose(const ulong ticket, int &retcode, string &message)
+{
+   if(!PositionSelectByTicket(ticket))
+   {
+      // Already gone is the outcome we wanted, so this is not a failure.
+      message = "the position was already closed";
+      return true;
+   }
+
+   string symbol = PositionGetString(POSITION_SYMBOL);
+   bool   is_long = PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY;
+
+   MqlTick tick;
+   if(!SymbolInfoTick(symbol, tick))
+   {
+      message = "no price for " + symbol;
+      return false;
+   }
+
+   MqlTradeRequest req;
+   MqlTradeResult  res;
+   ZeroMemory(req);
+   ZeroMemory(res);
+
+   req.action       = TRADE_ACTION_DEAL;
+   req.symbol       = symbol;
+   req.volume       = PositionGetDouble(POSITION_VOLUME);
+   req.type         = is_long ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
+   req.position     = ticket;
+   req.price        = is_long ? tick.bid : tick.ask;
+   req.deviation    = Slippage;
+   req.magic        = (long)PositionGetInteger(POSITION_MAGIC);
+   req.comment      = "TZ close";
+   req.type_time    = ORDER_TIME_GTC;
+   req.type_filling = FillingFor(symbol);
+
+   if(!OrderSend(req, res))
+   {
+      retcode = (int)res.retcode;
+      message = StringFormat("close rejected (%d) %s", res.retcode, res.comment);
+      return false;
+   }
+   retcode = (int)res.retcode;
+   if(res.retcode != TRADE_RETCODE_DONE && res.retcode != TRADE_RETCODE_PLACED)
+   {
+      message = StringFormat("close not filled (%d) %s", res.retcode, res.comment);
+      return false;
+   }
+   message = "closed at " + DoubleToString(res.price, 8);
+   return true;
+}
+
+bool DoModify(const ulong ticket, const double sl, const double tp,
+              int &retcode, string &message)
+{
+   if(!PositionSelectByTicket(ticket))
+   {
+      message = "the position is no longer open";
+      return true;
+   }
+
+   MqlTradeRequest req;
+   MqlTradeResult  res;
+   ZeroMemory(req);
+   ZeroMemory(res);
+
+   req.action   = TRADE_ACTION_SLTP;
+   req.symbol   = PositionGetString(POSITION_SYMBOL);
+   req.position = ticket;
+   req.sl       = sl;
+   req.tp       = tp;
+
+   if(!OrderSend(req, res))
+   {
+      retcode = (int)res.retcode;
+      message = StringFormat("modify rejected (%d) %s", res.retcode, res.comment);
+      return false;
+   }
+   retcode = (int)res.retcode;
+   if(res.retcode != TRADE_RETCODE_DONE)
+   {
+      message = StringFormat("modify not applied (%d) %s", res.retcode, res.comment);
+      return false;
+   }
+   message = "stops updated";
+   return true;
+}
+
+// Brokers differ on what they accept, and sending the wrong mode is rejected
+// rather than corrected, so ask the symbol instead of assuming.
+ENUM_ORDER_TYPE_FILLING FillingFor(const string symbol)
+{
+   long mode = SymbolInfoInteger(symbol, SYMBOL_FILLING_MODE);
+   if((mode & SYMBOL_FILLING_IOC) != 0)
+      return ORDER_FILLING_IOC;
+   if((mode & SYMBOL_FILLING_FOK) != 0)
+      return ORDER_FILLING_FOK;
+   return ORDER_FILLING_RETURN;
+}
+
+// Round *down* to the broker's step. Up would risk more than the server
+// approved, which is the one direction that must never happen quietly.
+double NormalizeVolume(const string symbol, const double volume)
+{
+   double step = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
+   double vmin = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
+   double vmax = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MAX);
+   if(step <= 0.0)
+      step = 0.01;
+
+   double out = MathFloor(volume / step + 1e-8) * step;
+   out = NormalizeDouble(out, 2);
+   if(out > vmax) out = vmax;
+   if(out < vmin) return 0.0;
+   return out;
+}
+
+//--- plumbing -------------------------------------------------------
+bool HttpPost(const string path, const string body, string &reply)
+{
+   string url = ServerUrl + path;
+   string headers = "Content-Type: application/json\r\nX-API-Key: " + ApiKey + "\r\n";
+
+   char post[];
+   char result[];
+   string result_headers;
+
+   int len = StringToCharArray(body, post, 0, WHOLE_ARRAY, CP_UTF8) - 1;
+   if(len < 0) len = 0;
+   ArrayResize(post, len);
+
+   ResetLastError();
+   int status = WebRequest("POST", url, headers, RequestTimeoutMs, post, result, result_headers);
+   if(status == -1)
+   {
+      int error = GetLastError();
+      if(error == 4014)
+         Print("TradeZulu: WebRequest is not allowed for ", url,
+               ". Add it under Tools -> Options -> Expert Advisors.");
+      else
+         Print("TradeZulu: WebRequest failed for ", url, " (error ", error, ")");
+      return false;
+   }
+
+   reply = CharArrayToString(result, 0, WHOLE_ARRAY, CP_UTF8);
+   if(status < 200 || status >= 300)
+   {
+      Print("TradeZulu: server returned ", status, " ", StringSubstr(reply, 0, 200));
+      return false;
+   }
+   return true;
+}
+
+void ShowStatus()
+{
+   Comment(StringFormat(
+      "TradeZulu copier\n%s\naccount %I64d on %s\nexecuted %d, failed %d\npolling every %ds",
+      g_status,
+      AccountInfoInteger(ACCOUNT_LOGIN),
+      AccountInfoString(ACCOUNT_SERVER),
+      g_done, g_failed, g_poll_seconds));
+}
+//+------------------------------------------------------------------+

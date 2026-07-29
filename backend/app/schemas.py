@@ -442,3 +442,75 @@ class CopyEventOut(ORMModel):
     message: str
     latency_ms: int
     created_at: datetime
+
+
+# --- expert advisor agent ---------------------------------------------------
+
+
+class AgentPosition(BaseModel):
+    """One open position as the terminal sees it."""
+
+    position_id: int = 0
+    ticket: int = 0
+    symbol: str = ""
+    direction: str = "long"
+    volume: float = 0.0
+    open_price: float = 0.0
+    stop_loss: float | None = None
+    take_profit: float | None = None
+    profit: float = 0.0
+
+
+class AgentSymbol(BaseModel):
+    """Contract details, so sizing can be worked out for this broker."""
+
+    symbol: str
+    volume_min: float = 0.01
+    volume_max: float = 100.0
+    volume_step: float = 0.01
+    value_per_unit: float = 0.0
+    digits: int = 5
+
+
+class AgentCommandResult(BaseModel):
+    id: str = ""
+    account_id: int = 0
+    action: str = ""
+    ok: bool = False
+    ticket: int = 0
+    master_position_id: int = 0
+    symbol: str = ""
+    direction: str = ""
+    volume: float = 0.0
+    price: float = 0.0
+    retcode: int = 0
+    message: str = ""
+
+
+class AgentPollIn(BaseModel):
+    login: str = ""
+    server: str = ""
+    name: str = ""
+    currency: str = ""
+    balance: float = 0.0
+    equity: float = 0.0
+    margin_free: float = 0.0
+    trade_allowed: bool = True
+    positions: list[AgentPosition] = Field(default_factory=list)
+    symbols: list[AgentSymbol] = Field(default_factory=list)
+    results: list[AgentCommandResult] = Field(default_factory=list)
+
+    @field_validator("login", mode="before")
+    @classmethod
+    def _stringify_login(cls, value: Any) -> str:
+        return "" if value is None else str(value)
+
+
+class AgentPollOut(BaseModel):
+    account_id: int
+    role: str
+    enabled: bool
+    dry_run: bool
+    halted: bool
+    poll_seconds: int = 5
+    commands: list[dict[str, Any]] = Field(default_factory=list)

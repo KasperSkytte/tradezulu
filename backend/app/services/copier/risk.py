@@ -224,7 +224,10 @@ def check_trade_gates(
         risk = money_at_risk(volume, master.entry_price, master.stop_loss, spec)
         if risk is not None and snapshot.equity > 0:
             share = risk / snapshot.equity * 100.0
-            if share > config.max_risk_percent_per_trade:
+            # A trade sitting exactly on the limit is not over it. Without the
+            # tolerance, floating point turns "risk 2% of equity, cap 2%" into
+            # a refusal, which reads as a bug to anyone who set both numbers.
+            if share > config.max_risk_percent_per_trade * (1 + 1e-9):
                 return Decision(
                     Verdict.SKIP,
                     f"risking {share:.2f}% of equity, over the "
