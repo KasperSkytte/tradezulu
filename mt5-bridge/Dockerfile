@@ -46,6 +46,8 @@ RUN dpkg --add-architecture i386 && \
     apt-get install -y --no-install-recommends \
         cabextract \
         openbox \
+        x11-utils \
+        xdotool \
         procps \
         unzip \
         winbind \
@@ -63,6 +65,23 @@ RUN dpkg --add-architecture i386 && \
 # anything behind an authenticating proxy hangs rather than failing, and the
 # symptom looks nothing like the cause. cabextract lets Wine unpack the
 # cabinets some installers ship.
+
+# Prefer IPv4. Docker containers routinely have no IPv6 route while the host's
+# DNS still answers with AAAA records, and glibc then hands those out first --
+# so outbound connections disappear into a void with no error anywhere. This is
+# the stock precedence table with IPv4-mapped addresses raised above the rest.
+RUN printf '%s\n' \
+    'label ::1/128          0' \
+    'label ::/0             1' \
+    'label 2002::/16        2' \
+    'label ::/96            3' \
+    'label ::ffff:0:0/96    4' \
+    'precedence ::1/128     50' \
+    'precedence ::/0        40' \
+    'precedence 2002::/16   30' \
+    'precedence ::/96       20' \
+    'precedence ::ffff:0:0/96  100' \
+    > /etc/gai.conf
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY bridge.py pool.py worker.py /opt/bridge/
