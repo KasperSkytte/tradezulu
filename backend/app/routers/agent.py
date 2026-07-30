@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import require_ingest_auth
 from ..models import Account, CopyEvent
+from ..services.credentials import credentials_status
 from ..schemas import AgentCommandResult, AgentPollIn, AgentPollOut
 from ..services.copier.agent import (
     commands_for,
@@ -65,10 +66,45 @@ def _find_account(db: Session, login: str, server: str) -> Account | None:
     return None
 
 
+def _adopt_master(db: Session, login: str, server: str) -> Account | None:
+    """Claim the master row for a terminal that proves it is the master.
+
+    Nobody should have to type an account number twice. The user enters their
+    credentials once, a terminal comes up on them, and the account identity
+    that terminal reports is by definition the right one -- it came from the
+    broker, not from a form.
+
+    The proof required is that the terminal is logged into exactly the account
+    whose credentials are configured. A terminal reporting anything else gets
+    no account, because silently adopting whoever calls would let a stray
+    terminal capture the master role and, with it, the trades everything else
+    is copied from.
+    """
+    stored = credentials_status(db)
+    want_login = str(stored.get("login") or "").strip()
+    want_server = str(stored.get("server") or "").strip()
+    if not want_login or not want_server:
+        return None
+    if login.strip() != want_login or server.strip().lower() != want_server.lower():
+        return None
+
+    master = db.scalar(select(Account).where(Account.role == "master"))
+    if master is None:
+        master = Account(login=login, server=server, name=f"{login} ({server})", role="master")
+        db.add(master)
+    else:
+        master.login, master.server = login, server
+    db.flush()
+    log.info("agent: master account is now %s on %s", login, server)
+    return master
+
+
 @router.post("/poll", response_model=AgentPollOut)
 def poll(payload: AgentPollIn, db: Session = Depends(get_db)) -> AgentPollOut:
     """One heartbeat from a terminal: here is my state, what should I do?"""
-    account = _find_account(db, payload.login, payload.server)
+    account = _find_account(db, payload.login, payload.server) or _adopt_master(
+        db, payload.login, payload.server
+    )
     if account is None:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,
