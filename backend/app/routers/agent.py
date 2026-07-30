@@ -29,8 +29,10 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import require_ingest_auth
+from ..config import settings
 from ..models import Account, CopyEvent
-from ..services.credentials import credentials_status
+from ..services.credentials import credentials_status, get_credentials
+from ..services.crypto import decrypt
 from ..schemas import AgentCommandResult, AgentPollIn, AgentPollOut
 from ..services.copier.agent import (
     commands_for,
@@ -152,6 +154,60 @@ def result(payload: AgentCommandResult, db: Session = Depends(get_db)) -> None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such account")
     record_result(db, account, payload)
     db.commit()
+
+
+@router.get("/terminals")
+def terminals(db: Session = Depends(get_db)) -> dict[str, Any]:
+    """What terminals should be running, for whoever provisions them.
+
+    The provisioner runs beside MetaTrader rather than inside this container,
+    because Wine will host a terminal reliably and a container has not. That
+    split is an implementation detail the user should never meet, so this
+    endpoint hands over everything a terminal needs -- which account, which
+    broker, and the URL and token its Expert Advisor should report back on.
+    The person adding an account types their broker credentials once, in the
+    web interface, and nothing else anywhere.
+
+    The callback URL is deliberately this server's *internal* address. The
+    terminal runs on the same machine, so putting a domain in front of
+    TradeZulu later changes how people reach the site and nothing about how
+    its terminals reach it.
+    """
+    stored = get_credentials(db)
+    wanted: list[dict[str, Any]] = []
+
+    for account in db.scalars(select(Account).order_by(Account.id)):
+        if account.role == "master":
+            login = str(stored.get("login") or account.login or "").strip()
+            server = str(stored.get("server") or account.server or "").strip()
+            password = str(stored.get("password") or "")
+        else:
+            login, server = account.login.strip(), account.server.strip()
+            password = decrypt(account.password_enc or "")
+
+        # A terminal with no password cannot log in, and a half-provisioned
+        # one that sits at a login prompt is worse than none at all: it looks
+        # like it is working. Leave it out until the credentials are there.
+        if not (login and server and password):
+            continue
+
+        wanted.append(
+            {
+                "account_id": account.id,
+                "role": account.role,
+                "login": login,
+                "server": server,
+                "broker": account.broker or "",
+                "password": password,
+                "enabled": bool(account.copy_enabled) or account.role == "master",
+            }
+        )
+
+    return {
+        "callback_url": settings.internal_url.rstrip("/") + "/api",
+        "api_key": settings.ingest_token or "",
+        "terminals": wanted,
+    }
 
 
 @router.get("/hello")

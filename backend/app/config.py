@@ -66,6 +66,14 @@ class Settings:
         # Shared secret for the bridge container, which lives on the internal
         # compose network and is never published.
         self.bridge_token: str = os.getenv("TZ_BRIDGE_TOKEN", "").strip()
+        # Where terminals on this machine reach TradeZulu. Deliberately not the
+        # public address: the terminals are local, so putting a domain and a
+        # certificate in front of the site later must not mean reconfiguring
+        # every Expert Advisor.
+        self.internal_url: str = (
+            os.getenv("TZ_INTERNAL_URL", "").strip()
+            or f"http://127.0.0.1:{_env_int('TZ_PORT', 8420)}"
+        )
 
         # Misc ------------------------------------------------------------
         self.cors_origins: list[str] = [
