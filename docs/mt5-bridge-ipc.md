@@ -269,6 +269,24 @@ i386 library resolves, and both `wine-staging-i386` and its 1104 i386-windows
 DLLs are installed. The prefix simply never grows its WoW64 half, on a fresh
 build as well as a repaired one.
 
+## Why the official recipe cannot complete here
+
+The staging build in this image has **no WoW64**. The evidence is direct:
+
+* `WINEARCH=win32 wineboot -i` builds a working prefix,
+* `WINEARCH=win64 wineboot -i` builds `system32` (815 files) and leaves
+  `syswow64` **completely empty** (0 files),
+* `/opt/wine-staging/bin/wine` is a 64-bit ELF and there is no `wine64`.
+
+MetaTrader ships a **32-bit installer** and a **64-bit terminal**, so it needs
+both halves in one prefix. Without WoW64 the installer cannot run inside the
+win64 prefix the terminal requires, which is the `c0000135` seen throughout.
+
+Copying an already-installed `MetaTrader 5` directory into the win64 prefix
+sidesteps the installer, and the terminal then starts — but produces no window,
+no journal entry and no output at all, and Wine dispatches it through
+`lib/wine/i386-unix/wine` rather than the 64-bit loader.
+
 ## Where that leaves it
 
 Every known configuration fails identically on this host:
