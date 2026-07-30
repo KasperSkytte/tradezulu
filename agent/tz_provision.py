@@ -24,13 +24,14 @@ import argparse
 import json
 import logging
 import os
-import re
 import shutil
+import signal
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -93,17 +94,28 @@ def _runner() -> Path:
     )
 
 
-def _flatpak_run(script: str, timeout: int = 600) -> subprocess.CompletedProcess:
+def _flatpak_argv(script: str) -> list[str]:
     """Run a shell snippet inside the Bottles flatpak sandbox.
 
     The runners are built against that sandbox's libraries, so invoking them
     from outside it fails in ways that look like Wine bugs but are not.
     """
-    return subprocess.run(
-        ["flatpak", "run", "--command=sh", "com.usebottles.bottles", "-c", script],
-        capture_output=True,
-        text=True,
-        timeout=timeout,
+    return ["flatpak", "run", "--command=sh", "com.usebottles.bottles", "-c", script]
+
+
+def _flatpak_spawn(script: str) -> None:
+    """Start something in the sandbox and leave it running.
+
+    ``flatpak run`` does not return while anything is still alive inside its
+    sandbox, and a terminal is meant to stay alive for days. Waiting for it
+    would hang the provisioner on the first account it started.
+    """
+    subprocess.Popen(
+        _flatpak_argv(script),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        stdin=subprocess.DEVNULL,
+        start_new_session=True,
     )
 
 
@@ -113,24 +125,40 @@ def ensure_display() -> None:
     MetaTrader will not run headless. It does not need a *visible* screen
     though, and giving it a real one would put trading windows in front of
     whoever happens to be using the machine.
+
+    A display written ``host:N`` belongs to somewhere else -- another machine,
+    or a container -- so it is used as given and never started here. Only a
+    plain ``:N`` is ours to bring up, and the socket says whether it already
+    is without needing an X client installed to ask.
     """
-    if subprocess.run(["xdotool", "search", "--name", "."], env={**os.environ, "DISPLAY": DISPLAY},
-                      capture_output=True).returncode == 0:
+    if not DISPLAY.startswith(":"):
+        log.info("using the display at %s", DISPLAY)
         return
+
+    if Path(f"/tmp/.X11-unix/X{DISPLAY[1:]}").exists():
+        return
+
+    if shutil.which("Xvfb") is None:
+        raise SystemExit(
+            f"No display at {DISPLAY} and Xvfb is not installed. "
+            "Run install.sh, or apt install xvfb xdotool openbox."
+        )
+
     log.info("starting virtual display %s", DISPLAY)
     subprocess.Popen(
-        ["Xvfb", DISPLAY, "-ac", "-screen", "0", "1400x1000x24", "-listen", "tcp"],
+        ["Xvfb", DISPLAY, "-ac", "-screen", "0", "1400x1000x24"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
     time.sleep(3)
-    subprocess.Popen(
-        ["openbox"],
-        env={**os.environ, "DISPLAY": DISPLAY},
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    time.sleep(2)
+    if shutil.which("openbox"):
+        subprocess.Popen(
+            ["openbox"],
+            env={**os.environ, "DISPLAY": DISPLAY},
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        time.sleep(2)
 
 
 # --- one terminal per account ------------------------------------------------
@@ -140,6 +168,49 @@ def bottle_for(account_id: int) -> Path:
     return BOTTLES / "bottles" / f"tz-{account_id}"
 
 
+def load_brokers() -> dict[str, dict]:
+    path = Path(__file__).resolve().parent / "brokers.json"
+    try:
+        return {
+            key: value
+            for key, value in json.loads(path.read_text()).items()
+            if isinstance(value, dict)
+        }
+    except (OSError, ValueError):
+        log.warning("could not read %s; every account gets the generic terminal", path)
+        return {}
+
+
+def template_for(broker: str, server: str, fallback: Path) -> Path:
+    """The prepared prefix to copy for this account.
+
+    A broker-specific build ships that broker's server list, and without it
+    the terminal cannot resolve a name like ``VantageMarkets-Live`` at all --
+    it offers to open a new account instead, which looks like a rejected
+    password. So picking the right template is not an optimisation.
+
+    The server name is what decides, because it is the one field that always
+    arrives correct: it comes from the broker. The broker *name* is whatever
+    the terminal happened to report, which for a demo account can be
+    something as unhelpful as "Demo Broker".
+    """
+    haystack = f"{broker} {server}".lower()
+    for key, entry in load_brokers().items():
+        needles = [str(m).lower() for m in entry.get("matches", []) if m]
+        if not any(needle in haystack for needle in needles):
+            continue
+        candidate = BOTTLES / "bottles" / f"tz-template-{key}"
+        if (candidate / ".tz-template-ready").exists():
+            log.info("using the %s terminal for %s", key, server)
+            return candidate
+        log.warning(
+            "%s looks like a %s account but no %s template is built "
+            "(agent/make-template.sh %s); falling back to the generic terminal",
+            server, key, key, key,
+        )
+    return fallback
+
+
 def terminal_dir(bottle: Path) -> Path | None:
     """Find terminal64.exe inside a prefix, wherever the installer put it."""
     for path in bottle.glob("drive_c/**/terminal64.exe"):
@@ -147,17 +218,61 @@ def terminal_dir(bottle: Path) -> Path | None:
     return None
 
 
-def is_running(bottle: Path) -> bool:
-    """Whether this account's terminal is up.
+def running_pids(bottle: Path) -> list[int]:
+    """The terminal processes belonging to one account's prefix.
 
-    Matching on the prefix path rather than the process name is what makes
-    this per-account: every terminal is the same executable, and Wine reports
-    them all under the same name.
+    Wine reports a terminal under its *Windows* path -- every account's shows
+    up as ``C:\\Program Files\\MetaTrader 5\\terminal64.exe`` -- so matching
+    the command line cannot tell two accounts apart, and matching the Linux
+    prefix path finds nothing at all.
+
+    The environment can. WINEPREFIX is set per process and says exactly which
+    account a terminal belongs to. Getting this wrong is not cosmetic: a check
+    that fails to see a running terminal starts a second one on the same
+    account, and two terminals copying the same master both place the order.
     """
-    result = subprocess.run(
-        ["pgrep", "-f", f"{bottle}.*terminal64.exe"], capture_output=True, text=True
-    )
-    return bool(result.stdout.strip())
+    want = f"WINEPREFIX={bottle}".encode()
+    pids: list[int] = []
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            environ = (entry / "environ").read_bytes()
+            command = (entry / "cmdline").read_bytes()
+        except OSError:
+            continue  # the process ended, or is not ours to look at
+        if b"terminal64.exe" in command and want in environ.split(b"\0"):
+            pids.append(int(entry.name))
+    return pids
+
+
+def is_running(bottle: Path) -> bool:
+    return bool(running_pids(bottle))
+
+
+def stop_terminal(bottle: Path, timeout: float = 40.0) -> None:
+    """Stop an account's terminal, giving it time to save.
+
+    MetaTrader writes its settings only when it exits cleanly. Killing it
+    outright silently loses them -- including the WebRequest permission the
+    Expert Advisor depends on, which then fails on the next start in a way
+    that looks like a networking fault rather than a lost setting.
+    """
+    pids = running_pids(bottle)
+    for pid in pids:
+        with suppress(OSError):
+            os.kill(pid, signal.SIGTERM)
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not running_pids(bottle):
+            return
+        time.sleep(2)
+
+    for pid in running_pids(bottle):
+        log.warning("terminal %s did not exit; killing it", pid)
+        with suppress(OSError):
+            os.kill(pid, signal.SIGKILL)
 
 
 def clone_template(template: Path, target: Path) -> None:
@@ -194,10 +309,37 @@ def install_expert(terminal: Path, source: Path, callback_url: str, api_key: str
 
     # Starting the expert from the terminal's own startup file means it is
     # attached before the first tick, so no chart has to be set up by hand.
-    (terminal / "tzstart.ini").write_text(
-        "[StartUp]\nExpert=TradeZuluCopier\nSymbol=EURUSD\nPeriod=H1\n",
-        encoding="utf-8",
-    )
+    write_startup(terminal)
+
+
+def write_startup(
+    terminal: Path, login: str = "", server: str = "", password: str = ""
+) -> None:
+    """The terminal's startup file, optionally carrying credentials.
+
+    MetaTrader takes login details from this file rather than from the command
+    line -- the command-line switches are silently ignored by current builds,
+    which looks exactly like a wrong password.
+
+    Which means the password is briefly on disk in the clear. It is written
+    immediately before the terminal starts and removed as soon as it has
+    connected, because from then on MetaTrader keeps its own encrypted copy
+    and this one is nothing but a liability.
+    """
+    # ExpertParameters is not optional: without it the terminal starts the
+    # expert with empty inputs and it refuses to initialise, having no idea
+    # where to report or what token to use. The preset file being present is
+    # not enough -- it has to be named here.
+    lines = [
+        "[StartUp]",
+        "Expert=TradeZuluCopier",
+        "ExpertParameters=TradeZuluCopier.set",
+        "Symbol=EURUSD",
+        "Period=H1",
+    ]
+    if login and server and password:
+        lines += ["", "[Common]", f"Login={login}", f"Password={password}", f"Server={server}"]
+    (terminal / "tzstart.ini").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def launch(bottle: Path, terminal: Path, login: str, server: str, password: str) -> None:
@@ -208,16 +350,15 @@ def launch(bottle: Path, terminal: Path, login: str, server: str, password: str)
     a password written to disk in the clear would outlive this call.
     """
     log.info("starting terminal for %s on %s", login, server)
+    write_startup(terminal, login, server, password)
     script = (
         f'export WINEPREFIX="{bottle}" WINEDEBUG=-all DISPLAY={DISPLAY}\n'
         f'unset PYTHONPATH PYTHONHOME\n'
         f'cd "{terminal}"\n'
         f'setsid "{_runner()}" terminal64.exe /portable /config:tzstart.ini '
-        f'/login:{login} /server:"{server}" /password:"{password}" '
-        f'>/dev/null 2>&1 < /dev/null &\n'
-        f'sleep 5\n'
+        f'>/dev/null 2>&1 < /dev/null\n'
     )
-    _flatpak_run(script, timeout=120)
+    _flatpak_spawn(script)
 
 
 # --- the one thing that still needs a GUI ------------------------------------
@@ -232,6 +373,18 @@ def allow_webrequest(login: str, url: str) -> bool:
     not asking the user to do it -- and asking them would defeat the point,
     since an Expert Advisor without this permission fails silently.
     """
+    if shutil.which("xdotool") is None:
+        # Worth saying plainly rather than crashing: the terminal is running
+        # and everything else about it is correct, so the fix is one package
+        # rather than anything to undo.
+        log.error(
+            "xdotool is not installed, so %s cannot be allowed through "
+            "MetaTrader's WebRequest list and its Expert Advisor will not "
+            "reach TradeZulu. apt install xdotool, then this will retry.",
+            url,
+        )
+        return False
+
     env = {**os.environ, "DISPLAY": DISPLAY}
 
     found = subprocess.run(
@@ -280,7 +433,9 @@ def reconcile(plan: Plan, template: Path, expert: Path) -> None:
         bottle = bottle_for(account_id)
 
         if not bottle.exists():
-            clone_template(template, bottle)
+            clone_template(
+                template_for(spec.get("broker", ""), spec.get("server", ""), template), bottle
+            )
 
         terminal = terminal_dir(bottle)
         if terminal is None:
@@ -295,6 +450,12 @@ def reconcile(plan: Plan, template: Path, expert: Path) -> None:
 
         # Give the terminal time to reach a login before touching its window.
         time.sleep(45)
+
+        # The password has done its job. MetaTrader keeps its own encrypted
+        # copy from here on, so leaving this one on disk would buy nothing and
+        # risk everything.
+        write_startup(terminal)
+
         marker = bottle / ".tz-webrequest-allowed"
         if not marker.exists() and allow_webrequest(spec["login"], plan.callback_url):
             marker.touch()
@@ -307,8 +468,8 @@ def main() -> int:
     parser.add_argument(
         "--template",
         type=Path,
-        default=BOTTLES / "bottles" / "tz-template",
-        help="A prefix with MetaTrader already installed, copied for each account.",
+        default=BOTTLES / "bottles" / "tz-template-default",
+        help="Fallback prefix, used for brokers with no template of their own.",
     )
     parser.add_argument(
         "--expert",
@@ -328,8 +489,8 @@ def main() -> int:
         return 2
     if not args.template.exists():
         log.error(
-            "no template prefix at %s. Create one bottle with MetaTrader "
-            "installed and name it tz-template; every account is a copy of it.",
+            "no template prefix at %s -- run agent/make-template.sh to build one. "
+            "Every account is a copy of it.",
             args.template,
         )
         return 2

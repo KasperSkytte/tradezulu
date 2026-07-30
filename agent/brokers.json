@@ -1,0 +1,28 @@
+{
+  "_comment": [
+    "Which installer to use for each broker.",
+    "",
+    "MetaQuotes hosts a build per broker at a predictable address, which is why",
+    "these are preferred over the brokers' own download pages: the pages move,",
+    "wrap the file in a landing page, or hand out a different build per region.",
+    "",
+    "The generic MetaQuotes terminal will connect to most brokers by name, so",
+    "'default' is a working fallback rather than a placeholder. A broker-specific",
+    "build is still better where one exists -- it ships that broker's server list,",
+    "so the terminal finds the server without being told where to look.",
+    "",
+    "To add a broker: find its installer under download.mql5.com or the broker's",
+    "CDN, add an entry here, and run make-template.sh <key>. Nothing else changes."
+  ],
+
+  "default": {
+    "label": "MetaQuotes (works with most brokers)",
+    "installer": "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe",
+    "matches": []
+  },
+  "vantage": {
+    "label": "Vantage Markets",
+    "installer": "https://download.terminal.free/cdn/web/vantage.markets.pty/mt5/vantagemarkets5setup.exe",
+    "matches": ["vantage"]
+  }
+}
