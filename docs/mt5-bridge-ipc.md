@@ -231,6 +231,44 @@ and overridden to `native,builtin`. No change. Consistent with the winsock
 trace, which shows MetaTrader using raw sockets for the broker link rather than
 either of those.
 
+## MetaQuotes publish an official Linux recipe, and it contradicts several assumptions
+
+The terminal says so itself, in its own journal under Wine 9:
+
+```
+unstable and unsupported Wine 9.0, please upgrade to Wine 10.0 or later
+please uninstall and download from https://www.metatrader5.com/en/download
+```
+
+So a *newer* Wine is wanted, not an older one. The official installer,
+`https://download.terminal.free/cdn/web/metaquotes.software.corp/mt5/mt5linux.sh`,
+does four things this repository was not doing:
+
+| MetaQuotes | What was here |
+|---|---|
+| `winehq-**staging**` | stable only |
+| `winecfg -v=**win11**` | win10 |
+| installs the **WebView2 runtime** | never installed |
+| `WINEPREFIX=~/.mt5` | `/wine` |
+
+Wine Mono and Gecko are described as "required for platform operation" — this
+repository explicitly disabled both via `WINEDLLOVERRIDES="mscoree,mshtml="`.
+
+Following that recipe exactly on Debian bookworm with `winehq-staging`
+(11.10) gets further and then stops: the prefix builds to 892MB with a working
+`system32\kernel32.dll`, but `syswow64\kernel32.dll` is never created, so every
+32-bit executable — including MetaTrader's own installer — fails with
+
+```
+wine: could not load kernel32.dll, status c0000135
+```
+
+This is not a missing dependency. The 32-bit loader runs
+(`/opt/wine-staging/lib/wine/i386-unix/wine --version` reports 11.10), every
+i386 library resolves, and both `wine-staging-i386` and its 1104 i386-windows
+DLLs are installed. The prefix simply never grows its WoW64 half, on a fresh
+build as well as a repaired one.
+
 ## Where that leaves it
 
 Every known configuration fails identically on this host:
