@@ -269,6 +269,24 @@ i386 library resolves, and both `wine-staging-i386` and its 1104 i386-windows
 DLLs are installed. The prefix simply never grows its WoW64 half, on a fresh
 build as well as a repaired one.
 
+## Correction: the installer is 64-bit, so the WoW64 theory was wrong
+
+`file mt5setup.exe` reports **PE32+ executable (GUI) x86-64** — the installer
+is 64-bit, not 32-bit. The reasoning below about `syswow64` and WoW64 was
+therefore chasing the wrong thing, and is kept only because it records what was
+measured.
+
+On Ubuntu 24.04 with `winehq-stable` (11.0) and the i386 packages installed,
+both halves demonstrably work: a 32-bit `winemine.exe` and a 64-bit
+`winemine.exe` each run in the same win64 prefix, and `system32\kernel32.dll`
+is present. `syswow64` being empty is normal for a new-WoW64 build and is not a
+fault.
+
+MetaTrader's installer nonetheless fails there with `c0000135`, uniquely among
+the executables tried. Copying an already-installed terminal in sidesteps it,
+and the terminal then starts and does nothing: no window, no journal, no
+connection — the same end state as every other Wine configuration tried.
+
 ## Why the official recipe cannot complete here
 
 The staging build in this image has **no WoW64**. The evidence is direct:
