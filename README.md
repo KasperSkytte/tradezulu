@@ -153,9 +153,6 @@ before reporting something. The ones to know about today:
   trade closes, so that trade has no R
   ([#7](https://github.com/KasperSkytte/tradezulu/issues/7)). Stops set with the
   order are unaffected.
-- **Copying to a slave has not been run against a live account**
-  ([#10](https://github.com/KasperSkytte/tradezulu/issues/10)). The rules are
-  well covered by tests, but arm your first slave on a demo.
 
 ## Behind a reverse proxy
 
