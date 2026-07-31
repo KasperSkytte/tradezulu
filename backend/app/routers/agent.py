@@ -91,14 +91,50 @@ def _adopt_master(db: Session, login: str, server: str) -> Account | None:
         return None
 
     master = db.scalar(select(Account).where(Account.role == "master"))
+
+    # A different account *number* is a different account, and must not inherit
+    # the last one's history. Repointing the row in place -- which is what this
+    # used to do -- filed one broker account's trades and equity samples under
+    # another, so a 250 account and a 10,000 one became a single row whose
+    # equity curve jumped between them and whose statistics described neither.
+    #
+    # Only the number decides. A changed server on the same login is someone
+    # correcting a typo, and that row is theirs.
+    if master is not None and master.login.strip() != login.strip():
+        if _has_history(db, master):
+            master.role = "archived"
+            master.copy_enabled = False
+            was_default = master.is_default
+            master.is_default = False
+            log.info(
+                "agent: account %s kept as archived; %s is the master now",
+                master.login, login,
+            )
+            master = None
+        else:
+            was_default = master.is_default
+    else:
+        was_default = master.is_default if master is not None else True
+
     if master is None:
         master = Account(login=login, server=server, name=f"{login} ({server})", role="master")
+        master.is_default = was_default
         db.add(master)
     else:
         master.login, master.server = login, server
     db.flush()
     log.info("agent: master account is now %s on %s", login, server)
     return master
+
+
+def _has_history(db: Session, account: Account) -> bool:
+    """Whether anything is already filed under this account."""
+    from ..models import EquityPoint, Trade
+
+    for model in (Trade, EquityPoint):
+        if db.scalar(select(model.id).where(model.account_id == account.id).limit(1)):
+            return True
+    return False
 
 
 @router.post("/poll", response_model=AgentPollOut)

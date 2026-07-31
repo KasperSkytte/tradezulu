@@ -6,8 +6,10 @@ just an HTTP client, so the entire loop can be driven from a test.
 
 from __future__ import annotations
 
+from datetime import date, datetime
+
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.models import Account, CopyEvent, CopyLink
 
@@ -436,3 +438,101 @@ class TestRepeatedSkips:
         skips = self._skips(db, slave)
         assert len(skips) == 2
         assert skips[0].rule != skips[1].rule
+
+
+class TestMasterIdentityChanges:
+    """A different account number gets its own row, not the last one's history."""
+
+    def _credentials(self, auth_client, login, server="Master-Server"):
+        return auth_client.put(
+            "/api/mt5/credentials",
+            json={"login": login, "server": server, "password": "investor-password"},
+        )
+
+    def test_a_new_account_number_does_not_inherit_the_old_history(
+        self, auth_client, master, db
+    ):
+        """The bug: one row held two broker accounts.
+
+        Repointing login and server in place left every trade and equity sample
+        of the previous account filed under the new one -- so a 250 account and
+        a 10,000 account shared a row, and its equity curve jumped between them
+        mid-series.
+        """
+        from app.models import EquityPoint
+
+        db.add(EquityPoint(account_id=master.id, time=datetime(2026, 6, 1, 12),
+                           balance=250.0, equity=250.0))
+        db.commit()
+        old_id = master.id
+
+        assert self._credentials(auth_client, "7777").status_code in (200, 204)
+        response = auth_client.post(
+            "/api/agent/poll", json=account_payload("7777", "Master-Server")
+        )
+        assert response.status_code == 200
+
+        db.expire_all()
+        fresh = db.scalar(select(Account).where(Account.role == "master"))
+        assert fresh.id != old_id, "the new account number needs its own row"
+        assert fresh.login == "7777"
+
+        previous = db.get(Account, old_id)
+        assert previous.role == "archived"
+        assert previous.login == "5000"
+        # Its history stays with it, and is still reachable.
+        assert db.scalar(
+            select(func.count()).select_from(EquityPoint).where(
+                EquityPoint.account_id == old_id
+            )
+        ) == 1
+        assert db.scalar(
+            select(func.count()).select_from(EquityPoint).where(
+                EquityPoint.account_id == fresh.id
+            )
+        ) >= 0
+
+    def test_the_new_master_becomes_the_default(self, auth_client, master, db):
+        from app.models import Trade
+
+        db.add(Trade(account_id=master.id, position_id=1, symbol="EURUSD", direction="long",
+                     opened_at=datetime(2026, 6, 1, 9), closed_at=datetime(2026, 6, 1, 10),
+                     trade_date=date(2026, 6, 1), volume=1.0, closed_volume=1.0,
+                     entry_price=1.1, exit_price=1.11, net_pnl=10.0))
+        master.is_default = True
+        db.commit()
+
+        self._credentials(auth_client, "7777")
+        auth_client.post("/api/agent/poll", json=account_payload("7777", "Master-Server"))
+
+        db.expire_all()
+        fresh = db.scalar(select(Account).where(Account.role == "master"))
+        assert fresh.is_default is True
+
+    def test_an_empty_row_is_reused_rather_than_left_behind(self, auth_client, master, db):
+        """Nothing filed under it yet, so there is nothing to protect."""
+        old_id = master.id
+        self._credentials(auth_client, "7777")
+        auth_client.post("/api/agent/poll", json=account_payload("7777", "Master-Server"))
+
+        db.expire_all()
+        fresh = db.scalar(select(Account).where(Account.role == "master"))
+        assert fresh.id == old_id
+        assert db.scalar(select(func.count()).select_from(Account)) == 1
+
+    def test_a_corrected_server_keeps_the_same_row(self, auth_client, master, db):
+        """Same number, different server: a typo being fixed, not a new account."""
+        from app.models import EquityPoint
+
+        db.add(EquityPoint(account_id=master.id, time=datetime(2026, 6, 1, 12),
+                           balance=250.0, equity=250.0))
+        db.commit()
+        old_id = master.id
+
+        self._credentials(auth_client, "5000", server="Master-Server-2")
+        auth_client.post("/api/agent/poll", json=account_payload("5000", "Master-Server-2"))
+
+        db.expire_all()
+        fresh = db.scalar(select(Account).where(Account.role == "master"))
+        assert fresh.id == old_id
+        assert fresh.server == "Master-Server-2"
