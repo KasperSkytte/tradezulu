@@ -119,16 +119,16 @@ export function CalendarPage() {
       ) : (
         <Card padded={false} className="overflow-hidden">
           {/* Column headers: 7 day columns plus a weekly summary column. */}
-          <div className="grid grid-cols-[repeat(7,minmax(0,1fr))_minmax(0,0.85fr)] border-b border-[var(--tz-border)] text-xs font-medium text-[var(--tz-text-muted)]">
+          <div className="grid grid-cols-[repeat(7,minmax(0,1fr))] sm:grid-cols-[repeat(7,minmax(0,1fr))_minmax(0,0.85fr)] border-b border-[var(--tz-border)] text-xs font-medium text-[var(--tz-text-muted)]">
             {weekLabels.map((label) => (
               <div key={label} className="px-2 py-2 text-center">
                 {label}
               </div>
             ))}
-            <div className="border-l border-[var(--tz-border)] px-2 py-2 text-center">Week</div>
+            <div className="hidden border-l border-[var(--tz-border)] px-2 py-2 text-center sm:block">Week</div>
           </div>
 
-          <div className="grid grid-cols-[repeat(7,minmax(0,1fr))_minmax(0,0.85fr)]">
+          <div className="grid grid-cols-[repeat(7,minmax(0,1fr))] sm:grid-cols-[repeat(7,minmax(0,1fr))_minmax(0,0.85fr)]">
             {chunk(grid, 7).map((week) => {
               const weekKey = isoDate(week[0])
               const total = weekTotals.get(weekKey)
@@ -193,25 +193,32 @@ export function CalendarPage() {
                                 compact: true,
                               })}
                             </p>
+                            {/* No win rate here. A day's win rate is a ratio
+                                of a handful of trades, and next to a real
+                                return it reads as noise -- two percentages in
+                                one cell, only one of which anyone wanted. */}
                             <p className="mt-0.5 text-[0.65rem] text-[var(--tz-text-muted)]">
                               {entry.trades}t
-                              {entry.win_rate !== null && ` · ${Math.round(entry.win_rate)}%`}
                             </p>
-                            <p className="tabular text-[0.65rem] text-[var(--tz-text-faint)]">
-                              {entry.r > 0 ? '+' : ''}
-                              {num(entry.r, 1)}R
-                              {/* The day as a share of what the account was
-                                  worth that morning, not of a fixed size: win
-                                  50 on a 200 account and that is +25%. The
-                                  server computes it, because only it knows
-                                  what closed before today. */}
+                            {/* The day as a share of what the account was worth
+                                that morning: win 50 on a 200 account and that
+                                is +25%. R keeps it company where there is room. */}
+                            <p
+                              className={clsx(
+                                'tabular text-[0.65rem] font-medium',
+                                pnlClass(entry.net_pnl),
+                              )}
+                            >
                               {entry.return_pct != null && (
                                 <>
-                                  {' · '}
                                   {entry.return_pct > 0 ? '+' : ''}
                                   {num(entry.return_pct, 2)}%
                                 </>
                               )}
+                              <span className="ml-1 hidden font-normal text-[var(--tz-text-faint)] sm:inline">
+                                {entry.r > 0 ? '+' : ''}
+                                {num(entry.r, 1)}R
+                              </span>
                             </p>
                           </div>
                         )}
@@ -219,7 +226,7 @@ export function CalendarPage() {
                     )
                   })}
 
-                  <div className="border-b border-[var(--tz-border)] bg-[var(--tz-bg-subtle)] p-2">
+                  <div className="hidden border-b border-[var(--tz-border)] bg-[var(--tz-bg-subtle)] p-2 sm:block">
                     {total && total.trades > 0 ? (
                       <>
                         <p className="text-[0.65rem] text-[var(--tz-text-muted)]">Week total</p>
