@@ -222,6 +222,11 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=${RUN_USER}
+# flatpak wants a runtime directory, and a service account has no session to
+# get one from. systemd makes this one and cleans it up; pointing at
+# /run/user/<uid> instead would name something nothing ever creates.
+RuntimeDirectory=tradezulu-agent
+Environment=XDG_RUNTIME_DIR=/run/tradezulu-agent
 Environment=HOME=${RUN_HOME}
 Environment=TZ_URL=http://127.0.0.1:8420
 Environment=TZ_INGEST_TOKEN=${TOKEN}
