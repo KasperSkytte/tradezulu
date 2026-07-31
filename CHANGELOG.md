@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.10.0](https://github.com/KasperSkytte/tradezulu/compare/v1.9.2...v1.10.0) (2026-07-31)
+
+
+### Features
+
+* **agent:** bring an archived account back as master when its credentials return ([cff24c5](https://github.com/KasperSkytte/tradezulu/commit/cff24c5b68ad53d509580979c34672e17d87f53e))
+
+
+### Bug fixes
+
+* **uninstall:** tear the whole compose stack down, not only what the file still lists ([31b93a6](https://github.com/KasperSkytte/tradezulu/commit/31b93a6382a6c535f507dac1dd689b2ccfbf874b))
+
 ## [1.9.2](https://github.com/KasperSkytte/tradezulu/compare/v1.9.1...v1.9.2) (2026-07-31)
 
 
