@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.9.0](https://github.com/KasperSkytte/tradezulu/compare/v1.8.2...v1.9.0) (2026-07-31)
+
+
+### Features
+
+* **copier:** size by a percentage of balance, and drop the extra scaling factor ([d0fb2cc](https://github.com/KasperSkytte/tradezulu/commit/d0fb2cc9616b1bd7bb5c2e17d1d3c4e439776699))
+* **copier:** work the broker's symbol naming out from its own symbol list ([79f2741](https://github.com/KasperSkytte/tradezulu/commit/79f274130b1ded6a955fd843880075c4f93d3863))
+
+
+### Refactoring
+
+* **ui:** move the installation facts out of the MetaTrader settings ([35aa60b](https://github.com/KasperSkytte/tradezulu/commit/35aa60be2fae5c6812a60a40968b41bf93b6df4d))
+* **ui:** rework the slave account settings ([4f4d7b2](https://github.com/KasperSkytte/tradezulu/commit/4f4d7b2c376c09b361b6d8a5b5552699c81465c3))
+
+
+### Documentation
+
+* move all but the dashboard screenshot to a page of its own ([f825d6e](https://github.com/KasperSkytte/tradezulu/commit/f825d6ead1949a16f919a204cbeff476aeac793d))
+* refresh the screenshots ([3e24caf](https://github.com/KasperSkytte/tradezulu/commit/3e24caf4803b5ad8b84271359dd7b0552f899385))
+
 ## [1.8.2](https://github.com/KasperSkytte/tradezulu/compare/v1.8.1...v1.8.2) (2026-07-31)
 
 
