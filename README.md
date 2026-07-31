@@ -115,6 +115,23 @@ MetaTrader runs on the host rather than in a container, which is not for want
 of trying — [docs/metatrader.md](docs/metatrader.md) covers how it is put
 together and what was ruled out.
 
+## Uninstalling
+
+```bash
+./uninstall.sh --dry-run    # print what would happen, change nothing
+./uninstall.sh              # remove the software, keep the journal
+./uninstall.sh --all        # everything, including Wine and packages
+```
+
+The default keeps your trades: the database and the `.env` that decrypts it
+survive, so re-running `install.sh` picks up where you left off. `--purge-data`
+deletes them and asks you to type DELETE first.
+
+MetaTrader prefixes that TradeZulu did not create are never touched, whatever
+you pass — only `tz-<account>` and `tz-template-*` are removed, so a terminal
+you set up yourself is safe. Wine and Bottles are left alone entirely if any
+other bottle is still installed.
+
 ## Known issues
 
 Open problems are tracked as

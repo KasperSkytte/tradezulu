@@ -15,6 +15,8 @@
 #   ./install.sh --brokers default,vantage
 #   ./install.sh --no-terminals       # journal only, no copying
 #
+# To undo all of this, see ./uninstall.sh
+#
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,7 +30,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --brokers) BROKERS="$2"; shift 2 ;;
     --no-terminals) TERMINALS=0; shift ;;
-    -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -192,3 +194,4 @@ say "Add your MetaTrader account under Accounts; a terminal appears for it"
 say "within a minute or so. You should not have to touch this machine again."
 say ""
 say "  journalctl -u tradezulu-agent -f    # watch provisioning"
+say "  ./uninstall.sh --dry-run             # what removing it would do"
