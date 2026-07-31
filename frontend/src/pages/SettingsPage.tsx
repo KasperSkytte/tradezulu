@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle,
   Check,
-  Copy,
+
   Database,
   Download,
   Gauge,
@@ -515,7 +515,6 @@ function SyncSection() {
     onSuccess: () => void queryClient.invalidateQueries(),
   })
 
-  const origin = window.location.origin
 
   return (
     <div className="space-y-4">
@@ -533,87 +532,39 @@ function SyncSection() {
 
         <Field
           label="How deals reach TradeZulu"
-          hint="Account details is the simplest: you enter a server, an account number and an investor password once, and TradeZulu keeps itself up to date. It needs the mt5-bridge container, which runs a headless MetaTrader for you."
+          hint="A terminal is started for your account automatically and its Expert Advisor reports in. Manual import is there for history from anywhere else."
         >
           <SegmentedControl
             value={settings.mt5.sync_mode}
             onChange={(value) => void apply({ mt5: { sync_mode: value } })}
             options={[
-              { value: 'bridge', label: 'Account details' },
-              { value: 'ea', label: 'Expert Advisor' },
+              { value: 'ea', label: 'Automatic' },
               { value: 'off', label: 'Manual import' },
             ]}
           />
         </Field>
-
-        {settings.mt5.sync_mode === 'bridge' && (
+        {settings.mt5.sync_mode === 'ea' && (
           <div className="mt-4 space-y-4">
             <MT5Account status={status} />
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field
-                label="Terminal container URL"
-                hint="Where the headless MetaTrader lives. The default matches docker-compose.yml."
-              >
-                <input
-                  className="tz-input"
-                  defaultValue={settings.mt5.bridge_url}
-                  onBlur={(event) => void apply({ mt5: { bridge_url: event.target.value } })}
-                />
-              </Field>
-              <Field label="History to pull on a full sync (days)">
-                <NumberField
-                  value={settings.mt5.history_days_on_full_sync}
-                  step={30}
-                  onCommit={(value) => void apply({ mt5: { history_days_on_full_sync: value } })}
-                />
-              </Field>
-            </div>
-
             <Toggle
-              label="Sync automatically when the app opens"
-              description="Also refreshes in the background while the journal is open."
+              label="Refresh automatically while the journal is open"
               checked={settings.mt5.auto_sync_on_load}
               onChange={(value) => void apply({ mt5: { auto_sync_on_load: value } })}
             />
 
-            {status?.bridge_reachable && status.bridge_connected && (
+            {status?.connected ? (
               <p className="flex items-center gap-1.5 text-sm text-[var(--tz-gain-text)]">
                 <Check size={14} /> Terminal is running and logged in.
               </p>
-            )}
-          </div>
-        )}
+            ) : status?.message ? (
+              <p className="text-sm text-[var(--tz-text-muted)]">{status.message}</p>
+            ) : null}
 
-        {settings.mt5.sync_mode === 'ea' && (
-          <div className="mt-4 rounded-lg border border-[var(--tz-border)] bg-[var(--tz-surface-2)] p-4">
-            <p className="mb-1 text-sm font-medium">Set up the Expert Advisor</p>
-            <p className="mb-3 text-sm text-[var(--tz-text-muted)]">
-              The alternative to entering account details: nothing is stored here, but a
-              MetaTrader terminal has to be running on a machine of yours.
-            </p>
-            <ol className="list-decimal space-y-2 pl-5 text-sm text-[var(--tz-text-muted)]">
-              <li>
-                Copy <code className="tz-code">mt5/TradeZuluSync.mq5</code> into
-                <code className="tz-code">MQL5/Experts</code> in your terminal's data folder and
-                compile it in MetaEditor.
-              </li>
-              <li>
-                In MetaTrader, allow WebRequest to this host: Tools → Options → Expert Advisors →
-                “Allow WebRequest for listed URL” → add
-                <CopyField value={origin} />
-              </li>
-              <li>
-                Drag the EA onto any chart and set <code className="tz-code">ServerUrl</code> to
-                <CopyField value={`${origin}/api`} /> and{' '}
-                <code className="tz-code">ApiKey</code> to the value of{' '}
-                <code className="tz-code">TZ_INGEST_TOKEN</code> from your .env file.
-              </li>
-            </ol>
             {system && !system.ingest_token_configured && (
-              <p className="mt-3 flex items-center gap-1.5 text-sm text-[var(--tz-loss-text)]">
-                <AlertTriangle size={14} /> TZ_INGEST_TOKEN is not set on the server, so the EA
-                cannot authenticate yet.
+              <p className="flex items-center gap-1.5 text-sm text-[var(--tz-loss-text)]">
+                <AlertTriangle size={14} /> TZ_INGEST_TOKEN is not set on the server, so the
+                terminal cannot authenticate yet.
               </p>
             )}
           </div>
@@ -798,27 +749,6 @@ function Fact({
     </div>
   )
 }
-
-function CopyField({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false)
-  return (
-    <button
-      type="button"
-      className="mx-1 inline-flex items-center gap-1 rounded border border-[var(--tz-border)] bg-[var(--tz-surface)] px-1.5 py-0.5 font-mono text-xs transition-colors hover:border-[var(--tz-border-strong)]"
-      onClick={() => {
-        void navigator.clipboard?.writeText(value)
-        setCopied(true)
-        setTimeout(() => setCopied(false), 1500)
-      }}
-    >
-      {value}
-      {copied ? <Check size={11} /> : <Copy size={11} />}
-    </button>
-  )
-}
-
-/* --------------------------------------------------------------------- */
-
 const TAG_CATEGORIES = [
   { value: 'setup', label: 'Setup' },
   { value: 'mistake', label: 'Mistake' },

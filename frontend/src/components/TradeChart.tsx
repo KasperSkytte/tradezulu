@@ -3,7 +3,7 @@
  *
  * Two providers, both free:
  *  - "local" draws candles TradeZulu already holds (pushed by the Expert
- *    Advisor or pulled from the bridge) with the real entry, exit, stop and
+ *    Advisor) with the real entry, exit, stop and
  *    target marked on the price scale. This is the one that can show *your*
  *    fills, so it is the default.
  *  - "tradingview" embeds the free Advanced Chart widget, which has every

@@ -48,25 +48,21 @@ export function SyncButton() {
     return () => clearTimeout(timer)
   }, [flash])
 
-  // With account details configured the server can pull on its own, so bring
-  // the journal up to date when the app opens rather than making them click.
+  // Nothing is ever fetched: the terminal sends deals as they happen. This
+  // only re-reads what has already arrived, so the journal is current on open.
   useEffect(() => {
     if (autoSyncDone.current) return
-    if (settings.mt5.sync_mode !== 'bridge' || !settings.mt5.auto_sync_on_load) return
-    if (!status?.credentials_configured) return
-    const lastSync = status.last_sync_at ? new Date(status.last_sync_at).getTime() : 0
+    if (!settings.mt5.auto_sync_on_load) return
+    const lastSync = status?.last_sync_at ? new Date(status.last_sync_at).getTime() : 0
     const minInterval = (settings.mt5.auto_sync_min_interval_seconds || 120) * 1000
     if (Date.now() - lastSync < minInterval) return
     autoSyncDone.current = true
-    sync.mutate()
-  }, [settings.mt5, status, sync])
+    void queryClient.invalidateQueries()
+  }, [settings.mt5, status, queryClient])
 
-  // Only "account details" mode can actually fetch; the others just re-read.
-  const canPull = settings.mt5.sync_mode === 'bridge' && Boolean(status?.credentials_configured)
-  const title = canPull
-    ? `Fetch new deals from MetaTrader. Last sync ${relative(status?.last_sync_at)}.`
-    : settings.mt5.sync_mode === 'ea'
-      ? `The Expert Advisor pushes deals to TradeZulu. Last received ${relative(status?.last_sync_at)}. Click to re-read.`
+  const title =
+    settings.mt5.sync_mode === 'ea'
+      ? `The terminal sends deals as they happen. Last received ${relative(status?.last_sync_at)}. Click to re-read.`
       : 'Re-read the journal. Add your account under Settings → MetaTrader 5 to sync automatically.'
 
   return (
@@ -88,17 +84,12 @@ export function SyncButton() {
         className="tz-btn tz-btn-ghost"
         disabled={sync.isPending}
         onClick={() => {
-          if (canPull) {
-            sync.mutate()
-          } else {
-            // Nothing to fetch; just re-read whatever has arrived already.
-            void queryClient.invalidateQueries()
-            setFlash({ kind: 'ok', text: 'Refreshed' })
-          }
+          void queryClient.invalidateQueries()
+          setFlash({ kind: 'ok', text: 'Refreshed' })
         }}
       >
         <RefreshCw size={15} className={clsx(sync.isPending && 'animate-spin')} />
-        <span className="hidden sm:inline">{canPull ? 'Sync' : 'Refresh'}</span>
+        <span className="hidden sm:inline">Refresh</span>
       </button>
     </div>
   )

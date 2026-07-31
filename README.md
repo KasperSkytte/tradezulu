@@ -16,26 +16,23 @@ and journal every one of them. Self-hosted, free, and yours.
 ```bash
 git clone https://github.com/KasperSkytte/tradezulu.git
 cd tradezulu
-cp .env.example .env
+./install.sh --brokers default,vantage
 ```
 
-Put your secrets in `.env`:
+That sets up everything: the site in Docker, and MetaTrader on the host with a
+terminal template per broker. It generates your `.env` and prints the login it
+made. Open <http://localhost:8420>, sign in, add your account, and a terminal
+is started and logged in for it within a minute. You install nothing by hand
+and are never asked for a URL or a token.
+
+Journal only, no copying or terminals:
 
 ```bash
-TZ_SECRET_KEY=$(openssl rand -base64 48)     # signs the session cookie
-TZ_BRIDGE_TOKEN=$(openssl rand -hex 24)      # app <-> terminal container
-TZ_ADMIN_USER=you
-TZ_ADMIN_PASSWORD=something-long
+cp .env.example .env      # set TZ_SECRET_KEY and an admin password
+docker compose up -d
 ```
 
-Then start it:
-
-```bash
-docker compose --profile bridge up -d
-```
-
-Open <http://localhost:8420> and sign in. Everything lives in one SQLite file
-under `./data`.
+Everything lives in one SQLite file under `./data`.
 
 The admin user is created on the **first** start only, so editing those
 variables later has no effect — change the password in Settings, or from
@@ -101,26 +98,22 @@ docker compose run --rm --service-ports -e TZ_DEMO=1 tradezulu demo
 | Account number | `5000123` |
 | Investor password | the read-only one your broker issued |
 
-Press **Test connection**, then **Sync**.
-
-MetaTrader's protocol is proprietary, so a real terminal has to run somewhere —
-the `mt5-bridge` container is that terminal, headless. Its first boot downloads
-MetaTrader and takes 5–15 minutes; after that it starts in seconds.
-
-> **The bridge does not currently work.** The terminal runs, but MetaTrader's
-> Python API cannot reach it under Wine — `mt5.initialize()` returns an IPC
-> timeout. Published reference images fail the same way on the same machine, so
-> it is not specific to this one. Use the Expert Advisor below until it is
-> fixed; what was tried is written up in
-> [docs/mt5-bridge-ipc.md](docs/mt5-bridge-ipc.md).
+That is the whole setup. A MetaTrader terminal is created for the account,
+logged in, and given an Expert Advisor that reports back — automatically,
+within a minute or so. Nothing to install, no files to copy, no URL to type.
 
 For the journal, use the **investor password**: it is read-only, so TradeZulu
 cannot trade your account even by accident. Copying to a slave account does
 need that account's full password, which is why slaves stay in dry-run until
 you arm them.
 
-Prefer not to store credentials at all? An Expert Advisor and plain file import
-are covered in [docs/metatrader.md](docs/metatrader.md).
+Terminals are restarted every Sunday so MetaTrader's updates install during a
+quiet hour, rather than a broker's new build stopping a terminal mid-week with
+a dialog nobody is there to answer.
+
+MetaTrader runs on the host rather than in a container, which is not for want
+of trying — [docs/metatrader.md](docs/metatrader.md) covers how it is put
+together and what was ruled out.
 
 ## Behind a reverse proxy
 
@@ -159,7 +152,7 @@ tags, timezone, currency, theme — are all on the **Settings** page.
 |---|---|---|
 | `TZ_SECRET_KEY` | *(random)* | Signs the session cookie. Set it, or restarts log you out. |
 | `TZ_ADMIN_USER` / `TZ_ADMIN_PASSWORD` | `admin` / — | Created on the first start. |
-| `TZ_BRIDGE_TOKEN` | — | Shared key for the terminal container. |
+| `TZ_INGEST_TOKEN` | *(generated)* | Key the terminals authenticate with. |
 | `TZ_COOKIE_SECURE` | `false` | `true` when served over HTTPS. |
 | `TZ_PORT` | `8420` | Host port. |
 | `TZ_DEMO` | unset | Generate example trades on an empty database. |
@@ -170,7 +163,7 @@ The full list is in [.env.example](.env.example).
 
 ```bash
 git pull
-docker compose --profile bridge up -d --build
+docker compose up -d --build
 ```
 
 The schema catches itself up on every start — new columns and indexes are added

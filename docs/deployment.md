@@ -11,17 +11,16 @@ recompute a few thousand trades, which takes well under a second. A 2 vCPU /
 git clone https://github.com/KasperSkytte/tradezulu.git /opt/tradezulu
 cd /opt/tradezulu
 
-cp .env.example .env
-openssl rand -base64 48   # -> TZ_SECRET_KEY
-openssl rand -hex 24      # -> TZ_BRIDGE_TOKEN
-$EDITOR .env              # also set TZ_ADMIN_USER and TZ_ADMIN_PASSWORD
-
-docker compose --profile bridge up -d
+./install.sh --brokers default,vantage
 docker compose logs -f tradezulu
 ```
 
-Leave `--profile bridge` off if you plan to use the Expert Advisor instead of
-account-details sync; the journal runs perfectly well on its own.
+`install.sh` writes `.env` with generated secrets, starts the site, and sets up
+MetaTrader on the host. It is safe to re-run: every step checks whether it is
+already done.
+
+For a journal with no copying and no terminals, `cp .env.example .env` and
+`docker compose up -d` is the whole thing.
 
 `TZ_ADMIN_USER` and `TZ_ADMIN_PASSWORD` create the user on the **first** start
 only. Afterwards, change it in Settings → Security. There is no registration
@@ -138,18 +137,10 @@ services:
           memory: 512M
 ```
 
-The bridge container is the greedy one — Wine plus a MetaTrader terminal wants
-roughly 1.5–2 GB of RAM and a couple of GB of disk, though it is nearly idle
-between syncs:
-
-```yaml
-  mt5-bridge:
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 2G
-```
+The terminals are the greedy part, and they are not containers — each is a
+MetaTrader running under Wine on the host, wanting roughly 500 MB of RAM and
+about 1 GB of disk on top of its template. Budget for one per account plus a
+template per broker; they are nearly idle between ticks.
 
 Its `mt5-wine` volume is a cache, not data: deleting it costs you another
 first boot and nothing else.
@@ -182,5 +173,5 @@ Set `TZ_LOG_LEVEL=DEBUG` for verbose output when something is misbehaving.
   the terminal cannot place an order regardless.
 - Changing `TZ_SECRET_KEY` deliberately makes that stored password unreadable.
   TradeZulu detects this and asks for it again rather than carrying on.
-- The `mt5-bridge` container is never published to the network; only TradeZulu
-  can reach it, and `TZ_BRIDGE_TOKEN` gates even that.
+- Terminals only ever talk outwards, to `127.0.0.1`. Nothing listens on their
+  behalf, so there is no port to expose and none to secure.

@@ -1,9 +1,9 @@
-"""Storage for the MetaTrader 5 account the bridge should log into.
+"""Storage for the MetaTrader 5 account a terminal is logged into.
 
 Kept out of the main settings document on purpose: that document is returned
 to the browser wholesale, and the password must never be part of it. The
-password is encrypted at rest and only ever leaves this process on its way to
-the bridge container.
+password is encrypted at rest and leaves this process exactly once -- to the
+provisioner, which starts a terminal with it and then removes its copy.
 """
 
 from __future__ import annotations

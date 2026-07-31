@@ -214,12 +214,11 @@ export function MT5Account({ status }: { status?: SyncStatus }) {
         </div>
       )}
 
-      {status && status.bridge_reachable === false && (
+      {status && status.connected === false && (
         <p className="mt-3 flex items-start gap-1.5 text-sm text-[var(--tz-text-muted)]">
           <KeyRound size={14} className="mt-0.5 shrink-0" />
-          The terminal container is not running yet. Start it with{' '}
-          <code className="tz-code">docker compose --profile bridge up -d</code>. The first boot
-          downloads MetaTrader and takes a few minutes.
+          No terminal has reported in yet. One is started for this account automatically,
+          usually within a minute.
         </p>
       )}
     </div>

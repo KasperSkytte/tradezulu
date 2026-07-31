@@ -277,9 +277,7 @@ export interface AppSettings {
     targets: Record<string, number>
   }
   mt5: {
-    sync_mode: 'ea' | 'bridge' | 'off'
-    bridge_url: string
-    bridge_timeout_seconds: number
+    sync_mode: 'ea' | 'off'
     auto_sync_on_load: boolean
     auto_sync_min_interval_seconds: number
     history_days_on_full_sync: number
@@ -307,8 +305,7 @@ export interface SyncStatus {
   total_trades: number
   open_trades: number
   sync_mode: string
-  bridge_reachable: boolean | null
-  bridge_connected: boolean | null
+  connected: boolean | null
   credentials_configured: boolean
   message: string
 }

@@ -1,14 +1,17 @@
 """MetaTrader 5 synchronisation.
 
-Two directions are supported and they can be used at the same time:
+Everything arrives by being pushed. An Expert Advisor inside a terminal POSTs
+deals here with an API key; this server never reaches out to MetaTrader.
 
-* **pull** (the default) - you enter a server, an account number and an
-  investor password once. The ``mt5-bridge`` container runs a headless
-  MetaTrader 5 terminal, this server logs it in and asks it for deals. The
-  password is encrypted at rest and only ever travels to the bridge.
-* **push** - the ``TradeZuluSync`` Expert Advisor inside a terminal you already
-  run POSTs deals here with an API key. No credentials are stored at all, but
-  it needs that terminal to be running.
+That is not a preference so much as what works. Reaching a terminal from
+outside means driving MetaTrader's own inter-process interface, and under Wine
+it accepts a connection and then never answers -- see docs/metatrader.md for
+what was tried. A terminal talking outwards over plain HTTP has none of that
+problem, and it also means no inbound port, so a terminal behind NAT or on
+someone's laptop works exactly like one beside this server.
+
+Account credentials are still stored, encrypted: the provisioner needs them to
+start a terminal and log it in. They are never used from here.
 """
 
 from __future__ import annotations
@@ -17,12 +20,10 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..config import settings as env_settings
 from ..deps import AppConfig, CurrentUser, DbSession, get_default_account, require_ingest_auth
 from ..models import Account, Candle, Deal, SyncLog, Trade
 from ..schemas import (
@@ -41,7 +42,6 @@ from ..services.aggregation import (
 from ..services.credentials import (
     clear_credentials,
     credentials_status,
-    get_credentials,
     save_credentials,
 )
 
@@ -231,76 +231,6 @@ def cursor(db: DbSession, login: Annotated[str | None, Query()] = None) -> dict[
     }
 
 
-# --- talking to the bridge --------------------------------------------------
-
-
-def _bridge_base(config: dict[str, Any]) -> str:
-    base = str(config["mt5"].get("bridge_url", "")).rstrip("/")
-    if not base:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            "No bridge URL is configured. Set it in Settings -> MetaTrader 5.",
-        )
-    return base
-
-
-def _bridge_headers() -> dict[str, str]:
-    return {"X-Bridge-Token": env_settings.bridge_token} if env_settings.bridge_token else {}
-
-
-def _bridge_connect(db: Session, config: dict[str, Any]) -> dict[str, Any]:
-    """Hand the stored credentials to the bridge and log in.
-
-    The password leaves this process only here, over the internal compose
-    network, on its way to the terminal that needs it.
-    """
-    creds = get_credentials(db)
-    if not (creds["server"] and creds["login"] and creds["password"]):
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            "No MetaTrader account is configured. Add the server, account number "
-            "and investor password in Settings -> MetaTrader 5.",
-        )
-
-    base = _bridge_base(config)
-    timeout = float(config["mt5"].get("bridge_timeout_seconds", 60))
-    try:
-        with httpx.Client(timeout=timeout) as client:
-            response = client.post(f"{base}/connect", json=creds, headers=_bridge_headers())
-            payload = response.json()
-    except httpx.HTTPError as exc:
-        raise HTTPException(
-            status.HTTP_502_BAD_GATEWAY,
-            f"Could not reach the MetaTrader bridge at {base}: {exc}. Is the "
-            "bridge container running? (docker compose --profile bridge up -d)",
-        ) from exc
-    except ValueError as exc:
-        raise HTTPException(
-            status.HTTP_502_BAD_GATEWAY, f"The bridge returned invalid JSON: {exc}"
-        ) from exc
-
-    if response.status_code >= 400 or not payload.get("ok"):
-        raise HTTPException(
-            status.HTTP_502_BAD_GATEWAY,
-            str(payload.get("error") or "MetaTrader refused the login."),
-        )
-    return payload.get("account") or {}
-
-
-def _bridge_health(config: dict[str, Any]) -> dict[str, Any] | None:
-    base = str(config["mt5"].get("bridge_url", "")).rstrip("/")
-    if not base:
-        return None
-    try:
-        with httpx.Client(timeout=8.0) as client:
-            return client.get(f"{base}/health", headers=_bridge_headers()).json()
-    except (httpx.HTTPError, ValueError):
-        return None
-
-
-# --- credentials ------------------------------------------------------------
-
-
 @router.get("/credentials", response_model=MT5CredentialsOut)
 def read_credentials(_user: CurrentUser, db: DbSession) -> dict[str, Any]:
     """Everything about the stored account except the password itself."""
@@ -317,29 +247,16 @@ def write_credentials(
 
 
 @router.delete("/credentials", response_model=MT5CredentialsOut)
-def delete_credentials(_user: CurrentUser, db: DbSession, config: AppConfig) -> dict[str, Any]:
+def delete_credentials(_user: CurrentUser, db: DbSession) -> dict[str, Any]:
+    """Forget the stored account.
+
+    The terminal that was provisioned from these keeps running until the
+    provisioner's next pass, which stops asking for it once it is no longer in
+    the plan. Nothing is torn down from here.
+    """
     clear_credentials(db)
     db.commit()
-    # Best effort: tell the bridge to log out and forget them too.
-    base = str(config["mt5"].get("bridge_url", "")).rstrip("/")
-    if base:
-        try:
-            with httpx.Client(timeout=8.0) as client:
-                client.post(f"{base}/disconnect", headers=_bridge_headers())
-        except httpx.HTTPError:
-            log.info("bridge was not reachable while clearing credentials")
     return credentials_status(db)
-
-
-@router.post("/connect")
-def connect(_user: CurrentUser, db: DbSession, config: AppConfig) -> dict[str, Any]:
-    """Log the bridge in and report what the broker says back."""
-    account_info = _bridge_connect(db, config)
-    if account_info:
-        account = _resolve_account(db, account_info)
-        db.commit()
-        return {"ok": True, "account": account_info, "account_id": account.id}
-    return {"ok": True, "account": account_info}
 
 
 @router.get("/status", response_model=SyncStatus)
@@ -348,34 +265,33 @@ def status_(_user: CurrentUser, db: DbSession, config: AppConfig) -> SyncStatus:
     mode = config["mt5"].get("sync_mode", "ea")
 
     creds = credentials_status(db)
-    bridge_reachable: bool | None = None
-    bridge_connected: bool | None = None
     message = ""
 
-    if mode == "bridge":
-        health = _bridge_health(config)
-        bridge_reachable = health is not None
-        if health is None:
+    # Terminals report in rather than being polled, so "connected" is simply
+    # whether one has been heard from lately. A minute is generous: a master
+    # polls every ten seconds and a slave every two.
+    connected: bool | None = None
+    if mode == "ea":
+        if not creds["configured"]:
+            message = "Add your account under Settings -> MetaTrader 5."
+        elif account is None or account.last_sync_at is None:
+            connected = False
             message = (
-                "The bridge container is not answering. Start it with "
-                "'docker compose --profile bridge up -d'."
+                "No terminal has reported in yet. One is started for you within "
+                "a minute or so of the account being added."
             )
         else:
-            bridge_connected = bool(health.get("connected"))
-            if not bridge_connected:
-                message = str(health.get("error") or "").strip() or (
-                    "The bridge is running but not logged in yet."
-                    if creds["configured"]
-                    else "Add your account under Settings -> MetaTrader 5."
-                )
+            age = datetime.now(timezone.utc) - account.last_sync_at.replace(tzinfo=timezone.utc)
+            connected = age < timedelta(minutes=1)
+            if not connected:
+                message = "The terminal has not reported in for a while."
 
     if account is None:
         return SyncStatus(
             account_id=None, login=None, name=None, balance=None, equity=None, currency=None,
             last_sync_at=None, last_sync_source=None, total_deals=0, total_trades=0,
-            open_trades=0, sync_mode=mode, bridge_reachable=bridge_reachable,
-            bridge_connected=bridge_connected, credentials_configured=creds["configured"],
-            message=message,
+            open_trades=0, sync_mode=mode, connected=connected,
+            credentials_configured=creds["configured"], message=message,
         )
 
     return SyncStatus(
@@ -399,8 +315,7 @@ def status_(_user: CurrentUser, db: DbSession, config: AppConfig) -> SyncStatus:
             .where(Trade.account_id == account.id, Trade.closed_at.is_(None))
         ) or 0,
         sync_mode=mode,
-        bridge_reachable=bridge_reachable,
-        bridge_connected=bridge_connected,
+        connected=connected,
         credentials_configured=creds["configured"],
         message=message,
     )
@@ -411,55 +326,31 @@ def sync_now(
     _user: CurrentUser,
     db: DbSession,
     config: AppConfig,
-    full: Annotated[bool, Query(description="Re-pull the whole history window")] = False,
+    full: Annotated[bool, Query(description="Unused; kept so old clients do not break")] = False,
 ) -> MT5IngestResponse:
-    """Pull new deals from the optional MT5 bridge container."""
-    mt5_cfg = config["mt5"]
-    if mt5_cfg.get("sync_mode") != "bridge":
+    """There is nothing to pull.
+
+    Deals arrive when a terminal's Expert Advisor sends them, so this server
+    never reaches out to MetaTrader. The endpoint stays because the UI has a
+    refresh button, and answering plainly is friendlier than a 404.
+    """
+    del full
+    if config["mt5"].get("sync_mode") == "off":
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            "Pull sync is disabled. Set MT5 sync mode to 'bridge' in Settings, or let the "
-            "TradeZuluSync Expert Advisor push deals to this server.",
+            "Sync is turned off. Import a statement, or set sync mode to 'ea'.",
         )
-
-    base = _bridge_base(config)
-
-    # Hand over the credentials first; the bridge is stateless about them
-    # across restarts, so this makes a cold container recover on its own.
-    _bridge_connect(db, config)
-
     account = get_default_account(db)
-    if full or account is None or account.last_sync_at is None:
-        days = int(mt5_cfg.get("history_days_on_full_sync", 730))
-        since = datetime.now(timezone.utc) - timedelta(days=days)
-    else:
-        # Overlap by a day so late-settling swaps are picked up.
-        since = account.last_sync_at.replace(tzinfo=timezone.utc) - timedelta(days=1)
-
-    timeout = float(mt5_cfg.get("bridge_timeout_seconds", 60))
-    try:
-        with httpx.Client(timeout=timeout) as client:
-            headers = _bridge_headers()
-            info = client.get(f"{base}/account", headers=headers).json()
-            deals = client.get(
-                f"{base}/deals",
-                params={"from_ts": int(since.timestamp())},
-                headers=headers,
-            ).json()
-    except httpx.HTTPError as exc:
-        db.add(SyncLog(source="bridge", status="error", message=str(exc)))
-        db.commit()
-        raise HTTPException(
-            status.HTTP_502_BAD_GATEWAY, f"Could not reach the MT5 bridge: {exc}"
-        ) from exc
-    except ValueError as exc:
-        raise HTTPException(
-            status.HTTP_502_BAD_GATEWAY, f"Bridge returned invalid JSON: {exc}"
-        ) from exc
-
-    if isinstance(deals, dict):
-        deals = deals.get("deals", [])
-    return _apply_ingest(db, config, info, deals, [], source="bridge")
+    return MT5IngestResponse(
+        account_id=account.id if account else None,
+        deals_received=0,
+        deals_new=0,
+        trades_upserted=0,
+        message=(
+            "Terminals push their own deals; there is nothing to pull. "
+            "If nothing is arriving, check the terminal is running."
+        ),
+    )
 
 
 @router.post("/rebuild")
@@ -484,6 +375,12 @@ def sync_logs(_user: CurrentUser, db: DbSession, limit: Annotated[int, Query(le=
 # --- candles ----------------------------------------------------------------
 
 
+_TIMEFRAME_SECONDS = {
+    "M1": 60, "M5": 300, "M15": 900, "M30": 1800,
+    "H1": 3600, "H4": 14400, "D1": 86400, "W1": 604800,
+}
+
+
 @router.get("/candles", response_model=CandleResponse)
 def get_candles(
     _user: CurrentUser,
@@ -495,7 +392,7 @@ def get_candles(
     end: datetime | None = None,
     trade_id: int | None = None,
 ) -> CandleResponse:
-    """Candles for the chart replay, from our cache or the bridge if configured.
+    """Candles for the chart replay, from what terminals have already sent.
 
     Either ``trade_id`` (which picks the symbol and the window from the trade)
     or an explicit ``symbol`` is required.
@@ -535,14 +432,10 @@ def get_candles(
             .order_by(Candle.time)
         ).all()
     )
+    # Only what a terminal has already sent. There is nobody to ask for the
+    # rest: charts are drawn from the candles the Expert Advisor stores as it
+    # goes, so a period nothing was running for simply has none.
     source = "local"
-
-    if not rows and config["mt5"].get("sync_mode") == "bridge":
-        fetched = _fetch_candles_from_bridge(db, config, symbol, timeframe, start, end)
-        if fetched:
-            db.commit()
-            rows = fetched
-            source = "bridge"
 
     return CandleResponse(
         symbol=symbol,
@@ -560,57 +453,6 @@ def get_candles(
             for c in rows
         ],
     )
-
-
-def _fetch_candles_from_bridge(
-    db: Session,
-    config: dict[str, Any],
-    symbol: str,
-    timeframe: str,
-    start: datetime,
-    end: datetime,
-) -> list[Candle]:
-    base = str(config["mt5"].get("bridge_url", "")).rstrip("/")
-    if not base:
-        return []
-    try:
-        with httpx.Client(timeout=float(config["mt5"].get("bridge_timeout_seconds", 60))) as client:
-            payload = client.get(
-                f"{base}/candles",
-                headers=_bridge_headers(),
-                params={
-                    "symbol": symbol,
-                    "timeframe": timeframe,
-                    "from_ts": int(start.replace(tzinfo=timezone.utc).timestamp()),
-                    "to_ts": int(end.replace(tzinfo=timezone.utc).timestamp()),
-                },
-            ).json()
-    except (httpx.HTTPError, ValueError) as exc:
-        log.warning("Candle fetch from bridge failed: %s", exc)
-        return []
-
-    candles = payload.get("candles", payload) if isinstance(payload, dict) else payload
-    if not candles:
-        return []
-    _store_candles(db, [{"symbol": symbol, "timeframe": timeframe, "candles": candles}])
-    return list(
-        db.scalars(
-            select(Candle)
-            .where(
-                Candle.symbol == symbol,
-                Candle.timeframe == timeframe,
-                Candle.time >= start,
-                Candle.time <= end,
-            )
-            .order_by(Candle.time)
-        ).all()
-    )
-
-
-_TIMEFRAME_SECONDS = {
-    "M1": 60, "M5": 300, "M15": 900, "M30": 1800,
-    "H1": 3600, "H4": 14400, "D1": 86400, "W1": 604800,
-}
 
 
 def _timeframe_seconds(timeframe: str) -> int:

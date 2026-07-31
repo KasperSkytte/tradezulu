@@ -77,19 +77,15 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         },
     },
     "mt5": {
-        # bridge  -> this server logs a headless terminal in with your account
-        #            details and pulls deals (the default: nothing to install)
-        # ea      -> the TradeZuluSync Expert Advisor pushes to /api/mt5/ingest
-        # off     -> manual import only
-        "sync_mode": "bridge",
-        "bridge_url": "http://mt5-bridge:8080",
-        "bridge_timeout_seconds": 60,
+        # ea  -> a terminal's Expert Advisor pushes to this server
+        # off -> manual import only
+        "sync_mode": "ea",
         "auto_sync_on_load": True,
         "auto_sync_min_interval_seconds": 120,
         "history_days_on_full_sync": 730,
     },
     "charts": {
-        # local -> replay from candles stored by the EA/bridge
+        # local -> replay from candles stored by the Expert Advisor
         # tradingview -> free TradingView Advanced Chart widget
         "provider": "local",
         "default_timeframe": "M15",
@@ -137,10 +133,24 @@ def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]
     return out
 
 
+#: Modes that no longer exist, and what they became.
+RETIRED_SYNC_MODES = {
+    # "bridge" drove a containerised MetaTrader that this server logged in and
+    # polled. It never worked -- see docs/metatrader.md -- and an install that
+    # upgrades while still set to it would otherwise land on a mode nothing
+    # implements, which reads as the sync being broken rather than moved.
+    "bridge": "ea",
+}
+
+
 def get_app_settings(db: Session) -> dict[str, Any]:
     row = db.get(Setting, SETTINGS_KEY)
     stored = row.value if row and isinstance(row.value, dict) else {}
-    return deep_merge(DEFAULT_SETTINGS, stored)
+    merged = deep_merge(DEFAULT_SETTINGS, stored)
+    mode = merged.get("mt5", {}).get("sync_mode")
+    if mode in RETIRED_SYNC_MODES:
+        merged["mt5"]["sync_mode"] = RETIRED_SYNC_MODES[mode]
+    return merged
 
 
 def save_app_settings(db: Session, patch: dict[str, Any]) -> dict[str, Any]:

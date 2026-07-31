@@ -273,8 +273,8 @@ class SyncStatus(BaseModel):
     total_trades: int
     open_trades: int
     sync_mode: str
-    bridge_reachable: bool | None = None
-    bridge_connected: bool | None = None
+    #: Whether a terminal has reported in recently. None when sync is off.
+    connected: bool | None = None
     credentials_configured: bool = False
     message: str = ""
 

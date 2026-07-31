@@ -41,7 +41,10 @@ log = logging.getLogger(__name__)
 
 
 class Broker(Protocol):
-    """What the copier needs from a terminal. Implemented by the bridge."""
+    """What the copier needs from a terminal.
+
+    Implemented by the Expert Advisor protocol in ``agent.py``.
+    """
 
     def positions(self, account_id: int) -> list[dict[str, Any]]: ...
     def account(self, account_id: int) -> dict[str, Any]: ...

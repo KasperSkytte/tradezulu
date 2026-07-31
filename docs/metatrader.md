@@ -1,13 +1,13 @@
 # Getting your trades into TradeZulu
 
-Three routes. They can all be used on the same journal — deals are keyed by
-their MetaTrader ticket, so nothing is ever imported twice.
+Two routes, and for almost everyone the first is the only one worth reading.
+Both can be used on the same journal — deals are keyed by their MetaTrader
+ticket, so nothing is imported twice.
 
-| Route | What you provide | Anything to install? | Recommended |
-|---|---|---|---|
-| [Account details](#1-account-details-recommended) | server, account number, investor password | no | ✅ |
-| [Expert Advisor](#2-expert-advisor) | nothing stored | an EA in a terminal you keep running | if you would rather not store a password |
-| [File import](#3-file-import) | an HTML report or CSV | no | for one-off history |
+| Route | What you provide | Anything to install? |
+|---|---|---|
+| [Account details](#account-details) | server, account number, investor password | no |
+| [File import](#file-import) | an HTML report or CSV | no |
 
 ---
 
@@ -16,168 +16,178 @@ their MetaTrader ticket, so nothing is ever imported twice.
 MetaTrader 5's client-server protocol is proprietary and undocumented. There is
 no public API that takes a server name, a login and a password and hands back
 your trade history — the only software that can speak to a broker's MT5 server
-is MetaTrader itself, and the official Python package works by talking to a
-running terminal over local IPC.
+is MetaTrader itself.
 
-So "just use my account details" means: *something* has to run a terminal.
-TradeZulu's answer is to run one for you, headless, in the `mt5-bridge`
-container, so you never have to see it or keep your own PC on. That is the
-whole purpose of that container.
+So "just use my account details" means *something* has to run a terminal.
+TradeZulu runs one for you, out of sight, on the same machine as the site. It
+is a normal MetaTrader install rather than a container, which is deliberate and
+is the subject of the [last section](#why-not-a-container).
 
 ---
 
-## 1. Account details (recommended)
+## Account details
 
-### Start the terminal container
+**Settings → MetaTrader 5**:
 
-```bash
-docker compose --profile bridge up -d
-docker compose logs -f mt5-bridge
-```
-
-The first boot downloads Wine's prefix, a Windows Python and the MetaTrader
-installer into the `mt5-wine` volume — 5 to 15 minutes and a couple of GB.
-Watch the log until it says `starting the bridge on port 8080`. Every later
-start takes seconds, because the volume keeps all of it.
-
-### Enter your account
-
-**Settings → MetaTrader 5**, with *Account details* selected:
-
-| Field | Where to find it |
+| Field | Example |
 |---|---|
-| **Trade server** | In MetaTrader, *File → Open an Account* lists it, or look at the bottom-right status bar. It must match exactly, e.g. `ICMarketsSC-Live12`, `Pepperstone-Demo`. |
-| **Account number** | Your login, e.g. `5000123`. |
-| **Investor password** | The read-only password your broker issued alongside the master one. |
+| Trade server | `ICMarketsSC-Live12` |
+| Account number | `5000123` |
+| Investor password | the read-only one your broker issued |
 
-**Save account**, then **Test connection**. On success it tells you the broker,
-the account and the balance it can see, and whether the login is read-only.
-
-Then press **Sync** in the header. The first sync pulls the whole history
-window (two years by default, adjustable), and from then on the journal
-refreshes itself whenever you open it.
+Save, and within a minute or so a terminal exists for that account — logged in,
+with TradeZulu's Expert Advisor attached and reporting back. There is nothing
+else to do.
 
 ### Use the investor password
 
-Every broker issues two passwords: the master one, which can trade, and the
-investor one, which can only look. TradeZulu only ever reads, but with the
-investor password that stops being a promise and becomes a property of the
-account — the terminal is physically unable to place an order.
+Every broker issues two passwords. The **investor** password is read-only: it
+can see the account and nothing else. Use it for the master account and
+TradeZulu cannot place an order on it even by mistake.
 
-If you enter a master password anyway, the *Test connection* result says so,
-because you should know.
+Copying *to* an account needs that account's real password, which is why slaves
+are created disabled and in dry-run, and why arming one is a separate,
+deliberate step.
 
 ### How the password is kept
 
-- Encrypted with AES-GCM before it touches the database, under a key derived
-  from `TZ_SECRET_KEY`.
-- Never returned by any API. The form shows only whether one is stored; the
-  settings endpoint does not include it at all.
-- Sent only to the bridge container, over the internal compose network, when
-  logging the terminal in.
-- Change `TZ_SECRET_KEY` and the stored password becomes unreadable on purpose.
-  TradeZulu notices and asks you to enter it again rather than silently
-  carrying on.
+Encrypted in the database, never returned to the browser, and kept out of the
+settings document the UI reads wholesale.
 
-If you would rather no password existed anywhere, use the Expert Advisor below.
+It leaves the server exactly once: the provisioner writes it into the terminal's
+startup file, MetaTrader reads it at launch, and the file is rewritten without
+it as soon as the terminal has connected. From then on MetaTrader keeps its own
+encrypted copy and TradeZulu's is gone.
+
+This is also why the command line is not used for it. Current MetaTrader builds
+ignore `/login:` and `/password:` entirely and sit on the new-account wizard
+instead, which looks exactly like a rejected password.
+
+### What gets set up
+
+Per broker, once:
+
+- A **template** — one MetaTrader install, built by `agent/make-template.sh`.
+  Broker-specific builds matter: the generic MetaQuotes terminal cannot resolve
+  a name like `VantageMarkets-Live` at all and offers to open a new account
+  instead.
+- Its **permissions**, by `agent/set-permissions.sh` — algorithmic trading on,
+  every "disable algorithmic trading when…" off, and TradeZulu on the WebRequest
+  allowlist. MetaTrader keeps that allowlist encrypted in its own config, so it
+  can only be set through the dialog. Doing it on the template means it happens
+  once rather than per account.
+
+Per account, automatically:
+
+- The template is copied. A copy is the same installation byte for byte, so it
+  inherits those permissions and no dialog is ever driven again.
+- The Expert Advisor is compiled and installed, with the callback URL and token
+  written into its preset. Both come from the server the provisioner is already
+  authenticated to, which is why nobody is ever asked for them — and why the URL
+  is this server's internal address, so putting a domain in front of the site
+  later changes nothing about how its terminals reach it.
+- The terminal starts, logs in, and reports.
+
+Which template an account gets is decided by its **server name**, not its broker
+name: the server name always arrives correct because it comes from the broker,
+while a demo account may report its broker as something as unhelpful as "Demo
+Broker". Brokers live in [`agent/brokers.json`](../agent/brokers.json) — adding
+one is a name and an installer URL.
+
+### Weekly restart
+
+Terminals are restarted every Sunday at 3am, and templates refreshed at the same
+time.
+
+MetaTrader downloads updates while it runs and then asks to restart to install
+them. Left alone, that question sits on screen indefinitely and a terminal
+waiting on it is not copying anything — so the failure would arrive on whatever
+day a broker happened to ship a build. Restarting on a schedule applies updates
+during the quietest hour of the week, with no dialog, because a terminal that is
+already stopped installs them on the way up.
+
+Change it with `--maintenance-day` (Monday=0) and `--maintenance-hour`, or run
+one immediately:
+
+```bash
+python3 agent/tz_provision.py --maintenance-now --once
+```
 
 ### Troubleshooting
 
-| What you see | What it means |
-|---|---|
-| *"The bridge container is not answering"* | It is not running, or still on its first boot. `docker compose --profile bridge up -d` then `docker compose logs -f mt5-bridge`. |
-| *"Invalid account (-6)"* | Wrong number, wrong password, or a server name that does not match exactly. The server string is case- and punctuation-sensitive. |
-| *"The terminal did not answer in time (-8)"* | It is still starting. Wait a minute and press *Test connection* again. |
-| `no terminal to run` in the logs | Your broker ships a custom MetaTrader build the generic installer will not fetch. Set `MT5_SETUP_URL` in `.env` to their installer and recreate the container. |
-| Connects, but no trades appear | The history window may predate your trades. Raise *History to pull on a full sync*, then Sync again. |
-| A broker dialog seems to be blocking login | Set `MT5_ENABLE_VNC=1`, publish port 5900 on `mt5-bridge`, and connect with a VNC viewer to answer it once. |
-
-### What it costs to run
-
-Roughly 1.5–2 GB of RAM and a couple of GB of disk while running, and almost no
-CPU between syncs. On the 12-thread Xeon this is nothing, but it is worth a
-`deploy.resources.limits` block if the VM is tight — see
-[deployment.md](deployment.md).
-
----
-
-## 2. Expert Advisor
-
-The alternative when you would rather not store a password anywhere. Your
-broker credentials never leave MetaTrader; the terminal calls TradeZulu with an
-API key instead. The cost is that a terminal has to be running on a machine of
-yours.
-
-1. In MetaTrader: **File → Open Data Folder**, copy `mt5/TradeZuluSync.mq5`
-   into `MQL5\Experts\`.
-2. Open it in MetaEditor and compile with **F7**.
-3. **Tools → Options → Expert Advisors** → tick *Allow WebRequest for listed
-   URL* and add your journal's origin (scheme, host and port; no path):
-
-   ```text
-   https://journal.example.com
-   ```
-
-4. Drag **TradeZuluSync** onto any chart. Set `ServerUrl` to
-   `https://journal.example.com/api` and `ApiKey` to your `TZ_INGEST_TOKEN`.
-5. Make sure **Algo Trading** is enabled. The chart shows a status block.
-
-Switch *Settings → MetaTrader 5* to **Expert Advisor** so the UI stops looking
-for the bridge.
-
-### A note on stop losses, for both routes
-
-R multiples are only as good as the stop, and MetaTrader stores the stop on the
-*order*. A stop attached after entry — dragged onto the chart, or trailed —
-never reaches the deal history at all.
-
-- **The Expert Advisor** solves this: it snapshots each position's stop the
-  first time it sees it and keeps it in `MQL5\Files\`, so the real risk is
-  recorded even when the order carried none. This is the one genuine advantage
-  it has over account-details sync.
-- **Account-details sync** sees only what the broker recorded. Where no stop
-  exists, TradeZulu falls back to the rule in *Settings → Risk*, and you can
-  type the real stop into any trade to recompute its R.
-
-If you always set your stop on the entry order, the two are equivalent.
-
----
-
-## 3. File import
-
-For history from before you set anything up.
-
-**From MetaTrader:** *Toolbox → History* → right-click → **Report** → save as
-**HTML**. Then *Settings → MetaTrader 5 → Import a file* and drop it in.
-TradeZulu reads the report's *Positions* table, which is already trade-level.
-
-**From a CSV:** any file with at least a symbol, an open time and a price.
-Column names are matched loosely, so all of these work:
-
-```text
-Symbol, Type, Volume, Open Time, Open Price, Close Time, Close Price, S/L, T/P, Profit, Commission
-instrument; side; lots; opentime; entry; exittime; exit; pnl
-symbol,type,open time,price,profit,tags,notes
+```bash
+journalctl --user -u tradezulu-agent -f      # what the provisioner is doing
 ```
 
-`tags` may be comma- or pipe-separated and creates tags that do not exist yet.
+The Expert Advisor writes to the terminal's own log, under `MQL5/logs/` in that
+account's prefix
+(`~/.var/app/com.usebottles.bottles/data/bottles/bottles/tz-<account id>/`). It
+says plainly when something is wrong: an empty token, a URL that is not on the
+allowlist, algorithmic trading switched off.
 
-Imported trades carry no contract specifications, so TradeZulu recovers the
-value-per-point from the realised result and the price distance travelled —
-which means R multiples still work on imported history.
+Those logs are UTF-16, so `grep` finds nothing in them until they are converted:
 
-Re-importing the same file updates the existing trades rather than duplicating
-them, and never overwrites notes, tags, ratings or manual stop overrides.
+```bash
+iconv -f UTF-16LE -t UTF-8 <logfile> | tail
+```
 
 ---
+
+## A note on stop losses
+
+R multiples come from the stop the broker recorded. A trade closed manually with
+no stop on it has no risk to measure, so it has no R — the journal shows the
+money and leaves R blank rather than inventing a denominator.
+
+If you move a stop to breakeven and are taken out there, that counts as a
+breakeven rather than a win, and stays out of the win rate in both directions.
+
+---
+
+## File import
+
+**Settings → Import a file**. In MetaTrader: **Toolbox → History**, right-click →
+**Report** → save as HTML, then drop the file in. Plain CSV works too, as long as
+it has open and close times and prices.
+
+Imports are matched on the deal ticket, so importing the same statement twice
+changes nothing.
 
 ## Rebuilding after the fact
 
-*Settings → MetaTrader 5 → Maintenance* has two safe buttons:
+Changing the risk defaults or the breakeven rule does not rewrite history by
+itself. **Settings → Rebuild** re-folds every stored deal into trades using the
+current rules. Notes, tags and ratings are keyed to the trade and survive it.
 
-- **Rebuild trades from stored deals** re-groups the raw deals into trades.
-- **Recompute all statistics** re-derives risk, R and outcomes using the
-  current settings.
+---
 
-Neither touches anything you typed: notes, tags, ratings, manual stops, targets
-and risk overrides all survive.
+## Why not a container
+
+TradeZulu is containerised. MetaTrader is not, and that is not an oversight.
+
+The original design ran a headless MetaTrader in its own container and drove it
+with MetaQuotes' Python package. The terminal starts and loads an account, and
+`mt5.initialize()` returns an IPC timeout — the terminal accepts the connection
+and never answers.
+
+Eliminated one at a time, all failing identically: Docker networking, host
+networking, seccomp and AppArmor, the clock, CA certificates, port reachability,
+WineHQ 8 through 11 including staging, Python 3.9 and 3.11, 32- and 64-bit,
+several versions of the Python package, generic and broker-branded terminals,
+root and non-root, four display configurations, `winhttp`/`wininet`, `mt5linux`,
+and two published reference projects built verbatim.
+
+Under Wine-TkG "Soda" 9.0 the error changes to `-6 Authorization failed` — the
+terminal *answering*. That is the build the provisioner uses, and it is why
+Bottles is installed as a runtime rather than as an application: Soda is built
+against that flatpak's libraries and does not work outside it.
+
+So the terminal runs where it demonstrably works, and reaches TradeZulu over
+plain HTTP from an Expert Advisor inside it. That is better than the original
+plan regardless of Wine: the terminal talks outwards, so there is no inbound
+port and no credentials in flight at request time, and a terminal on someone
+else's laptop works exactly like one sitting beside the server.
+
+The bridge container has been removed. If it is ever worth retrying, the code is
+in the git history (`git log --diff-filter=D -- mt5-bridge/`) and the list above
+is what not to try first.

@@ -139,8 +139,15 @@ class TestIngest:
         assert status["total_trades"] == 1
         assert status["last_sync_source"] == "ea"
 
-    def test_pull_sync_is_refused_when_not_configured(self, auth_client):
-        assert auth_client.post("/api/mt5/sync").status_code == 400
+    def test_sync_says_there_is_nothing_to_pull(self, auth_client):
+        """The button exists, but terminals push -- so it only ever re-reads.
+
+        Worth asserting rather than deleting: an endpoint that quietly 404s
+        would look like a broken server to anyone who pressed refresh.
+        """
+        response = auth_client.post("/api/mt5/sync")
+        assert response.status_code == 200
+        assert "push" in response.json()["message"].lower()
 
 
 class TestTrades:

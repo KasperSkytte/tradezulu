@@ -63,9 +63,6 @@ class Settings:
         # MT5 ------------------------------------------------------------
         # Expert Advisors authenticate with this key instead of a session cookie.
         self.ingest_token: str = os.getenv("TZ_INGEST_TOKEN", "").strip()
-        # Shared secret for the bridge container, which lives on the internal
-        # compose network and is never published.
-        self.bridge_token: str = os.getenv("TZ_BRIDGE_TOKEN", "").strip()
         # Where terminals on this machine reach TradeZulu. Deliberately not the
         # public address: the terminals are local, so putting a domain and a
         # certificate in front of the site later must not mean reconfiguring

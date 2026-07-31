@@ -2,7 +2,7 @@
 """Keeps a MetaTrader terminal running for every account TradeZulu knows about.
 
 TradeZulu itself is containerised. MetaTrader is not, and after exhausting the
-alternatives (see docs/mt5-bridge-ipc.md) that is a deliberate split rather
+alternatives (see docs/metatrader.md) that is a deliberate split rather
 than a temporary one: the terminal is reliable under a normal Wine install on
 the host and was not reliable in a container. This process bridges the two. It
 runs on the same machine as the site, asks it what terminals should exist, and
@@ -33,6 +33,7 @@ import urllib.error
 import urllib.request
 from contextlib import suppress
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 
 log = logging.getLogger("tz-provision")
@@ -573,6 +574,91 @@ def reconcile(plan: Plan, template: Path, expert: Path) -> None:
             marker.touch()
 
 
+# --- weekly restart -----------------------------------------------------------
+
+#: When the last maintenance pass finished.
+STATE = BOTTLES / ".tz-last-maintenance"
+
+
+def maintenance_due(weekday: int, hour: int, now: datetime | None = None) -> bool:
+    """Whether it is time for the weekly restart.
+
+    The window is checked rather than scheduled, so a machine that was off on
+    Sunday still gets its restart when it comes back rather than skipping a
+    week.
+
+    Running twice is prevented by the date of the last pass, not by how long
+    ago it was. "Seven days" is wrong at the boundary: a pass that finishes at
+    03:05 is five minutes short of seven days when the next Sunday's 03:00
+    window opens, so a week would be silently skipped every time.
+    """
+    now = now or datetime.now()
+    if now.weekday() != weekday or now.hour < hour:
+        return False
+    try:
+        last = datetime.fromtimestamp(STATE.stat().st_mtime)
+    except OSError:
+        return True
+    return last.date() < now.date()
+
+
+def refresh_template(template: Path) -> None:
+    """Start a template long enough for it to update itself, then stop it.
+
+    New accounts are copies of these, so a template left behind means every
+    account created from it starts with an update waiting -- which is the
+    problem this whole pass exists to avoid, just deferred.
+    """
+    terminal = terminal_dir(template)
+    if terminal is None:
+        return
+    log.info("refreshing template %s", template.name)
+    script = (
+        f'export WINEPREFIX="{template}" WINEDEBUG=-all DISPLAY={DISPLAY}\n'
+        f'unset PYTHONPATH PYTHONHOME\n'
+        f'cd "{terminal}"\n'
+        f'setsid "{_runner()}" terminal64.exe /portable >/dev/null 2>&1 < /dev/null\n'
+    )
+    _flatpak_spawn(script)
+    time.sleep(240)
+    stop_terminal(template)
+
+
+def run_maintenance(plan: Plan, fallback: Path) -> None:
+    """Stop every terminal so that the next cycle starts it fresh.
+
+    MetaTrader downloads updates while it runs and then asks to restart to
+    install them. Left alone that question sits on screen for days, and a
+    terminal waiting on it is not copying trades -- the failure arrives on
+    whatever day the broker happens to ship a build, not on a day anyone
+    chose. Restarting on a schedule applies updates during a quiet hour
+    instead, with no dialog, because a terminal that is already stopped
+    installs them on the way up.
+
+    Nothing is started here. The reconcile that follows sees no terminal
+    running and brings each one back, which is the same path used for a
+    terminal that died for any other reason.
+    """
+    log.info("weekly maintenance: restarting terminals to pick up updates")
+
+    for spec in plan.terminals:
+        bottle = bottle_for(int(spec["account_id"]))
+        if is_running(bottle):
+            log.info("stopping %s", bottle.name)
+            stop_terminal(bottle)
+
+    seen: set[Path] = set()
+    for spec in plan.terminals:
+        template = template_for(spec.get("broker", ""), spec.get("server", ""), fallback)
+        if template.exists() and template not in seen:
+            seen.add(template)
+            refresh_template(template)
+
+    STATE.parent.mkdir(parents=True, exist_ok=True)
+    STATE.touch()
+    log.info("weekly maintenance done")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", default=os.getenv("TZ_URL", "http://127.0.0.1:8420"))
@@ -590,6 +676,26 @@ def main() -> int:
     )
     parser.add_argument("--interval", type=int, default=60)
     parser.add_argument("--once", action="store_true")
+    # Sunday by default, in the small hours: the weekend gap between the
+    # Friday close and the Sunday open is the only time restarting a terminal
+    # cannot interrupt a trade.
+    parser.add_argument(
+        "--maintenance-day",
+        type=int,
+        default=int(os.getenv("TZ_MAINTENANCE_DAY", "6")),
+        help="Weekday for the update restart, Monday=0 (default Sunday).",
+    )
+    parser.add_argument(
+        "--maintenance-hour",
+        type=int,
+        default=int(os.getenv("TZ_MAINTENANCE_HOUR", "3")),
+        help="Hour of that day, local time (default 3am).",
+    )
+    parser.add_argument(
+        "--maintenance-now",
+        action="store_true",
+        help="Run the weekly restart immediately, then carry on as normal.",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -609,9 +715,18 @@ def main() -> int:
 
     ensure_display()
 
+    forced = args.maintenance_now
     while True:
         try:
-            reconcile(fetch_plan(args.url, args.token), args.template, args.expert)
+            plan = fetch_plan(args.url, args.token)
+            # Before reconciling, not after: maintenance only stops terminals,
+            # and the reconcile that follows is what brings them back. Doing it
+            # the other way round would leave everything down until the next
+            # cycle.
+            if forced or maintenance_due(args.maintenance_day, args.maintenance_hour):
+                forced = False
+                run_maintenance(plan, args.template)
+            reconcile(plan, args.template, args.expert)
         except urllib.error.URLError as error:
             log.warning("TradeZulu not reachable at %s: %s", args.url, error)
         except Exception:  # noqa: BLE001 - a bad cycle must not kill the daemon
