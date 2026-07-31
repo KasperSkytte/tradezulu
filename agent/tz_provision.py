@@ -300,6 +300,9 @@ def install_expert(terminal: Path, source: Path, callback_url: str, api_key: str
         if candidate.exists():
             shutil.copy2(candidate, experts / candidate.name)
 
+    compile_expert(terminal, experts / f"{source.stem}.mq5")
+    set_expert_flags(terminal)
+
     presets = terminal / "MQL5/Presets"
     presets.mkdir(parents=True, exist_ok=True)
     (presets / "TradeZuluCopier.set").write_text(
@@ -310,6 +313,106 @@ def install_expert(terminal: Path, source: Path, callback_url: str, api_key: str
     # Starting the expert from the terminal's own startup file means it is
     # attached before the first tick, so no chart has to be set up by hand.
     write_startup(terminal)
+
+
+def compile_expert(terminal: Path, mq5: Path) -> None:
+    """Build the expert, rather than hoping the terminal gets there first.
+
+    MetaTrader does compile the sources it finds on startup, but it starts the
+    expert named in the startup file *before* that finishes -- so on a fresh
+    terminal there is nothing to run yet and the expert simply never appears,
+    with no error anywhere to say why.
+    """
+    ex5 = mq5.with_suffix(".ex5")
+    if ex5.exists() and ex5.stat().st_mtime >= mq5.stat().st_mtime:
+        return
+
+    editor = next(terminal.glob("metaeditor64.exe"), None) or next(
+        terminal.glob("MetaEditor64.exe"), None
+    )
+    if editor is None:
+        log.warning("no MetaEditor in %s; relying on the terminal to compile", terminal)
+        return
+
+    log.info("compiling %s", mq5.name)
+    prefix = terminal
+    while prefix.parent != prefix and prefix.name != "drive_c":
+        prefix = prefix.parent
+    script = (
+        f'export WINEPREFIX="{prefix.parent}" WINEDEBUG=-all DISPLAY={DISPLAY}\n'
+        f'unset PYTHONPATH PYTHONHOME\n'
+        f'cd "{terminal}"\n'
+        f'"{_runner()}" "{editor.name}" /compile:"MQL5\\\\Experts\\\\{mq5.name}" >/dev/null 2>&1\n'
+    )
+    subprocess.run(_flatpak_argv(script), capture_output=True, timeout=300)
+    if ex5.exists():
+        log.info("compiled %s", ex5.name)
+    else:
+        log.warning("%s did not compile; the terminal will try on its own", mq5.name)
+
+
+#: What the Experts tab of MetaTrader's options writes. Only the URL list is
+#: encrypted; these are plain text, so they can be set without a dialog.
+EXPERT_FLAGS = {
+    "Enabled": "1",   # allow algorithmic trading
+    "Account": "0",   # ... and do not switch it off again on the first login
+    "Profile": "0",
+    "Chart": "0",
+    "Api": "0",
+}
+
+
+def set_expert_flags(terminal: Path) -> None:
+    """Make sure algorithmic trading stays on once the terminal logs in.
+
+    A template belongs to no account, so a provisioned terminal's first login
+    counts as the account changing -- and by default MetaTrader answers that
+    by disabling algorithmic trading, several seconds after everything looked
+    fine. The expert never runs and nothing says why.
+
+    Writing the flags here rather than clicking them means it does not matter
+    what state a template was left in.
+    """
+    config = terminal / "Config/common.ini"
+    if not config.exists():
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text(
+            "[Experts]\n" + "".join(f"{k}={v}\n" for k, v in EXPERT_FLAGS.items()),
+            encoding="utf-16-le",
+        )
+        return
+
+    raw = config.read_bytes()
+    encoding = "utf-16" if raw[:2] in (b"\xff\xfe", b"\xfe\xff") else "utf-8"
+    try:
+        text = raw.decode(encoding)
+    except UnicodeDecodeError:
+        log.warning("could not read %s; leaving it alone", config)
+        return
+
+    lines, seen, in_experts = [], set(), False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("["):
+            if in_experts:
+                lines += [f"{k}={v}" for k, v in EXPERT_FLAGS.items() if k not in seen]
+                seen.update(EXPERT_FLAGS)
+            in_experts = stripped.lower() == "[experts]"
+        elif in_experts and "=" in stripped:
+            key = stripped.split("=", 1)[0].strip()
+            if key in EXPERT_FLAGS:
+                seen.add(key)
+                lines.append(f"{key}={EXPERT_FLAGS[key]}")
+                continue
+        lines.append(line)
+
+    if in_experts:
+        lines += [f"{k}={v}" for k, v in EXPERT_FLAGS.items() if k not in seen]
+    elif not seen:
+        lines += ["", "[Experts]"] + [f"{k}={v}" for k, v in EXPERT_FLAGS.items()]
+
+    config.write_text("\n".join(lines) + "\n", encoding=encoding)
+    log.info("algorithmic trading flags set in %s", config.name)
 
 
 def write_startup(
@@ -455,6 +558,15 @@ def reconcile(plan: Plan, template: Path, expert: Path) -> None:
         # copy from here on, so leaving this one on disk would buy nothing and
         # risk everything.
         write_startup(terminal)
+
+        # A template that was granted its permissions passes them on, because
+        # a clone is the same installation byte for byte. That is the whole
+        # reason this does not have to drive a dialog for every account -- and
+        # driving one here would mean finding the right window among every
+        # other account's terminal, which is a guess this has no business
+        # making. Only a template built without them falls through.
+        if (bottle / ".tz-permissions-set").exists():
+            continue
 
         marker = bottle / ".tz-webrequest-allowed"
         if not marker.exists() and allow_webrequest(spec["login"], plan.callback_url):
