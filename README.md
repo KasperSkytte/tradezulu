@@ -10,6 +10,7 @@ and journal every one of them. Self-hosted, free, and yours.
 </div>
 
 ![Dashboard](docs/screenshots/dashboard.png)
+More screenshots are in [docs/screenshots.md](docs/screenshots.md).
 
 ## Quick start
 
@@ -92,9 +93,6 @@ docker compose run --rm --service-ports -e TZ_DEMO=1 tradezulu demo
 It is a PWA, so it installs on a phone and is laid out for one — the calendar
 drops to the figures that matter, and the trade list becomes cards rather than
 a table you have to pan across.
-
-More screenshots — calendar, trades, reports, a trade in detail, and the phone
-layout — are in [docs/screenshots.md](docs/screenshots.md).
 
 ## Connect MetaTrader 5
 
