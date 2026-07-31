@@ -15,8 +15,6 @@ import {
 import { useEffect, useState } from 'react'
 import clsx from 'clsx'
 import { useAuth } from '../lib/auth'
-import { useQuery } from '@tanstack/react-query'
-import { api } from '../lib/api'
 import { useSettings } from '../lib/settings'
 import { PeriodPicker } from './PeriodPicker'
 import { SyncButton } from './SyncButton'
@@ -43,11 +41,6 @@ const PAGE_TITLES: Record<string, string> = {
 export function Layout() {
   const { user, logout } = useAuth()
   const { settings, setTheme } = useSettings()
-  const { data: system } = useQuery({
-    queryKey: ['system'],
-    queryFn: () => api.get<{ version: string }>('/settings/system'),
-    staleTime: Infinity,
-  })
   const location = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
 
@@ -100,12 +93,6 @@ export function Layout() {
           <p className="px-3 pt-2 text-xs text-[var(--tz-text-faint)]">
             Signed in as {user?.username}
           </p>
-          {/* Quiet, but somewhere to point at when someone reports a bug. */}
-          {system?.version && (
-            <p className="px-3 pt-0.5 text-xs text-[var(--tz-text-faint)]">
-              TradeZulu {system.version}
-            </p>
-          )}
         </div>
       </aside>
 
