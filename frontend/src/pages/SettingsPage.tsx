@@ -141,8 +141,14 @@ function GeneralSection() {
   const { settings } = useSettings()
   const { apply, saved } = useSaver()
   const general = settings.general
+  const { data: system } = useQuery({
+    queryKey: ['system'],
+    queryFn: () => api.get<SystemInfo>('/settings/system'),
+    staleTime: Infinity,
+  })
 
   return (
+    <div className="space-y-4">
     <Card>
       <CardHeader title="General" action={<SavedFlag saved={saved} />} />
       <div className="grid gap-4 sm:grid-cols-2">
@@ -220,6 +226,27 @@ function GeneralSection() {
         />
       </div>
     </Card>
+
+    {/* None of this is about MetaTrader, which is where it used to sit. It
+        describes the installation, so it belongs where someone would look for
+        it when asked what version they are running. */}
+    {system && (
+      <Card>
+        <CardHeader title="About this installation" />
+        <dl className="space-y-1.5 text-sm">
+          <Fact inline label="Version" value={system.version} />
+          <Fact inline label="Data directory" value={system.data_dir} />
+          <Fact inline label="Trades stored" value={String(system.trades)} />
+          {system.secret_key_ephemeral && (
+            <p className="flex items-center gap-1.5 pt-1 text-[var(--tz-loss-text)]">
+              <AlertTriangle size={14} /> TZ_SECRET_KEY is unset — you will be logged out on
+              every restart.
+            </p>
+          )}
+        </dl>
+      </Card>
+    )}
+    </div>
   )
 }
 
@@ -652,19 +679,6 @@ function SyncSection() {
           <p className="mt-2 text-sm text-[var(--tz-text-muted)]">
             Recomputed {recompute.data.recomputed} trades.
           </p>
-        )}
-        {system && (
-          <dl className="mt-4 space-y-1.5 border-t border-[var(--tz-border)] pt-3 text-sm">
-            <Fact inline label="Version" value={system.version} />
-            <Fact inline label="Data directory" value={system.data_dir} />
-            <Fact inline label="Trades stored" value={String(system.trades)} />
-            {system.secret_key_ephemeral && (
-              <p className="flex items-center gap-1.5 pt-1 text-[var(--tz-loss-text)]">
-                <AlertTriangle size={14} /> TZ_SECRET_KEY is unset — you will be logged out on every
-                restart.
-              </p>
-            )}
-          </dl>
         )}
       </Card>
 
