@@ -67,7 +67,7 @@ export function Hint({ text, className }: { text: string; className?: string }) 
       </button>
       <span
         role="tooltip"
-        className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 w-64 -translate-x-1/2 rounded-md border border-[var(--tz-border)] bg-[var(--tz-surface)] px-2.5 py-2 text-xs font-normal leading-snug text-[var(--tz-text)] opacity-0 shadow-lg transition-opacity duration-100 peer-hover:opacity-100 peer-focus-visible:opacity-100"
+        className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 w-64 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-md border border-[var(--tz-border)] bg-[var(--tz-surface)] px-2.5 py-2 text-xs font-normal leading-snug text-[var(--tz-text)] opacity-0 shadow-lg transition-opacity duration-100 peer-hover:opacity-100 peer-focus-visible:opacity-100"
       >
         {text}
       </span>

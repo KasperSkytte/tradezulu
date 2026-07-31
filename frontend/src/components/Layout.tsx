@@ -129,7 +129,12 @@ export function Layout() {
           </div>
         </header>
 
-        <main className="min-w-0 flex-1 px-3 py-4 pb-24 sm:px-5 lg:pb-8">
+        {/* clip, not hidden: hidden would make this a scroll container and
+            break the sticky header. A tooltip anchored near the right edge
+            is absolutely positioned and invisible until hovered, but it
+            still widens the page and makes the whole thing pan sideways on
+            a phone. */}
+        <main className="min-w-0 flex-1 overflow-x-clip px-3 py-4 pb-24 sm:px-5 lg:pb-8">
           <Outlet />
         </main>
       </div>
