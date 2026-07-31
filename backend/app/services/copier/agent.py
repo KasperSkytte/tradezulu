@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 from ...models import Account, CopyEvent, CopyLink, EquityPoint
 from .config import mirror_stops_enabled, risk_from, sizing_from, symbol_rules_from
 from .engine import ActionType, CopiedPosition, MasterPosition, SlaveContext, plan
-from .risk import SlaveSnapshot
+from .risk import OpenPosition, SlaveSnapshot
 from .sizing import AccountState, SymbolSpec
 
 log = logging.getLogger(__name__)
@@ -273,6 +273,42 @@ def _context_for(
     specs = {s["symbol"].upper(): _spec_from(s) for s in symbols}
     settings = account.copy_settings or {}
 
+    # What the account is actually exposed to, straight from the terminal. The
+    # limits that count positions -- max_open_positions, max_same_direction,
+    # max_positions_per_symbol, max_total_lots -- are all measured against this,
+    # and it has to be everything the account holds rather than only what the
+    # copier opened: a cap that ignores half the book is not a cap. Dry-run
+    # links are included because nothing was really opened for them, so the
+    # terminal cannot report them and a rehearsal would otherwise look like an
+    # account with no exposure at all.
+    master_id_by_ticket = {
+        link.slave_position_id: link.master_position_id for link in links if not link.dry_run
+    }
+    held = [
+        OpenPosition(
+            symbol=str(row.get("symbol", "")),
+            direction=str(row.get("direction", "")),
+            volume=float(row.get("volume", 0.0)),
+            entry_price=float(row.get("open_price", 0.0)),
+            profit=float(row.get("profit", 0.0)),
+            stop_loss=row.get("stop_loss"),
+            master_position_id=master_id_by_ticket.get(int(row["ticket"])),
+        )
+        for row in positions
+    ]
+    held += [
+        OpenPosition(
+            symbol=link.slave_symbol,
+            direction=link.direction,
+            volume=link.slave_volume,
+            entry_price=link.open_price or 0.0,
+            stop_loss=link.stop_loss,
+            master_position_id=link.master_position_id,
+        )
+        for link in links
+        if link.dry_run
+    ]
+
     return SlaveContext(
         account_id=account.id,
         account=AccountState(balance=account.balance, equity=account.equity),
@@ -281,7 +317,7 @@ def _context_for(
             equity=account.equity,
             day_start_equity=account.day_start_equity or account.equity,
             peak_equity=account.peak_equity or account.equity,
-            open_positions=[],
+            open_positions=held,
         ),
         sizing=sizing_from(settings),
         risk=risk_from(settings),
