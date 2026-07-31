@@ -143,6 +143,12 @@ def calendar(
     filters.include_excluded = True
     trades = fetch_trades(db, filters)
 
+    # What the account was worth on the morning of the first of the month, so
+    # each day can be read against where the account actually stood rather than
+    # against a fixed number. Winning 50 on a 200 account is +25%, and saying
+    # +0.2% of some configured size describes a different account.
+    opening = _opening_balance(db, config, filters, first)
+
     stats = summarize(
         trades,
         risk_cfg=config["risk"],
@@ -204,7 +210,8 @@ def calendar(
         # currency. 2R at 1% risk is 2% of the account, and that is the number
         # most people actually judge a day by.
         "account_size": _account_size(db, config, filters.account_id),
-        "days": sorted(days.values(), key=lambda d: str(d["date"])),
+        "opening_balance": round(opening, 2),
+        "days": _with_daily_return(sorted(days.values(), key=lambda d: str(d["date"])), opening),
         "weeks": sorted(weeks.values(), key=lambda w: w["week_start"]),
         "summary": {
             key: stats[key]
@@ -213,6 +220,39 @@ def calendar(
             )
         },
     }
+
+
+def _opening_balance(db, config: dict[str, Any], filters, before: date) -> float:
+    """Account value on the morning of ``before``.
+
+    The configured account size is the starting point, and every trade closed
+    before that date is added to it. Anything else would measure a day in
+    October against the balance in January.
+    """
+    base = _account_size(db, config, filters.account_id)
+    earlier = TradeFilters(
+        account_id=filters.account_id,
+        start=None,
+        end=before - timedelta(days=1),
+        include_excluded=True,
+    )
+    return base + sum(t.net_pnl or 0.0 for t in fetch_trades(db, earlier))
+
+
+def _with_daily_return(days: list[dict[str, Any]], opening: float) -> list[dict[str, Any]]:
+    """Attach each day's result as a share of that morning's balance.
+
+    Compounding, so a good day early makes a later day of the same size a
+    smaller percentage. That is what actually happened to the account.
+    """
+    running = opening
+    for day in days:
+        day["start_balance"] = round(running, 2)
+        day["return_pct"] = (
+            round(day["net_pnl"] / running * 100.0, 4) if running > 0 else None
+        )
+        running += day["net_pnl"]
+    return days
 
 
 @router.get("/day/{day}")

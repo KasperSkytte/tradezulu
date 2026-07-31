@@ -368,3 +368,40 @@ class TestPeriodBounds:
 
     def test_unknown_falls_back_to_30_days(self):
         assert period_bounds("nonsense", self.TODAY) == period_bounds("last_30_days", self.TODAY)
+
+
+class TestDailyReturn:
+    """A day is measured against what the account was worth that morning."""
+
+    def test_fifty_on_two_hundred_is_twenty_five_percent(self):
+        from app.routers.stats import _with_daily_return
+
+        days = _with_daily_return([{"date": "2026-01-02", "net_pnl": 50.0}], 200.0)
+        assert days[0]["start_balance"] == 200.0
+        assert days[0]["return_pct"] == pytest.approx(25.0)
+
+    def test_it_compounds(self):
+        """The second day is measured against the balance the first day left.
+
+        Judging both against the opening figure would call two equal days
+        equal, when the second was a smaller share of a bigger account.
+        """
+        from app.routers.stats import _with_daily_return
+
+        days = _with_daily_return(
+            [
+                {"date": "2026-01-02", "net_pnl": 100.0},
+                {"date": "2026-01-03", "net_pnl": 100.0},
+            ],
+            1000.0,
+        )
+        assert days[0]["return_pct"] == pytest.approx(10.0)
+        assert days[1]["start_balance"] == 1100.0
+        assert days[1]["return_pct"] == pytest.approx(9.0909, rel=1e-3)
+
+    def test_no_percentage_without_a_balance(self):
+        """Dividing by zero would make every day look infinite."""
+        from app.routers.stats import _with_daily_return
+
+        days = _with_daily_return([{"date": "2026-01-02", "net_pnl": 50.0}], 0.0)
+        assert days[0]["return_pct"] is None

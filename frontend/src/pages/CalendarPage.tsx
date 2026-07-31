@@ -62,7 +62,7 @@ export function CalendarPage() {
   }, [query.data])
 
   const summary = query.data?.summary
-  const accountSize = query.data?.account_size ?? 0
+  const openingBalance = query.data?.opening_balance ?? 0
 
   return (
     <div className="space-y-4">
@@ -91,11 +91,11 @@ export function CalendarPage() {
         {summary && (
           <div className="ml-auto flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
             <Stat label="Net P&L" value={money(summary.net_pnl, currency, { sign: true })} accent />
-          {accountSize > 0 && summary.net_pnl !== null && (
+          {openingBalance > 0 && summary.net_pnl !== null && (
             <Stat
               label="Return"
               value={`${summary.net_pnl > 0 ? '+' : ''}${num(
-                (summary.net_pnl / accountSize) * 100,
+                (summary.net_pnl / openingBalance) * 100,
                 2,
               )}%`}
               accent
@@ -200,15 +200,16 @@ export function CalendarPage() {
                             <p className="tabular text-[0.65rem] text-[var(--tz-text-faint)]">
                               {entry.r > 0 ? '+' : ''}
                               {num(entry.r, 1)}R
-                              {/* The same day as a share of the account: 2R at
-                                  1% risk is 2%, and that is the figure most
-                                  people judge a day by. Needs a known account
-                                  size, so it is omitted rather than guessed. */}
-                              {accountSize > 0 && (
+                              {/* The day as a share of what the account was
+                                  worth that morning, not of a fixed size: win
+                                  50 on a 200 account and that is +25%. The
+                                  server computes it, because only it knows
+                                  what closed before today. */}
+                              {entry.return_pct != null && (
                                 <>
                                   {' · '}
-                                  {entry.net_pnl > 0 ? '+' : ''}
-                                  {num((entry.net_pnl / accountSize) * 100, 2)}%
+                                  {entry.return_pct > 0 ? '+' : ''}
+                                  {num(entry.return_pct, 2)}%
                                 </>
                               )}
                             </p>

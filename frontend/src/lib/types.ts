@@ -111,6 +111,10 @@ export interface EquityPoint {
 }
 
 export interface DailyPoint {
+  /** Balance that morning, and the day's result as a share of it. Both are
+      absent outside the calendar, which is the only place they are computed. */
+  start_balance?: number
+  return_pct?: number | null
   date: string
   net_pnl: number
   trades: number
@@ -230,6 +234,8 @@ export interface CalendarResponse {
   end: string
   /** 0 when unknown, in which case percentages are omitted rather than guessed. */
   account_size: number
+  /** Account value on the morning of the first, so days compound from it. */
+  opening_balance: number
   days: DailyPoint[]
   weeks: CalendarWeek[]
   summary: Pick<
