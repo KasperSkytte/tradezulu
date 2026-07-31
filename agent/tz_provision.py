@@ -34,7 +34,7 @@ import urllib.error
 import urllib.request
 from contextlib import suppress
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 log = logging.getLogger("tz-provision")
@@ -308,7 +308,7 @@ def install_expert(terminal: Path, source: Path, callback_url: str, api_key: str
     presets = terminal / "MQL5/Presets"
     presets.mkdir(parents=True, exist_ok=True)
     (presets / "TradeZuluCopier.set").write_text(
-        "ServerUrl={}\nApiKey={}\nPollSeconds=3\n".format(callback_url, api_key),
+        f"ServerUrl={callback_url}\nApiKey={api_key}\nPollSeconds=3\n",
         encoding="utf-8",
     )
 

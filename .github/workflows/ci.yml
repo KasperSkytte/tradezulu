@@ -38,6 +38,37 @@ jobs:
           TZ_BCRYPT_ROUNDS: '4'
         run: pytest -q
 
+  # The provisioner and the install scripts run on the user's own server, where
+  # a mistake surfaces as a failed provisioning cycle rather than a failed test.
+  # Neither was checked by anything until a `re.escape` call shipped without the
+  # import, which only failed once a terminal reached the point of needing it.
+  agent:
+    name: Agent and scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install ruff
+        run: pip install ruff
+
+      # The backend's configuration, so both halves are held to one standard.
+      # F821 is the rule that matters most here: this code has no test suite to
+      # find an undefined name for it.
+      - name: Lint the provisioner
+        run: ruff check --config backend/pyproject.toml agent/
+
+      - name: Check it parses and imports
+        run: python -c "import ast, pathlib; [ast.parse(p.read_text()) for p in pathlib.Path('agent').rglob('*.py')]"
+
+      - name: Lint the shell scripts
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck install.sh uninstall.sh
+
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
