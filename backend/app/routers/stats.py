@@ -38,15 +38,26 @@ def summary(
     # the metrics layer keeps them out of every calculation.
     filters.include_excluded = True
     trades = fetch_trades(db, filters)
-    return summarize(
+
+    # Measured against what the account was worth when the period began, not
+    # against its starting deposit. A period is a window on an account that
+    # has been growing or shrinking all along, and judging this month against
+    # January's balance describes a different month.
+    opening = _opening_balance(db, config, filters, range_.start)
+    out = summarize(
         trades,
         risk_cfg=config["risk"],
         stats_cfg=config["stats"],
         score_cfg=config["zulu_score"],
-        account_size=_account_size(db, config, filters.account_id),
+        account_size=opening,
         period_start=range_.start,
         period_end=range_.end,
     )
+    out["opening_balance"] = round(opening, 2)
+    out["return_pct"] = (
+        round((out.get("net_pnl") or 0.0) / opening * 100.0, 4) if opening > 0 else None
+    )
+    return out
 
 
 @router.get("/compare")

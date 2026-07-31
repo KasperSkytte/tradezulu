@@ -135,7 +135,16 @@ export function DashboardPage() {
                 ? 'var(--tz-gain-text)'
                 : 'var(--tz-loss-text)'
           }
-          sub={`${summary.counts.total} trades · ${rMultiple(summary.total_r)} total`}
+          // The return leads: money says what the period paid, but only a
+          // percentage of the balance it started with says whether that was
+          // a good period for this account.
+          sub={
+            summary.return_pct != null
+              ? `${summary.return_pct > 0 ? '+' : ''}${num(summary.return_pct, 2)}% · ${
+                  summary.counts.total
+                } trades · ${rMultiple(summary.total_r)}`
+              : `${summary.counts.total} trades · ${rMultiple(summary.total_r)} total`
+          }
           visual={
             // On a phone the tile is too narrow to hold both an exact P&L
             // figure and a sparkline, and the figure is what matters.

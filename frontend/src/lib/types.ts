@@ -135,6 +135,10 @@ export interface DailyPoint {
 }
 
 export interface Summary {
+  /** Balance when the period began, and the period's result as a share of it.
+      Null when the account's starting balance is unknown. */
+  opening_balance?: number
+  return_pct?: number | null
   period: { start: string | null; end: string | null }
   counts: {
     total: number
