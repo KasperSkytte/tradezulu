@@ -97,7 +97,12 @@ def get_breakdowns(
 ) -> dict[str, Any]:
     filters.start, filters.end = range_.start, range_.end
     trades = fetch_trades(db, filters)
-    return breakdowns(trades, config["risk"].get("breakeven_handling", "excluded"))
+    out = breakdowns(trades, config["risk"].get("breakeven_handling", "excluded"))
+    # Lets the page express a row as a share of the account as well as in money
+    # or R. Sent rather than assumed, because 0 means "unknown" and the UI has
+    # to leave the percentage out rather than divide by it.
+    out["account_size"] = _account_size(db, config, filters.account_id)
+    return out
 
 
 @router.get("/rolling")

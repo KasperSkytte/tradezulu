@@ -11,9 +11,17 @@ import { FilterBar } from '../components/FilterBar'
 import { DrawdownChart, SignedBarChart, WinRateLine } from '../components/charts'
 import { Card, CardHeader, EmptyState, ErrorState, SegmentedControl, Skeleton } from '../components/ui'
 
-type Metric = 'net_pnl' | 'total_r'
+// Three ways to read the same row. Money answers "what did it pay", R answers
+// "was the risk worth taking", and percent answers "how much of the account did
+// it move" -- which are different questions, and people do not all ask the same
+// one.
+type Metric = 'net_pnl' | 'total_r' | 'percent'
 
-const SECTIONS: { key: keyof Breakdowns; title: string; hint: string }[] = [
+// Every key of Breakdowns except the account size, which is a number rather
+// than a set of rows.
+type BreakdownKey = Exclude<keyof Breakdowns, 'account_size'>
+
+const SECTIONS: { key: BreakdownKey; title: string; hint: string }[] = [
   { key: 'by_symbol', title: 'By symbol', hint: 'Which instruments actually pay you.' },
   {
     key: 'by_tag',
@@ -71,8 +79,16 @@ export function ReportsPage() {
   const summary = summaryQuery.data
   const breakdowns = breakdownQuery.data
 
-  const formatMetric = (value: number) =>
-    metric === 'net_pnl' ? money(value, currency, { sign: true }) : `${num(value, 2)}R`
+  // Percent is derived from money rather than carried separately: the server
+  // sends the account size, and a share of it is exactly what this is.
+  const accountSize = breakdowns?.account_size ?? 0
+  const formatMetric = (value: number) => {
+    if (metric === 'total_r') return `${num(value, 2)}R`
+    if (metric === 'percent') {
+      return accountSize > 0 ? `${value > 0 ? '+' : ''}${num(value, 2)}%` : '—'
+    }
+    return money(value, currency, { sign: true })
+  }
 
   return (
     <div className="space-y-4">
@@ -148,6 +164,7 @@ export function ReportsPage() {
                   rows={breakdowns[section.key]}
                   metric={metric}
                   currency={currency}
+                  accountSize={accountSize}
                   formatMetric={formatMetric}
                 />
               ))}
@@ -165,6 +182,7 @@ function BreakdownCard({
   rows,
   metric,
   currency,
+  accountSize,
   formatMetric,
 }: {
   title: string
@@ -172,6 +190,7 @@ function BreakdownCard({
   rows: BreakdownRow[]
   metric: Metric
   currency: string
+  accountSize: number
   formatMetric: (value: number) => string
 }) {
   const [view, setView] = useState<'chart' | 'table'>('chart')
@@ -188,7 +207,14 @@ function BreakdownCard({
   const data = rows
     .map((row) => ({
       label: row.key,
-      value: (metric === 'net_pnl' ? row.net_pnl : row.total_r) ?? 0,
+      value:
+        metric === 'total_r'
+          ? (row.total_r ?? 0)
+          : metric === 'percent'
+            ? accountSize > 0
+              ? ((row.net_pnl ?? 0) / accountSize) * 100
+              : 0
+            : (row.net_pnl ?? 0),
       meta: `${row.trades} trades · ${percent(row.win_rate)} win rate`,
     }))
     .slice(0, 12)
@@ -217,7 +243,9 @@ function BreakdownCard({
           currency={currency}
           layout="horizontal"
           height={Math.max(160, data.length * 30)}
-          valueLabel={metric === 'net_pnl' ? 'Net P&L' : 'Total R'}
+          valueLabel={
+          metric === 'net_pnl' ? 'Net P&L' : metric === 'total_r' ? 'Total R' : 'Return'
+        }
           formatValue={formatMetric}
         />
       ) : (
@@ -231,6 +259,9 @@ function BreakdownCard({
                 <th className="px-2 py-1.5 text-right font-medium">PF</th>
                 <th className="px-2 py-1.5 text-right font-medium">Net</th>
                 <th className="px-2 py-1.5 text-right font-medium">R</th>
+                {accountSize > 0 && (
+                  <th className="px-2 py-1.5 text-right font-medium">% of acct</th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--tz-border)]">
@@ -248,6 +279,13 @@ function BreakdownCard({
                   <td className={clsx('tabular px-2 py-1.5 text-right', pnlClass(row.total_r))}>
                     {row.total_r === null ? '—' : `${num(row.total_r, 1)}R`}
                   </td>
+                  {accountSize > 0 && (
+                    <td className={clsx('tabular px-2 py-1.5 text-right', pnlClass(row.net_pnl))}>
+                      {row.net_pnl === null
+                        ? '—'
+                        : `${row.net_pnl > 0 ? '+' : ''}${num((row.net_pnl / accountSize) * 100, 2)}%`}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

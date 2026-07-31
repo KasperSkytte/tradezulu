@@ -204,6 +204,8 @@ export interface BreakdownRow {
 }
 
 export interface Breakdowns {
+  /** 0 when unknown; percentages are omitted rather than guessed. */
+  account_size: number
   by_symbol: BreakdownRow[]
   by_direction: BreakdownRow[]
   by_weekday: BreakdownRow[]
