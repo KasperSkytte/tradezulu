@@ -116,8 +116,13 @@ python3 agent/tz_provision.py --maintenance-now --once
 ### Troubleshooting
 
 ```bash
-journalctl -u tradezulu-agent -f      # what the provisioner is doing
+sudo journalctl -u tradezulu-agent -f   # what the provisioner is doing
 ```
+
+The `sudo` is not optional. It is a system service running as its own
+account, and `journalctl` without privileges quietly shows you your own
+journal instead of saying it cannot see that unit — so it looks like the
+service is producing nothing.
 
 The Expert Advisor writes to the terminal's own log, under `MQL5/logs/` in that
 account's prefix

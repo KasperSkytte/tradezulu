@@ -260,6 +260,16 @@ function RiskSection() {
               onCommit={(value) => void apply({ risk: { breakeven_threshold_money: value } })}
             />
           </Field>
+          <Field
+            label="Breakeven threshold (% of account)"
+            hint="A third way of saying the same thing, for people who think in percent. Any threshold calling a trade breakeven is enough — they are alternatives, not conditions to satisfy together. 0 turns it off."
+          >
+            <NumberField
+              value={risk.breakeven_threshold_percent}
+              step={0.05}
+              onCommit={(value) => void apply({ risk: { breakeven_threshold_percent: value } })}
+            />
+          </Field>
           <Field label="How breakevens count" className="sm:col-span-2">
             <SegmentedControl
               value={risk.breakeven_handling}

@@ -20,6 +20,7 @@ const FALLBACK: AppSettings = {
     breakeven_threshold_r: 0.1,
     breakeven_handling: 'excluded',
     breakeven_threshold_money: 1,
+    breakeven_threshold_percent: 0,
     fallback_risk_mode: 'percent_of_balance',
     fixed_risk_amount: 100,
     risk_percent: 1,

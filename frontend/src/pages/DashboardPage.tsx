@@ -71,13 +71,23 @@ export function DashboardPage() {
   let running = 0
   const cumulative = summary.daily.map((day) => {
     running += day.net_pnl
-    return {
-      label: dateOnly(day.date, 'd MMM'),
-      value: Math.round(running * 100) / 100,
-      extra: `${day.trades} trade${day.trades === 1 ? '' : 's'} · ${money(day.net_pnl, currency, {
-        sign: true,
-      })} on the day`,
-    }
+      // The running total alone says the day was good or bad without saying
+      // how it got there. Three wins and a loss reads very differently from
+      // one win and three breakevens, and both can end on the same number.
+      const counts = [
+        day.wins ? `${day.wins}W` : '',
+        day.losses ? `${day.losses}L` : '',
+        day.breakevens ? `${day.breakevens}BE` : '',
+      ]
+        .filter(Boolean)
+        .join(' \u00b7 ')
+      return {
+        label: dateOnly(day.date, 'd MMM'),
+        value: Math.round(running * 100) / 100,
+        extra: `${money(day.net_pnl, currency, { sign: true })} on the day${
+          counts ? ` \u00b7 ${counts}` : ''
+        }`,
+      }
   })
 
   const dailyBars = summary.daily.map((day) => ({

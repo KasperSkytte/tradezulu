@@ -258,6 +258,7 @@ export interface AppSettings {
     breakeven_threshold_r: number
     breakeven_handling: 'excluded' | 'loss' | 'win'
     breakeven_threshold_money: number
+    breakeven_threshold_percent: number
     fallback_risk_mode: 'from_stop' | 'fixed_amount' | 'percent_of_balance' | 'none'
     fixed_risk_amount: number
     risk_percent: number

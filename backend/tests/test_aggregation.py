@@ -275,6 +275,34 @@ class TestOutcome:
         assert trade.risk_amount is None
         assert classify_outcome(trade, cfg) == "breakeven"
 
+    def test_percent_of_account_counts_as_breakeven(self):
+        """0.1% of a 10k account is 10, so a 5 win is a wasted effort."""
+        cfg = {**RISK, "breakeven_threshold_r": 0, "breakeven_threshold_percent": 0.1}
+        trade = make_trade(gross_profit=5.0, commission=0.0)
+        compute_derived(trade, cfg, 10_000.0)
+        assert trade.outcome == "breakeven"
+
+    def test_percent_leaves_a_real_win_alone(self):
+        cfg = {**RISK, "breakeven_threshold_r": 0, "breakeven_threshold_percent": 0.1}
+        trade = make_trade(gross_profit=200.0, commission=0.0)
+        compute_derived(trade, cfg, 10_000.0)
+        assert trade.outcome == "win"
+
+    def test_percent_applies_without_a_stop_to_measure_r_against(self):
+        """The point of it: a share of the account is knowable when R is not."""
+        cfg = {**RISK, "fallback_risk_mode": "none", "breakeven_threshold_percent": 0.1}
+        trade = make_trade(initial_stop=None, gross_profit=4.0, commission=0.0)
+        compute_derived(trade, cfg, 10_000.0)
+        assert trade.realized_r is None
+        assert trade.outcome == "breakeven"
+
+    def test_percent_is_off_when_the_account_size_is_unknown(self):
+        """Dividing by a zero account would make everything a breakeven."""
+        cfg = {**RISK, "breakeven_threshold_r": 0, "breakeven_threshold_percent": 0.1}
+        trade = make_trade(gross_profit=5.0, commission=0.0)
+        compute_derived(trade, cfg, 0.0)
+        assert trade.outcome == "win"
+
 
 class TestPersistence:
     def test_upsert_is_idempotent(self, db):

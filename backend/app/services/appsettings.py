@@ -39,6 +39,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "breakeven_handling": "excluded",
         # Also treat tiny money outcomes as breakeven when no R is available.
         "breakeven_threshold_money": 1.0,
+        # ... or as a share of account size, for people who think in percent
+        # rather than in their account currency. Zero disables it.
+        "breakeven_threshold_percent": 0.0,
         # How risk is determined when the broker gave us no stop loss.
         # from_stop | fixed_amount | percent_of_balance
         "fallback_risk_mode": "percent_of_balance",

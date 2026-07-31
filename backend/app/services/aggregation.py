@@ -281,7 +281,7 @@ def compute_derived(
     else:
         trade.realized_r = None
 
-    trade.outcome = classify_outcome(trade, risk_cfg)
+    trade.outcome = classify_outcome(trade, risk_cfg, account_size)
 
     if trade.closed_at is not None:
         trade.duration_seconds = max(0, int((trade.closed_at - trade.opened_at).total_seconds()))
@@ -294,18 +294,33 @@ def compute_derived(
     return trade
 
 
-def classify_outcome(trade: Trade, risk_cfg: dict[str, Any]) -> str:
+def classify_outcome(
+    trade: Trade, risk_cfg: dict[str, Any], account_size: float = 0.0
+) -> str:
     """win / loss / breakeven / open.
 
     A breakeven is a trade that moved the account by so little that it was, in
     the user's words, a wasted effort. It is still recorded and shown, but by
     default it does not dilute the win rate.
+
+    Three ways to say how little "so little" is, because people do not all
+    think about it the same way: in R, in account currency, or as a share of
+    the account. Any of them saying breakeven is enough -- they are alternative
+    spellings of one idea, not conditions to satisfy together.
     """
     if trade.closed_at is None:
         return "open"
 
     r_threshold = float(risk_cfg.get("breakeven_threshold_r") or 0)
     money_threshold = float(risk_cfg.get("breakeven_threshold_money") or 0)
+    percent_threshold = float(risk_cfg.get("breakeven_threshold_percent") or 0)
+
+    # Checked first and independently of R: a percentage of the account is a
+    # statement about the account, and it holds whether or not the trade had a
+    # stop to measure R against.
+    if percent_threshold > 0 and account_size > 0:
+        if abs(trade.net_pnl) / account_size * 100.0 < percent_threshold:
+            return "breakeven"
 
     if trade.realized_r is not None:
         if abs(trade.realized_r) < r_threshold:
