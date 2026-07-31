@@ -30,14 +30,24 @@ def get_credentials(db: Session) -> dict[str, str]:
 
 
 def save_credentials(db: Session, server: str, login: str, password: str | None) -> None:
-    """Store credentials. ``password=None`` keeps the existing one."""
+    """Store credentials. ``password=None`` keeps the existing one.
+
+    Kept only when it still belongs to the same account. Carrying a password
+    across a change of login hands one account's password to another, and the
+    failure is silent in the worst way: the terminal starts, MetaTrader rejects
+    the login on a display nobody is looking at, and the interface waits for a
+    terminal that will never report in.
+    """
     row = db.get(Setting, CREDENTIALS_KEY)
     stored: dict[str, Any] = dict(row.value) if row and isinstance(row.value, dict) else {}
+    same_account = str(stored.get("login") or "").strip() == login.strip()
 
     stored["server"] = server.strip()
     stored["login"] = login.strip()
     if password is not None:
         stored["password"] = encrypt(password) if password else ""
+    elif not same_account:
+        stored["password"] = ""
 
     if row is None:
         db.add(Setting(key=CREDENTIALS_KEY, value=stored))

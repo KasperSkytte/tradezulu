@@ -254,6 +254,19 @@ def read_credentials(_user: CurrentUser, db: DbSession) -> dict[str, Any]:
 def write_credentials(
     payload: MT5CredentialsIn, _user: CurrentUser, db: DbSession
 ) -> dict[str, Any]:
+    # A different account number needs its own password. The form leaves the
+    # field blank to mean "keep the stored one", which is right when correcting
+    # a server or a typo and wrong the moment the account changes -- the
+    # terminal would then start, be refused by the broker on a display nobody
+    # is watching, and never report in. Said here rather than discovered there.
+    previous = str(credentials_status(db).get("login") or "").strip()
+    if previous and previous != payload.login.strip() and not payload.password:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"Account {payload.login.strip()} is not the one stored ({previous}), so "
+            "its password is needed too. Type it in, or use Forget to start fresh.",
+        )
+
     save_credentials(db, payload.server, payload.login, payload.password)
     db.commit()
     return credentials_status(db)

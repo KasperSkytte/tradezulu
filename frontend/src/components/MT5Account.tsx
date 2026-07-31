@@ -94,7 +94,13 @@ export function MT5Account({ status }: { status?: SyncStatus }) {
   })
 
   const configured = credentials?.configured ?? false
-  const canSave = server.trim() && login.trim() && (password || configured)
+  // A blank password means "keep the stored one", which is only sensible while
+  // it is still the same account. Change the number and it is a different
+  // account with a different password -- and the stored one would take the
+  // terminal to a login the broker refuses, silently, forever.
+  const sameAccount = !configured || login.trim() === (credentials?.login ?? '').trim()
+  const needsPassword = !configured || !sameAccount
+  const canSave = server.trim() && login.trim() && (password || !needsPassword)
 
   const track = <T,>(setter: (value: T) => void) => (value: T) => {
     setDirty(true)
@@ -180,13 +186,23 @@ export function MT5Account({ status }: { status?: SyncStatus }) {
 
         <Field
           label="Investor password"
-          hint="The read-only password your broker issues alongside the main one. It cannot place trades, so TradeZulu physically cannot touch your account."
+          hint={
+            sameAccount
+              ? 'The read-only password your broker issues alongside the main one. It cannot place trades, so TradeZulu physically cannot touch your account.'
+              : `This is a different account from the stored ${credentials?.login ?? ''}, so it needs its own password.`
+          }
         >
           <input
             type="password"
             className="tz-input"
             autoComplete="new-password"
-            placeholder={configured ? '•••••••••  (stored — type to replace)' : ''}
+            placeholder={
+              !configured
+                ? ''
+                : sameAccount
+                  ? '•••••••••  (stored — type to replace)'
+                  : `the password for ${login.trim()}`
+            }
             value={password}
             onChange={(event) => track(setPassword)(event.target.value)}
           />

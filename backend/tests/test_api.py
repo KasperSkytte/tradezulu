@@ -598,3 +598,64 @@ class TestForgettingTheAccount:
             "/api/stats/summary", params={"start": "2026-06-01", "end": "2026-06-30"}
         ).json()
         assert body["counts"]["total"] == 0
+
+
+class TestChangingTheStoredAccount:
+    """A different account number needs its own password.
+
+    Leaving the field blank means "keep the stored one", which is right when
+    fixing a server or a typo and wrong the moment the account changes: the
+    terminal would start, be refused by the broker on a display nobody watches,
+    and never report in. From the outside that looks like adding an account
+    hanging forever.
+    """
+
+    def _put(self, client, login, server="Test-Server", password=None):
+        body = {"login": login, "server": server}
+        if password is not None:
+            body["password"] = password
+        return client.put("/api/mt5/credentials", json=body)
+
+    @pytest.fixture()
+    def stored(self, auth_client):
+        assert self._put(auth_client, "5000123", password="first-password").status_code == 200
+        return auth_client
+
+    def test_a_new_login_without_a_password_is_refused(self, stored):
+        response = self._put(stored, "9999999")
+        assert response.status_code == 400
+        assert "9999999" in response.json()["detail"]
+        assert "5000123" in response.json()["detail"]
+
+    def test_and_nothing_is_stored(self, stored, db):
+        self._put(stored, "9999999")
+        body = stored.get("/api/mt5/credentials").json()
+        assert body["login"] == "5000123", "the refused change must not take effect"
+
+    def test_a_new_login_with_its_own_password_is_fine(self, stored):
+        response = self._put(stored, "9999999", password="second-password")
+        assert response.status_code == 200
+        assert response.json()["login"] == "9999999"
+
+    def test_the_new_password_is_the_one_kept(self, stored, db):
+        from app.services.credentials import get_credentials
+
+        self._put(stored, "9999999", password="second-password")
+        assert get_credentials(db)["password"] == "second-password"
+
+    def test_the_same_account_still_keeps_its_password(self, stored, db):
+        """Correcting the server must not force the password to be retyped."""
+        from app.services.credentials import get_credentials
+
+        response = self._put(stored, "5000123", server="Test-Server-2")
+        assert response.status_code == 200
+        assert get_credentials(db)["password"] == "first-password"
+        assert response.json()["server"] == "Test-Server-2"
+
+    def test_the_service_never_carries_a_password_across_accounts(self, db):
+        """Belt and braces: the rule holds even if the endpoint is bypassed."""
+        from app.services.credentials import get_credentials, save_credentials
+
+        save_credentials(db, "S", "1111", "password-for-1111")
+        save_credentials(db, "S", "2222", None)
+        assert get_credentials(db)["password"] == "", "2222 must not inherit 1111's password"
