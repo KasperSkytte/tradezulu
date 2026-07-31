@@ -246,30 +246,34 @@ export function DashboardPage() {
               label="Max drawdown"
               hint="Largest peak-to-trough fall in equity across the period."
               value={
-                <span className="text-[var(--tz-loss-text)]">
-                  {money(summary.max_drawdown ? -summary.max_drawdown : 0, currency)}
-                  {summary.max_drawdown_pct !== null && (
-                    <span className="ml-1 text-[var(--tz-text-muted)]">
-                      ({percent(summary.max_drawdown_pct)})
-                    </span>
-                  )}
-                </span>
+                summary.max_drawdown === null ? (
+                  <PerAccountOnly />
+                ) : (
+                  <span className="text-[var(--tz-loss-text)]">
+                    {money(-summary.max_drawdown, currency)}
+                    {summary.max_drawdown_pct !== null && (
+                      <span className="ml-1 text-[var(--tz-text-muted)]">
+                        ({percent(summary.max_drawdown_pct)})
+                      </span>
+                    )}
+                  </span>
+                )
               }
             />
             <Row
               label="Recovery factor"
               hint="Net profit divided by the maximum drawdown."
-              value={num(summary.recovery_factor, 2)}
+              value={summary.recovery_factor === null && summary.single_account === false ? <PerAccountOnly /> : num(summary.recovery_factor, 2)}
             />
             <Row
               label="Sharpe ratio"
               hint="Annualised risk-adjusted return from the daily P&L series."
-              value={num(summary.sharpe, 2)}
+              value={summary.sharpe === null && summary.single_account === false ? <PerAccountOnly /> : num(summary.sharpe, 2)}
             />
             <Row
               label="Sortino ratio"
               hint="Like Sharpe, but only downside volatility counts against you."
-              value={num(summary.sortino, 2)}
+              value={summary.sortino === null && summary.single_account === false ? <PerAccountOnly /> : num(summary.sortino, 2)}
             />
             <Row
               label="Consistency"
@@ -372,6 +376,16 @@ export function DashboardPage() {
         )}
       </Card>
     </div>
+  )
+}
+
+/** Shown where a figure needs one account's money and several are in scope.
+ *  A dash with a reason, rather than a zero that reads as a real measurement. */
+function PerAccountOnly() {
+  return (
+    <span className="font-normal text-[var(--tz-text-faint)]">
+      — <span className="text-xs">per account only</span>
+    </span>
   )
 }
 

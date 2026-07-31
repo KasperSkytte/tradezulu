@@ -21,7 +21,24 @@ const SCORE_BANDS = [
 ]
 
 export function ZuluScoreCard({ score }: { score: ZuluScore }) {
-  const band = SCORE_BANDS.find((entry) => score.score >= entry.min) ?? SCORE_BANDS.at(-1)!
+  // Withheld rather than zero: the score is a single read on one account, and
+  // across several it is not a smaller number, it is not a number.
+  if (score.score === null) {
+    return (
+      <Card className="flex flex-col">
+        <CardHeader
+          title="Zulu Score"
+          hint="Six weighted components, each scored 0-100 against a target you set in Settings: win rate, profit factor, average win/loss, maximum drawdown, recovery factor and consistency."
+        />
+        <div className="flex flex-1 items-center justify-center px-6 py-12 text-center text-sm text-[var(--tz-text-muted)]">
+          The score rates one account. Pick an account above to see it.
+        </div>
+      </Card>
+    )
+  }
+
+  const value = score.score
+  const band = SCORE_BANDS.find((entry) => value >= entry.min) ?? SCORE_BANDS.at(-1)!
   const radarData = Object.entries(score.components)
     .filter(([, value]) => value !== null)
     .map(([key, value]) => ({
@@ -55,7 +72,7 @@ export function ZuluScoreCard({ score }: { score: ZuluScore }) {
 
       <div className="mt-1 flex items-baseline justify-center gap-2">
         <span className="tabular text-3xl font-semibold" style={{ color: band.color }}>
-          {num(score.score, 1)}
+          {num(value, 1)}
         </span>
         <span className="text-sm text-[var(--tz-text-muted)]">/ 100 · {band.label}</span>
       </div>

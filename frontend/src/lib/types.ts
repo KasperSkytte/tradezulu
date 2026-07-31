@@ -87,7 +87,9 @@ export interface TradePage {
 }
 
 export interface ZuluScore {
-  score: number
+  /** Null when several accounts are in scope: a single read on "the account"
+   *  means nothing when the trades came from more than one. */
+  score: number | null
   components: {
     win_rate: number | null
     profit_factor: number | null
@@ -196,6 +198,9 @@ export interface Summary {
     avg: number | null
   }
   account_size: number | null
+  /** False when the trades span several accounts, in which case every figure
+   *  that needs one account's money or one account's equity curve is null. */
+  single_account?: boolean
   zulu_score: ZuluScore
   equity_curve: EquityPoint[]
   daily: DailyPoint[]
@@ -346,6 +351,7 @@ export interface Account {
   broker: string
   server: string
   currency: string
+  role: string
   leverage: number
   balance: number
   equity: number

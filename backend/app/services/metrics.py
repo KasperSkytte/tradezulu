@@ -344,8 +344,15 @@ def summarize(
     account_size: float,
     period_start: date | None = None,
     period_end: date | None = None,
+    single_account: bool = True,
 ) -> dict[str, Any]:
-    """The full statistics payload for one period."""
+    """The full statistics payload for one period.
+
+    ``single_account`` says whether every trade belongs to the same account.
+    When it does not, the figures that need one account's money or one
+    account's equity curve are withheld rather than computed -- see
+    :func:`_withhold_cross_account`.
+    """
     sets = split_trades(trades, risk_cfg.get("breakeven_handling", "excluded"))
 
     scored = sets.scored
@@ -499,7 +506,61 @@ def summarize(
     )
     summary["equity_curve"] = curve
     summary["daily"] = daily
+    summary["single_account"] = single_account
+    if not single_account:
+        _withhold_cross_account(summary)
     return summary
+
+
+#: Figures that describe one account and mean nothing across several. Each
+#: either divides by a balance -- and there is no single balance to divide by --
+#: or reads an equity curve, which cannot be built by interleaving the trades of
+#: accounts that were never one pool of money.
+CROSS_ACCOUNT_UNDEFINED = (
+    "account_size",
+    "max_drawdown",
+    "max_drawdown_pct",
+    "recovery_factor",
+    "sharpe",
+    "sortino",
+)
+
+
+def _withhold_cross_account(summary: dict[str, Any]) -> None:
+    """Blank the per-account figures on a summary spanning several accounts.
+
+    Withheld rather than wrong. A drawdown stitched together from two accounts
+    describes a portfolio nobody held, and a return measured by dividing the
+    combined profit by whichever balance happened to be handy is worse than no
+    number at all -- it looks authoritative and is off by whatever the other
+    accounts are worth.
+
+    What survives is everything that is a plain count or sum: net P&L, win rate,
+    profit factor, expectancy, the R totals. Those add up across accounts
+    honestly.
+    """
+    for key in CROSS_ACCOUNT_UNDEFINED:
+        summary[key] = None
+    summary["equity_curve"] = []
+    # The score is a single read on one account, and two of its six components
+    # have just been withheld. A number built from the rest would not be
+    # comparable with any per-account score.
+    summary["zulu_score"] = {
+        "score": None,
+        "components": dict.fromkeys(
+            ("win_rate", "profit_factor", "avg_win_loss", "max_drawdown",
+             "recovery_factor", "consistency")
+        ),
+        "targets": {},
+        "weights": {},
+        "sample_size": None,
+        "min_trades": 0,
+        "sufficient": False,
+        "unavailable_reason": "several accounts",
+    }
+    for day in summary.get("daily") or []:
+        day["return_pct"] = None
+        day.pop("start_balance", None)
 
 
 # ---------------------------------------------------------------------------

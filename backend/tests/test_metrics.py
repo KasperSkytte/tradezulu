@@ -405,3 +405,57 @@ class TestDailyReturn:
 
         days = _with_daily_return([{"date": "2026-01-02", "net_pnl": 50.0}], 0.0)
         assert days[0]["return_pct"] is None
+
+
+class TestCrossAccountFigures:
+    """A summary spanning several accounts withholds what it cannot know.
+
+    Mixing accounts used to produce authoritative-looking nonsense: the
+    combined profit of every account divided by whichever single balance
+    happened to be handy, and a drawdown stitched from an equity curve nobody
+    ever held.
+    """
+
+    def _mixed(self):
+        first = trade(net=100.0, r=2.0, day=1)
+        second = trade(net=-50.0, r=-1.0, day=2)
+        second.account_id = 2
+        return [first, second]
+
+    def _summary(self, trades, single):
+        return summarize(
+            trades,
+            risk_cfg={"breakeven_handling": "excluded"},
+            stats_cfg={},
+            score_cfg={"targets": {}, "weights": {}},
+            account_size=10_000.0,
+            single_account=single,
+        )
+
+    def test_the_per_account_figures_are_withheld(self):
+        out = self._summary(self._mixed(), single=False)
+        assert out["single_account"] is False
+        for key in ("account_size", "max_drawdown", "max_drawdown_pct",
+                    "recovery_factor", "sharpe", "sortino"):
+            assert out[key] is None, f"{key} should be withheld across accounts"
+        assert out["equity_curve"] == []
+        assert out["zulu_score"]["score"] is None
+
+    def test_what_genuinely_adds_up_survives(self):
+        out = self._summary(self._mixed(), single=False)
+        assert out["net_pnl"] == 50.0
+        assert out["counts"]["total"] == 2
+        assert out["win_rate"] is not None
+        assert out["profit_factor"] is not None
+
+    def test_a_daily_return_is_withheld_too(self):
+        out = self._summary(self._mixed(), single=False)
+        assert all(day["return_pct"] is None for day in out["daily"])
+
+    def test_one_account_keeps_everything(self):
+        single = [trade(net=100.0, r=2.0, day=1), trade(net=-50.0, r=-1.0, day=2)]
+        out = self._summary(single, single_account := True)
+        assert out["single_account"] is single_account
+        assert out["account_size"] == 10_000.0
+        assert out["max_drawdown"] is not None
+        assert out["zulu_score"]["score"] is not None

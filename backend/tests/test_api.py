@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import select
 
 INGEST_HEADERS = {"X-API-Key": "test-ingest-token"}
 
@@ -408,3 +409,95 @@ class TestTradeReturn:
         for row in rows:
             assert "return_pct" in row
             assert "balance_before" in row
+
+
+class TestAccountScope:
+    """Statistics belong to one account, and say so when they cannot.
+
+    Before this, every page sent no account filter and the API happily
+    aggregated every account: the combined profit of all of them divided by
+    whichever single balance happened to be handy, and a drawdown built by
+    interleaving accounts that were never one pool of money.
+    """
+
+    @pytest.fixture()
+    def two_accounts(self, client, auth_client, db):
+        from app.models import Account, Trade
+
+        for index in range(3):
+            client.post(
+                "/api/mt5/ingest",
+                json=deal_payload(
+                    datetime(2026, 6, 1 + index, 10),
+                    position_id=7000 + index * 10,
+                    profit=400.0 if index != 1 else -250.0,
+                ),
+                headers=INGEST_HEADERS,
+            )
+        first = db.scalar(select(Account).where(Account.role == "master"))
+        other = Account(login="9999", server="Other-Server", name="Second", role="slave",
+                        initial_balance=5_000.0, balance=5_000.0)
+        db.add(other)
+        db.flush()
+        db.add(Trade(
+            account_id=other.id, position_id=8000, symbol="GBPUSD", direction="long",
+            opened_at=datetime(2026, 6, 2, 9), closed_at=datetime(2026, 6, 2, 11),
+            trade_date=date(2026, 6, 2), volume=1.0, closed_volume=1.0,
+            entry_price=1.3, exit_price=1.31, gross_profit=90.0, net_pnl=90.0,
+            outcome="win",
+        ))
+        db.commit()
+        return auth_client, first.id, other.id
+
+    def _summary(self, client, **params):
+        return client.get(
+            "/api/stats/summary",
+            params={"start": "2026-06-01", "end": "2026-06-30", **params},
+        ).json()
+
+    def test_several_accounts_withhold_the_per_account_figures(self, two_accounts):
+        client, _, _ = two_accounts
+        body = self._summary(client)
+        assert body["single_account"] is False
+        assert body["counts"]["total"] == 4  # everything is still counted
+        # Still a plain sum: the master's three trades plus the other's 90.
+        alone = self._summary(client, account_id=1)["net_pnl"]
+        assert body["net_pnl"] == pytest.approx(alone + 90.0)
+        for key in ("account_size", "opening_balance", "return_pct",
+                    "max_drawdown", "max_drawdown_pct", "recovery_factor"):
+            assert body[key] is None, f"{key} means nothing across accounts"
+        assert body["zulu_score"]["score"] is None
+
+    def test_one_account_gets_everything(self, two_accounts):
+        client, first, _ = two_accounts
+        body = self._summary(client, account_id=first)
+        assert body["single_account"] is True
+        assert body["counts"]["total"] == 3
+        assert body["return_pct"] is not None
+        assert body["max_drawdown"] is not None
+        assert body["zulu_score"]["score"] is not None
+
+    def test_the_other_account_is_measured_on_its_own(self, two_accounts):
+        client, _, other = two_accounts
+        body = self._summary(client, account_id=other)
+        assert body["counts"]["total"] == 1
+        assert body["net_pnl"] == pytest.approx(90.0)
+        # 90 on its own 5,000, not on the other account's balance.
+        assert body["opening_balance"] == pytest.approx(5_000.0)
+
+    def test_the_calendar_withholds_a_daily_return_too(self, two_accounts):
+        client, _, _ = two_accounts
+        body = client.get("/api/stats/calendar", params={"month": "2026-06"}).json()
+        assert body["single_account"] is False
+        assert all(day["return_pct"] is None for day in body["days"])
+
+    def test_a_single_account_installation_is_unaffected(self, client, auth_client):
+        """No filter, one account: nothing is withheld, because nothing is mixed."""
+        client.post(
+            "/api/mt5/ingest",
+            json=deal_payload(datetime(2026, 6, 4, 10), position_id=7100),
+            headers=INGEST_HEADERS,
+        )
+        body = self._summary(auth_client)
+        assert body["single_account"] is True
+        assert body["max_drawdown"] is not None

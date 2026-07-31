@@ -3,12 +3,27 @@
 
 import { createContext, use, useCallback, useMemo } from 'react'
 import type { ReactNode } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
+import { api } from './api'
 import type { QueryValue } from './api'
 import { resolvePeriod } from './period'
 import { useSettings } from './settings'
+import type { Account } from './types'
+
+/** Which account the whole application is looking at.
+ *
+ *  Not a filter but a scope, which is why it sits beside the date range rather
+ *  than inside the filter panel. Trades from different accounts are different
+ *  pools of money: adding their profits together is fine, but a return, a
+ *  drawdown or an equity curve across them describes a portfolio nobody held.
+ *  The server withholds those figures when several accounts are in scope, so
+ *  "all" is honest rather than wrong -- but a single account is the default,
+ *  because that is what the numbers are actually about. */
+export type AccountScope = number | 'all'
 
 export interface Filters {
+  accountId: AccountScope | undefined
   period: string
   start: string
   end: string
@@ -26,6 +41,8 @@ interface FiltersState {
   filters: Filters
   /** Query-string parameters for the statistics and trades endpoints. */
   params: Record<string, QueryValue>
+  accounts: Account[]
+  setAccount: (scope: AccountScope) => void
   setPeriod: (period: string) => void
   setRange: (start: string, end: string) => void
   update: (patch: Partial<Filters>) => void
@@ -43,6 +60,23 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const { settings, weekStartsOn } = useSettings()
 
+  const { data: accounts = [] } = useQuery({
+    queryKey: ['accounts'],
+    queryFn: () => api.get<Account[]>('/accounts'),
+    staleTime: 300_000,
+  })
+
+  // No account in the URL means "the one you normally look at", which is the
+  // default account. Until they load there is nothing to scope to; the server
+  // withholds the per-account figures in that instant rather than guessing.
+  const raw = searchParams.get('account')
+  const accountId = useMemo<AccountScope | undefined>(() => {
+    if (raw === 'all') return 'all'
+    if (raw && Number.isFinite(Number(raw))) return Number(raw)
+    const fallback = accounts.find((entry) => entry.is_default) ?? accounts[0]
+    return fallback?.id
+  }, [raw, accounts])
+
   const period = searchParams.get('period') ?? settings.general.default_period ?? 'last_30_days'
   const resolved = useMemo(
     () => resolvePeriod(period, weekStartsOn),
@@ -51,6 +85,7 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
 
   const filters = useMemo<Filters>(
     () => ({
+      accountId,
       period: searchParams.get('start') && searchParams.get('end') ? 'custom' : period,
       start: searchParams.get('start') ?? resolved.start,
       end: searchParams.get('end') ?? resolved.end,
@@ -63,7 +98,7 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
       maxR: searchParams.get('maxR') ?? '',
       includeExcluded: searchParams.get('excluded') === '1',
     }),
-    [searchParams, period, resolved],
+    [searchParams, period, resolved, accountId],
   )
 
   const write = useCallback(
@@ -78,6 +113,13 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
       )
     },
     [setSearchParams],
+  )
+
+  const setAccount = useCallback(
+    (scope: AccountScope) => {
+      write((next) => next.set('account', String(scope)))
+    },
+    [write],
   )
 
   const setPeriod = useCallback(
@@ -132,6 +174,7 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
 
   const params = useMemo<Record<string, QueryValue>>(
     () => ({
+      account_id: typeof filters.accountId === 'number' ? filters.accountId : undefined,
       start: filters.start,
       end: filters.end,
       symbol: filters.symbols,
@@ -156,8 +199,8 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
     (filters.maxR ? 1 : 0)
 
   const value = useMemo<FiltersState>(
-    () => ({ filters, params, setPeriod, setRange, update, reset, activeCount }),
-    [filters, params, setPeriod, setRange, update, reset, activeCount],
+    () => ({ filters, params, accounts, setAccount, setPeriod, setRange, update, reset, activeCount }),
+    [filters, params, accounts, setAccount, setPeriod, setRange, update, reset, activeCount],
   )
 
   return <FiltersContext value={value}>{children}</FiltersContext>

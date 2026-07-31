@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Any
 
@@ -24,6 +25,17 @@ def _account_size(db, config: dict[str, Any], account_id: int | None) -> float:
     return resolve_account_size(account, config["risk"])
 
 
+def _one_account(trades: Sequence[Any]) -> bool:
+    """Whether every trade in scope belongs to the same account.
+
+    Decided from the trades rather than from the filter, so an unfiltered view
+    of an installation with one account still gets its balance-relative
+    figures. It is having several accounts in the pile that makes a return or a
+    drawdown undefined, not having left the filter empty.
+    """
+    return len({t.account_id for t in trades}) <= 1
+
+
 @router.get("/summary")
 def summary(
     _user: CurrentUser,
@@ -43,7 +55,8 @@ def summary(
     # against its starting deposit. A period is a window on an account that
     # has been growing or shrinking all along, and judging this month against
     # January's balance describes a different month.
-    opening = _opening_balance(db, config, filters, range_.start)
+    single = _one_account(trades)
+    opening = _opening_balance(db, config, filters, range_.start) if single else 0.0
     out = summarize(
         trades,
         risk_cfg=config["risk"],
@@ -52,10 +65,13 @@ def summary(
         account_size=opening,
         period_start=range_.start,
         period_end=range_.end,
+        single_account=single,
     )
-    out["opening_balance"] = round(opening, 2)
+    out["opening_balance"] = round(opening, 2) if single else None
     out["return_pct"] = (
-        round((out.get("net_pnl") or 0.0) / opening * 100.0, 4) if opening > 0 else None
+        round((out.get("net_pnl") or 0.0) / opening * 100.0, 4)
+        if single and opening > 0
+        else None
     )
     return out
 
@@ -91,6 +107,7 @@ def compare_to_previous(
             account_size=account_size,
             period_start=start,
             period_end=end,
+            single_account=_one_account(trades),
         )
         stats.pop("equity_curve", None)
         stats.pop("daily", None)
@@ -158,16 +175,18 @@ def calendar(
     # each day can be read against where the account actually stood rather than
     # against a fixed number. Winning 50 on a 200 account is +25%, and saying
     # +0.2% of some configured size describes a different account.
-    opening = _opening_balance(db, config, filters, first)
+    single = _one_account(trades)
+    opening = _opening_balance(db, config, filters, first) if single else 0.0
 
     stats = summarize(
         trades,
         risk_cfg=config["risk"],
         stats_cfg=config["stats"],
         score_cfg=config["zulu_score"],
-        account_size=_account_size(db, config, filters.account_id),
+        account_size=_account_size(db, config, filters.account_id) if single else 0.0,
         period_start=first,
         period_end=last,
+        single_account=single,
     )
     days = {str(d["date"]): d for d in stats["daily"]}
 
@@ -220,9 +239,12 @@ def calendar(
         # So a day can be shown as a share of the account rather than only in
         # currency. 2R at 1% risk is 2% of the account, and that is the number
         # most people actually judge a day by.
-        "account_size": _account_size(db, config, filters.account_id),
-        "opening_balance": round(opening, 2),
-        "days": _with_daily_return(sorted(days.values(), key=lambda d: str(d["date"])), opening),
+        "account_size": _account_size(db, config, filters.account_id) if single else None,
+        "opening_balance": round(opening, 2) if single else None,
+        "single_account": single,
+        "days": _with_daily_return(
+            sorted(days.values(), key=lambda d: str(d["date"])), opening, single
+        ),
         "weeks": sorted(weeks.values(), key=lambda w: w["week_start"]),
         "summary": {
             key: stats[key]
@@ -250,12 +272,25 @@ def _opening_balance(db, config: dict[str, Any], filters, before: date) -> float
     return base + sum(t.net_pnl or 0.0 for t in fetch_trades(db, earlier))
 
 
-def _with_daily_return(days: list[dict[str, Any]], opening: float) -> list[dict[str, Any]]:
+def _with_daily_return(
+    days: list[dict[str, Any]], opening: float, single_account: bool = True
+) -> list[dict[str, Any]]:
     """Attach each day's result as a share of that morning's balance.
 
     Compounding, so a good day early makes a later day of the same size a
     smaller percentage. That is what actually happened to the account.
+
+    Nothing is attached when several accounts are in scope: there is no single
+    morning balance to divide by, and starting the running total from zero
+    would quietly produce a percentage from the second day onwards -- built on
+    a balance of nothing but the first day's profit.
     """
+    if not single_account:
+        for day in days:
+            day["return_pct"] = None
+            day.pop("start_balance", None)
+        return days
+
     running = opening
     for day in days:
         day["start_balance"] = round(running, 2)

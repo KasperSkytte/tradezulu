@@ -16,6 +16,7 @@ import { useEffect, useState } from 'react'
 import clsx from 'clsx'
 import { useAuth } from '../lib/auth'
 import { useSettings } from '../lib/settings'
+import { AccountPicker } from './AccountPicker'
 import { PeriodPicker } from './PeriodPicker'
 import { SyncButton } from './SyncButton'
 import { ZuluMark } from './ZuluMark'
@@ -111,6 +112,7 @@ export function Layout() {
             <h1 className="mr-auto truncate text-base font-semibold tracking-tight sm:text-lg">
               {title}
             </h1>
+            {showPeriod && <AccountPicker />}
             {showPeriod && <PeriodPicker />}
             <SyncButton />
           </div>
