@@ -38,3 +38,6 @@ backend/app/static/
 
 # Playwright / local tooling
 frontend/test-results/
+
+# anything and everything to ignore
+gitignore/
