@@ -74,6 +74,11 @@ docker compose run --rm --service-ports -e TZ_DEMO=1 tradezulu demo
 
 - Thinks in R. Risk comes from the broker's recorded stop, so planned R,
   realised R and expectancy are real numbers.
+- Percentages come from the account, never a figure you type in. A day is
+  measured against the balance that morning, a trade against the balance just
+  before it closed, and a period against what it opened with — so an account
+  that grows reports honestly instead of flattering itself against last year's
+  deposit.
 - Breakevens counted honestly — a trade that closed at your entry was wasted
   effort, not a win, and stays out of the win rate.
 - Zulu Score: one 0–100 number from six weighted components you control.
@@ -87,6 +92,12 @@ docker compose run --rm --service-ports -e TZ_DEMO=1 tradezulu demo
 | Calendar                                   | Trades                                 | Reports                                  |
 |--------------------------------------------|----------------------------------------|------------------------------------------|
 | ![Calendar](docs/screenshots/calendar.png) | ![Trades](docs/screenshots/trades.png) | ![Reports](docs/screenshots/reports.png) |
+
+It is a PWA, so it installs on a phone and is laid out for one — the calendar
+drops to the figures that matter, and the trade list becomes cards rather than
+a table you have to pan across.
+
+<img src="docs/screenshots/mobile.png" alt="TradeZulu on a phone" width="300">
 
 ## Connect MetaTrader 5
 
@@ -138,9 +149,6 @@ Open problems are tracked as
 [GitHub issues](https://github.com/KasperSkytte/tradezulu/issues) — worth a look
 before reporting something. The ones to know about today:
 
-- **Chart replay is empty.** No candles are uploaded yet
-  ([#6](https://github.com/KasperSkytte/tradezulu/issues/6)). Set
-  **Settings → Charts → TradingView** in the meantime.
 - **A stop attached after entry** is lost if the terminal restarts before the
   trade closes, so that trade has no R
   ([#7](https://github.com/KasperSkytte/tradezulu/issues/7)). Stops set with the
