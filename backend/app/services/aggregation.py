@@ -318,9 +318,12 @@ def classify_outcome(
     # Checked first and independently of R: a percentage of the account is a
     # statement about the account, and it holds whether or not the trade had a
     # stop to measure R against.
-    if percent_threshold > 0 and account_size > 0:
-        if abs(trade.net_pnl) / account_size * 100.0 < percent_threshold:
-            return "breakeven"
+    if (
+        percent_threshold > 0
+        and account_size > 0
+        and abs(trade.net_pnl) / account_size * 100.0 < percent_threshold
+    ):
+        return "breakeven"
 
     if trade.realized_r is not None:
         if abs(trade.realized_r) < r_threshold:

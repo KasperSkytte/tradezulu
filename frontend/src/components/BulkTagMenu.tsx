@@ -93,7 +93,7 @@ export function BulkTagMenu({
       </Button>
 
       {open && (
-        <div className="tz-fade-in absolute left-0 top-full z-50 mt-1 max-h-80 w-64 overflow-y-auto rounded-lg border border-[var(--tz-border)] bg-[var(--tz-surface-1)] p-1.5 shadow-lg">
+        <div className="tz-fade-in absolute left-0 top-full z-50 mt-1 max-h-80 w-64 overflow-y-auto rounded-lg border border-[var(--tz-border)] bg-[var(--tz-surface)] p-1.5 shadow-lg">
           {sections.length === 0 && (
             <p className="px-2 py-3 text-sm text-[var(--tz-text-muted)]">
               No tags yet — add some under Settings.

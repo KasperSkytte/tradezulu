@@ -28,15 +28,15 @@ TRADE = MasterTrade("EURUSD", "long", 1.0, 1.1000, stop_loss=1.0980)
 
 
 def snapshot(**kwargs) -> SlaveSnapshot:
-    defaults = dict(
-        balance=50_000.0,
-        equity=50_000.0,
-        day_start_equity=50_000.0,
-        peak_equity=50_000.0,
-        open_positions=[],
-        day_realised_pnl=0.0,
-        realised_by_day={},
-    )
+    defaults = {
+        "balance": 50_000.0,
+        "equity": 50_000.0,
+        "day_start_equity": 50_000.0,
+        "peak_equity": 50_000.0,
+        "open_positions": [],
+        "day_realised_pnl": 0.0,
+        "realised_by_day": {},
+    }
     defaults.update(kwargs)
     return SlaveSnapshot(**defaults)
 

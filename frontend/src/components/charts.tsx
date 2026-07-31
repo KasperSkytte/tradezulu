@@ -89,6 +89,8 @@ export interface CumulativePoint {
   label: string
   value: number
   extra?: string
+  /** Optional second series: equity, when the account has samples. */
+  equity?: number
 }
 
 export function CumulativeChart({
@@ -141,6 +143,23 @@ export function CumulativeChart({
                     value: format(Number(payload[0].value)),
                     color: positive ? 'var(--tz-gain)' : 'var(--tz-loss)',
                   },
+                  ...(payload[0].payload?.equity != null
+                    ? [
+                        {
+                          label: 'Equity',
+                          value: format(Number(payload[0].payload.equity)),
+                          color: 'var(--tz-entry)',
+                        },
+                        {
+                          // The gap between the lines is the point: what was
+                          // on the table and had not been taken.
+                          label: 'Unrealised',
+                          value: format(
+                            Number(payload[0].payload.equity) - Number(payload[0].value),
+                          ),
+                        },
+                      ]
+                    : []),
                   ...(payload[0].payload?.extra
                     ? [{ label: 'Detail', value: String(payload[0].payload.extra) }]
                     : []),
@@ -158,6 +177,23 @@ export function CumulativeChart({
           activeDot={{ r: 4, strokeWidth: 2, stroke: 'var(--tz-surface)' }}
           isAnimationActive={false}
         />
+        {/* Equity, when there is any. Balance only moves when something
+            closes, so on its own it cannot show a position running up and
+            being handed back. Drawn thin and unfilled so it reads as a
+            companion to the realised line rather than competing with it. */}
+        {data.some((point) => point.equity != null) && (
+          <Area
+            type="monotone"
+            dataKey="equity"
+            stroke="var(--tz-entry)"
+            strokeWidth={1.5}
+            strokeDasharray="4 3"
+            fill="none"
+            connectNulls
+            activeDot={{ r: 3, strokeWidth: 2, stroke: 'var(--tz-surface)' }}
+            isAnimationActive={false}
+          />
+        )}
       </AreaChart>
     </ResponsiveContainer>
   )

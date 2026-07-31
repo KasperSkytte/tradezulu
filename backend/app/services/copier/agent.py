@@ -23,7 +23,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ...models import Account, CopyEvent, CopyLink
+from ...models import Account, CopyEvent, CopyLink, EquityPoint
 from .config import mirror_stops_enabled, risk_from, sizing_from, symbol_rules_from
 from .engine import ActionType, CopiedPosition, MasterPosition, SlaveContext, plan
 from .risk import SlaveSnapshot
@@ -57,6 +57,50 @@ def update_account_state(db: Session, account: Account, payload: Any) -> None:
         account.day_start_date = today
         account.day_start_equity = account.equity
     account.peak_equity = max(account.peak_equity or 0.0, account.equity)
+
+    record_equity_point(db, account, len(getattr(payload, "positions", []) or []))
+
+
+#: How often to keep a balance/equity sample. A master polls every ten seconds,
+#: which would be 8,640 rows a day per account for a line nobody can see that
+#: finely. A minute is fine enough to show a position running up and being
+#: given back, which is the whole point of drawing equity next to balance.
+EQUITY_SAMPLE_SECONDS = 60
+
+
+def record_equity_point(db: Session, account: Account, open_positions: int = 0) -> None:
+    """Keep a balance/equity sample, so the account has a real curve.
+
+    Balance alone is a step function: it only moves when something closes, so
+    a trade that ran to +3R and was given back to +0.2R looks identical to one
+    that crawled there. Equity is what was actually on the table at the time,
+    and the gap between the two lines is the part worth seeing.
+
+    This can only be recorded as it happens -- there is nothing to reconstruct
+    it from afterwards -- so it starts from the first poll and does not
+    backfill.
+    """
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    latest = db.scalar(
+        select(EquityPoint.time)
+        .where(EquityPoint.account_id == account.id)
+        .order_by(EquityPoint.time.desc())
+        .limit(1)
+    )
+    if latest is not None:
+        age = (now - _aware(latest)).total_seconds()
+        if age < EQUITY_SAMPLE_SECONDS:
+            return
+
+    db.add(
+        EquityPoint(
+            account_id=account.id,
+            time=now.replace(tzinfo=None),
+            balance=account.balance,
+            equity=account.equity,
+            open_positions=open_positions,
+        )
+    )
 
 
 def _master_snapshot(db: Session) -> tuple[Account | None, list[MasterPosition]]:

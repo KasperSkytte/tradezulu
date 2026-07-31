@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Query
 from sqlalchemy import select
 
 from ..deps import AppConfig, CurrentUser, DateRangeDep, DbSession, get_default_account
-from ..models import DayNote, Trade
+from ..models import DayNote, EquityPoint, Trade
 from ..services.aggregation import resolve_account_size
 from ..services.metrics import breakdowns, rolling_metrics, summarize
 from ..services.queries import TradeFilters, TradeFiltersDep, fetch_trades
@@ -234,6 +234,45 @@ def day_detail(
         "equity_curve": stats["equity_curve"],
         "trade_ids": [t.id for t in trades],
         "note": {"content": note.content, "mood": note.mood} if note else None,
+    }
+
+
+@router.get("/equity")
+def equity(
+    _user: CurrentUser,
+    db: DbSession,
+    account_id: Annotated[int | None, Query()] = None,
+    days: Annotated[int, Query(ge=1, le=365)] = 30,
+) -> dict[str, Any]:
+    """Balance and equity over time, as the terminal reported them.
+
+    Balance alone is a step function -- it only moves when something closes --
+    so a trade that ran to +3R and was handed back looks exactly like one that
+    crawled to its exit. Equity is what was on the table at the time, and the
+    gap between the lines is the part worth looking at.
+
+    Samples only exist from the first time a terminal reported in. There is
+    nothing to reconstruct them from before that, so the series starts when
+    the account did rather than pretending to cover its history.
+    """
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
+    query = select(EquityPoint).where(EquityPoint.time >= since)
+    if account_id is not None:
+        query = query.where(EquityPoint.account_id == account_id)
+
+    points = list(db.scalars(query.order_by(EquityPoint.time)).all())
+    return {
+        "points": [
+            {
+                "time": p.time.replace(tzinfo=timezone.utc).isoformat(),
+                "balance": round(p.balance, 2),
+                "equity": round(p.equity, 2),
+                "open_positions": p.open_positions,
+            }
+            for p in points
+        ],
+        # So the UI can say why it is empty rather than drawing nothing.
+        "sampling": "Recorded from each terminal report; not backfilled.",
     }
 
 

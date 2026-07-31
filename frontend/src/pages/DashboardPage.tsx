@@ -15,7 +15,7 @@ import {
   rMultiple,
   timeOnly,
 } from '../lib/format'
-import type { Summary, Trade, TradePage } from '../lib/types'
+import type { EquitySeries, Summary, Trade, TradePage } from '../lib/types'
 import { CumulativeChart, OutcomeSplit, SignedBarChart } from '../components/charts'
 import { Gauge, Sparkline, StatTile, WinLossBar } from '../components/StatTile'
 import { ZuluScoreCard } from '../components/ZuluScoreCard'
@@ -28,6 +28,12 @@ export function DashboardPage() {
   const summaryQuery = useQuery({
     queryKey: ['stats', 'summary', params],
     queryFn: () => api.get<Summary>('/stats/summary', params),
+  })
+
+  const { data: equitySeries } = useQuery({
+    queryKey: ['stats', 'equity'],
+    queryFn: () => api.get<EquitySeries>('/stats/equity', { days: 90 }),
+    staleTime: 60_000,
   })
 
   const recentQuery = useQuery({
@@ -66,6 +72,21 @@ export function DashboardPage() {
     )
   }
 
+  // Equity as the terminal reported it, bucketed to one value per day. Only
+  // exists from the first time a terminal reported in -- there is nothing to
+  // reconstruct it from before that -- so the line simply starts later, or
+  // does not appear at all on a journal built from imports.
+  const equityByDay = new Map<string, number>()
+  let equityBase: number | null = null
+  for (const point of equitySeries?.points ?? []) {
+    const day = point.time.slice(0, 10)
+    if (equityBase === null) equityBase = point.equity
+    // Plotted as change since the first sample, so it shares an axis with
+    // cumulative P&L. Absolute equity is thousands next to hundreds and would
+    // flatten the realised line into the baseline.
+    equityByDay.set(day, Math.round((point.equity - equityBase) * 100) / 100)
+  }
+
   // Accumulate by day rather than by trade: several trades on one date would
   // otherwise repeat the same label along the x-axis.
   let running = 0
@@ -84,6 +105,7 @@ export function DashboardPage() {
       return {
         label: dateOnly(day.date, 'd MMM'),
         value: Math.round(running * 100) / 100,
+        equity: equityByDay.get(String(day.date).slice(0, 10)),
         extra: `${money(day.net_pnl, currency, { sign: true })} on the day${
           counts ? ` \u00b7 ${counts}` : ''
         }`,

@@ -30,23 +30,23 @@ def master_position(position_id=1, symbol="EURUSD", direction="long", volume=1.0
 
 
 def context(**kwargs) -> SlaveContext:
-    defaults = dict(
-        account_id=2,
-        account=AccountState(balance=10_000.0, equity=10_000.0),
-        snapshot=SlaveSnapshot(
+    defaults = {
+        "account_id": 2,
+        "account": AccountState(balance=10_000.0, equity=10_000.0),
+        "snapshot": SlaveSnapshot(
             balance=10_000.0,
             equity=10_000.0,
             day_start_equity=10_000.0,
             peak_equity=10_000.0,
         ),
-        sizing=SizingConfig(mode=SizingMode.BALANCE_RATIO),
-        risk=RiskConfig(),
-        symbol_rules=SymbolRules(),
-        available_symbols=["EURUSD", "GBPUSD", "XAUUSD"],
-        specs=dict(SPECS),
-        copied=[],
-        halted=False,
-    )
+        "sizing": SizingConfig(mode=SizingMode.BALANCE_RATIO),
+        "risk": RiskConfig(),
+        "symbol_rules": SymbolRules(),
+        "available_symbols": ["EURUSD", "GBPUSD", "XAUUSD"],
+        "specs": dict(SPECS),
+        "copied": [],
+        "halted": False,
+    }
     defaults.update(kwargs)
     return SlaveContext(**defaults)
 

@@ -293,3 +293,38 @@ class TestAuth:
             headers={"X-API-Key": "test-ingest-token"},
         )
         assert response.status_code == 200
+
+
+class TestEquityPoints:
+    """Balance and equity are only knowable as they happen."""
+
+    def test_a_sample_is_recorded_on_the_first_report(self, db):
+        from app.models import Account, EquityPoint
+        from app.services.copier.agent import record_equity_point
+
+        account = Account(login="1", server="X", balance=1000.0, equity=1010.0)
+        db.add(account)
+        db.flush()
+
+        record_equity_point(db, account, open_positions=2)
+        db.flush()
+        rows = db.query(EquityPoint).all()
+        assert len(rows) == 1
+        assert rows[0].balance == 1000.0
+        assert rows[0].equity == 1010.0
+        assert rows[0].open_positions == 2
+
+    def test_samples_are_not_kept_for_every_poll(self, db):
+        """A master polls every ten seconds; that is 8,640 rows a day for a
+        line nobody can read that finely."""
+        from app.models import Account, EquityPoint
+        from app.services.copier.agent import record_equity_point
+
+        account = Account(login="2", server="X", balance=1000.0, equity=1000.0)
+        db.add(account)
+        db.flush()
+
+        for _ in range(5):
+            record_equity_point(db, account)
+            db.flush()
+        assert db.query(EquityPoint).count() == 1

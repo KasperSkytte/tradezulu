@@ -459,3 +459,15 @@ export interface Broker {
 export interface BrokerList {
   brokers: Broker[]
 }
+
+export interface EquityPoint {
+  time: string
+  balance: number
+  equity: number
+  open_positions: number
+}
+
+export interface EquitySeries {
+  points: EquityPoint[]
+  sampling: string
+}
