@@ -32,6 +32,9 @@ export function AccountPicker() {
           <option key={account.id} value={account.id}>
             {account.name || account.login}
             {account.role === 'master' ? ' · master' : ''}
+            {/* No terminal runs for an archived account -- it is a journal you
+                can still read, not an account being traded. */}
+            {account.role === 'archived' ? ' · archived' : ''}
           </option>
         ))}
         {/* Kept, but it is the last option rather than the default: the

@@ -137,12 +137,43 @@ def _has_history(db: Session, account: Account) -> bool:
     return False
 
 
+def _restore_master(db: Session, account: Account) -> None:
+    """Give an archived account the master role back when it is credentialed again.
+
+    An account is archived when a different one takes over as master, so its
+    history is not swept up by the new one. Pointing the credentials back at it
+    has to bring it back -- otherwise the row exists, the terminal logs in and
+    reports, and nothing is ever copied from it, with no visible reason why.
+
+    Whichever account is currently master is archived in turn. There is only
+    ever one, and the swap is symmetrical: nothing is deleted either way.
+    """
+    if account.role != "archived":
+        return
+
+    stored = credentials_status(db)
+    want_login = str(stored.get("login") or "").strip()
+    want_server = str(stored.get("server") or "").strip()
+    if account.login.strip() != want_login or account.server.strip().lower() != want_server.lower():
+        return
+
+    previous = db.scalar(select(Account).where(Account.role == "master"))
+    if previous is not None and previous.id != account.id:
+        previous.role = "archived"
+        previous.copy_enabled = False
+    account.role = "master"
+    db.flush()
+    log.info("agent: account %s is the master again", account.login)
+
+
 @router.post("/poll", response_model=AgentPollOut)
 def poll(payload: AgentPollIn, db: Session = Depends(get_db)) -> AgentPollOut:
     """One heartbeat from a terminal: here is my state, what should I do?"""
     account = _find_account(db, payload.login, payload.server) or _adopt_master(
         db, payload.login, payload.server
     )
+    if account is not None:
+        _restore_master(db, account)
     if account is None:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,

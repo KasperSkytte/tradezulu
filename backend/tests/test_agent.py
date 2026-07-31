@@ -536,3 +536,57 @@ class TestMasterIdentityChanges:
         fresh = db.scalar(select(Account).where(Account.role == "master"))
         assert fresh.id == old_id
         assert fresh.server == "Master-Server-2"
+
+
+class TestRestoringAnArchivedMaster:
+    """Pointing the credentials back at an archived account brings it back."""
+
+    def _credentials(self, auth_client, login, server="Master-Server"):
+        return auth_client.put(
+            "/api/mt5/credentials",
+            json={"login": login, "server": server, "password": "investor-password"},
+        )
+
+    @pytest.fixture(autouse=True)
+    def _with_history(self, master, db):
+        """An empty row is reused rather than archived, so give it something."""
+        from app.models import EquityPoint
+
+        db.add(EquityPoint(account_id=master.id, time=datetime(2026, 6, 1, 12),
+                           balance=250.0, equity=250.0))
+        db.commit()
+
+    def test_it_becomes_the_master_again(self, auth_client, master, db):
+        # Point somewhere else, which archives the original.
+        self._credentials(auth_client, "7777")
+        auth_client.post("/api/agent/poll", json=account_payload("7777", "Master-Server"))
+        db.expire_all()
+        assert db.scalar(select(Account).where(Account.login == "5000")).role == "archived"
+
+        # Point back.
+        self._credentials(auth_client, "5000")
+        response = auth_client.post(
+            "/api/agent/poll", json=account_payload("5000", "Master-Server")
+        )
+        assert response.json()["role"] == "master"
+
+        db.expire_all()
+        assert db.scalar(select(Account).where(Account.login == "5000")).role == "master"
+        assert db.scalar(select(Account).where(Account.login == "7777")).role == "archived"
+        assert db.scalar(select(func.count()).select_from(Account).where(
+            Account.role == "master")) == 1
+
+    def test_an_archived_account_is_not_promoted_without_the_credentials(
+        self, auth_client, master, db
+    ):
+        """A terminal reporting in proves it is running, not that it is the master."""
+        self._credentials(auth_client, "7777")
+        auth_client.post("/api/agent/poll", json=account_payload("7777", "Master-Server"))
+
+        # 5000 is archived and the credentials still name 7777.
+        response = auth_client.post(
+            "/api/agent/poll", json=account_payload("5000", "Master-Server")
+        )
+        assert response.json()["role"] == "archived"
+        db.expire_all()
+        assert db.scalar(select(Account).where(Account.login == "7777")).role == "master"
