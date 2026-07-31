@@ -98,7 +98,7 @@ step "What this will do"
 say "remove the provisioning service         $([ -e "${SERVICE}" ] && echo yes || echo '(not installed)')"
 say "stop and delete TradeZulu's terminals   ${#TZ_PREFIXES[@]} prefix(es)"
 for p in "${TZ_PREFIXES[@]:-}"; do [ -n "${p}" ] && say "    - $(basename "${p}")"; done
-say "remove the container and its image      yes"
+say "remove the compose stack                containers, images, network"
 say "delete the journal database and .env    $([ "${PURGE_DATA}" -eq 1 ] && echo 'YES -- your trade history' || echo 'no (kept)')"
 say "remove Wine/Bottles                     $([ "${PURGE_WINE}" -eq 1 ] && echo yes || echo 'no (kept)')"
 say "remove apt packages                     $([ "${PURGE_PACKAGES}" -eq 1 ] && echo yes || echo 'no (kept)')"
@@ -189,14 +189,69 @@ fi
 
 # --- the site ----------------------------------------------------------------
 
-step "Removing the container"
+step "Removing the compose stack"
 if [ -f "${HERE}/docker-compose.yml" ] && command -v docker >/dev/null 2>&1; then
+  # Only reach for sudo if the daemon will not talk to us directly. Being in the
+  # docker group is the common case, and prefixing sudo anyway turns every
+  # command below into a password prompt -- or, for the ones whose output is
+  # read rather than shown, into a silent no-op that reports nothing to do.
+  DOCKER=(docker)
+  if ! docker info >/dev/null 2>&1 && [ -n "${SUDO}" ]; then
+    DOCKER=("${SUDO}" docker)
+  fi
+  COMPOSE=("${DOCKER[@]}" compose -f "${HERE}/docker-compose.yml")
+
+  # --remove-orphans matters here more than usual: services have been taken out
+  # of this compose file over time (the MetaTrader-in-Docker attempt, and the
+  # bridge that went with it). Without it, `down` removes only what the file
+  # still describes and leaves the containers those services created running.
   if [ "${PURGE_DATA}" -eq 1 ]; then
-    run ${SUDO} docker compose -f "${HERE}/docker-compose.yml" down -v --rmi all || true
-    say "container, image and data volume removed"
+    run "${COMPOSE[@]}" down --volumes --rmi all --remove-orphans || true
+    [ "${DRY_RUN}" -eq 1 ] || say "containers, images, network and the data volume removed"
   else
-    run ${SUDO} docker compose -f "${HERE}/docker-compose.yml" down --rmi all || true
-    say "container and image removed; the data volume is kept"
+    run "${COMPOSE[@]}" down --rmi all --remove-orphans || true
+    [ "${DRY_RUN}" -eq 1 ] || say "containers, images and network removed; the data volume is kept"
+  fi
+
+  # `down` only knows what the compose file says today. Anything still carrying
+  # this project's label afterwards came from a layout the file no longer
+  # describes -- a renamed service, a volume from an older revision -- and would
+  # otherwise sit there for good. The label is what makes this safe: a container
+  # you started yourself does not have it and is never in scope.
+  PROJECT="$(basename "${HERE}")"
+  FILTER="label=com.docker.compose.project=${PROJECT}"
+  sweep() { "${DOCKER[@]}" "$@" 2>/dev/null || true; }
+
+  if [ "${DRY_RUN}" -eq 1 ]; then
+    say "would then remove anything still labelled ${PROJECT}:"
+    say "  containers  $(sweep ps -a --filter "${FILTER}" --format '{{.Names}}' | tr '\n' ' ')"
+    say "  networks    $(sweep network ls --filter "${FILTER}" --format '{{.Name}}' | tr '\n' ' ')"
+    if [ "${PURGE_DATA}" -eq 1 ]; then
+      say "  volumes     $(sweep volume ls -q --filter "${FILTER}" | tr '\n' ' ')"
+    fi
+  else
+    leftovers="$(sweep ps -aq --filter "${FILTER}")"
+    if [ -n "${leftovers}" ]; then
+      say "removing $(printf '%s\n' "${leftovers}" | wc -l) container(s) from an older layout"
+      # shellcheck disable=SC2086
+      sweep rm -f ${leftovers} >/dev/null
+    fi
+
+    if [ "${PURGE_DATA}" -eq 1 ]; then
+      stale="$(sweep volume ls -q --filter "${FILTER}")"
+      if [ -n "${stale}" ]; then
+        say "removing $(printf '%s\n' "${stale}" | wc -l) volume(s) from an older layout"
+        # shellcheck disable=SC2086
+        sweep volume rm ${stale} >/dev/null
+      fi
+    fi
+
+    nets="$(sweep network ls -q --filter "${FILTER}")"
+    if [ -n "${nets}" ]; then
+      # shellcheck disable=SC2086
+      sweep network rm ${nets} >/dev/null
+      say "network removed"
+    fi
   fi
 else
   say "no compose file or no docker here"
@@ -253,6 +308,6 @@ elif [ "${PURGE_DATA}" -eq 1 ]; then
 else
   say "TradeZulu is uninstalled. Your journal is still here:"
   say "  ${HERE}/.env         the key that decrypts it"
-  say "  docker volume       tradezulu-data"
+  say "  docker volume       $(basename "${HERE}")_tradezulu-data"
   say "Run ./install.sh to bring it back."
 fi

@@ -133,6 +133,13 @@ The default keeps your trades: the database and the `.env` that decrypts it
 survive, so re-running `install.sh` picks up where you left off. `--purge-data`
 deletes them and asks you to type DELETE first.
 
+The whole compose stack goes: containers, images and the network, plus the data
+volume with `--purge-data`. Anything still carrying the project's label
+afterwards — a container from a service this compose file no longer describes,
+a volume from an older revision — is removed too, which `docker compose down`
+on its own will not do. Containers you started yourself carry no such label and
+are never in scope.
+
 MetaTrader prefixes that TradeZulu did not create are never touched, whatever
 you pass — only `tz-<account>` and `tz-template-*` are removed, so a terminal
 you set up yourself is safe. Wine and Bottles are left alone entirely if any
