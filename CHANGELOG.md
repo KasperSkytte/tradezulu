@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.5.0](https://github.com/KasperSkytte/tradezulu/compare/v1.4.0...v1.5.0) (2026-07-31)
+
+
+### Features
+
+* **mt5:** pick a broker and its server, and say when a terminal is starting ([e79a545](https://github.com/KasperSkytte/tradezulu/commit/e79a545fbca87e40cb80e533f1e775b8c7f39480))
+* **mt5:** real server lists, from the terminal's own search ([57165f9](https://github.com/KasperSkytte/tradezulu/commit/57165f97a02f1200902559fc13b8d84faeba517a))
+* **stats:** breakeven by percent of account, and W/L/BE on the curve ([5ff8b15](https://github.com/KasperSkytte/tradezulu/commit/5ff8b15ce0df5d09174dedaeed8068db964c7f71))
+* **trades:** tag a batch with several tags at once, grouped by kind ([b9b995a](https://github.com/KasperSkytte/tradezulu/commit/b9b995a492f864eda0e7d3fb0f6cf6ea2028fa19))
+* **ui:** explain the jargon, and give breakevens their own colour ([457ead6](https://github.com/KasperSkytte/tradezulu/commit/457ead64558fa43ddb59506f734ba4662184354f))
+
+
+### Bug fixes
+
+* **install:** drop privilege correctly when already root ([afdc4f2](https://github.com/KasperSkytte/tradezulu/commit/afdc4f27fe5395726bbef74601742ca7777c6497))
+
 ## [1.4.0](https://github.com/KasperSkytte/tradezulu/compare/v1.3.0...v1.4.0) (2026-07-31)
 
 
