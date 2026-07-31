@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.9.1](https://github.com/KasperSkytte/tradezulu/compare/v1.9.0...v1.9.1) (2026-07-31)
+
+
+### Bug fixes
+
+* **copier:** make the minimum-lot setting actually rescue a small size ([449b91d](https://github.com/KasperSkytte/tradezulu/commit/449b91d5fe3c624b9c3dcbb490a8cde825f1de7e)), closes [#20](https://github.com/KasperSkytte/tradezulu/issues/20)
+* **stats:** scope the journal to one account, and withhold what several cannot mean ([7e79af1](https://github.com/KasperSkytte/tradezulu/commit/7e79af12dc6da5f52969e9612fedab1060e27bd9))
+
 ## [1.9.0](https://github.com/KasperSkytte/tradezulu/compare/v1.8.2...v1.9.0) (2026-07-31)
 
 
