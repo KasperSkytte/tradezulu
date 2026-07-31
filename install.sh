@@ -151,36 +151,44 @@ for broker in "${WANTED[@]}"; do
 done
 
 step "Installing the provisioning service"
-# A user service, so it starts with the operator's session and needs no root.
-# lingering is what makes that survive a reboot with nobody logged in.
-mkdir -p "${HOME}/.config/systemd/user"
+# A system service that runs as whoever ran this script.
+#
+# Not a --user service: that needs a login session to talk to, so it cannot be
+# installed by anything running unattended -- a configuration management tool,
+# or a plain `sudo ./install.sh` -- which is exactly how a server gets set up.
+# Running as this user rather than root matters too: the terminals were built
+# under this HOME, and Wine will not find them under any other.
+RUN_USER="$(id -un)"
 TOKEN="$(grep '^TZ_INGEST_TOKEN=' "${HERE}/.env" | cut -d= -f2-)"
-cat > "${HOME}/.config/systemd/user/tradezulu-agent.service" <<EOF
+need_root
+${SUDO} tee /etc/systemd/system/tradezulu-agent.service >/dev/null <<EOF
 [Unit]
 Description=TradeZulu terminal provisioner
-After=network-online.target
+After=network-online.target docker.service
+Wants=network-online.target
 
 [Service]
 Type=simple
+User=${RUN_USER}
+Environment=HOME=${HOME}
 Environment=TZ_URL=http://127.0.0.1:8420
 Environment=TZ_INGEST_TOKEN=${TOKEN}
 Environment=TZ_DISPLAY=:77
+WorkingDirectory=${HERE}
 ExecStart=/usr/bin/python3 ${HERE}/agent/tz_provision.py
 Restart=always
 RestartSec=30
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 EOF
-systemctl --user daemon-reload
-systemctl --user enable --now tradezulu-agent.service
-${SUDO} loginctl enable-linger "$(id -un)" 2>/dev/null || \
-  say "could not enable lingering; the agent will start when you log in"
-say "running"
+${SUDO} systemctl daemon-reload
+${SUDO} systemctl enable --now tradezulu-agent.service
+say "running as ${RUN_USER}"
 
 step "Done"
 say "Open http://127.0.0.1:8420 and sign in."
 say "Add your MetaTrader account under Accounts; a terminal appears for it"
 say "within a minute or so. You should not have to touch this machine again."
 say ""
-say "  journalctl --user -u tradezulu-agent -f    # watch provisioning"
+say "  journalctl -u tradezulu-agent -f    # watch provisioning"

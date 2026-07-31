@@ -116,7 +116,7 @@ python3 agent/tz_provision.py --maintenance-now --once
 ### Troubleshooting
 
 ```bash
-journalctl --user -u tradezulu-agent -f      # what the provisioner is doing
+journalctl -u tradezulu-agent -f      # what the provisioner is doing
 ```
 
 The Expert Advisor writes to the terminal's own log, under `MQL5/logs/` in that
