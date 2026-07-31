@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.7.0](https://github.com/KasperSkytte/tradezulu/compare/v1.6.0...v1.7.0) (2026-07-31)
+
+
+### Features
+
+* **calendar:** show each day as a percentage of the account ([765e91e](https://github.com/KasperSkytte/tradezulu/commit/765e91ed67912dbd4a16a6faa187f8769631ecfa))
+* **reports:** read a breakdown in money, R, or percent of the account ([f7380e5](https://github.com/KasperSkytte/tradezulu/commit/f7380e5e04982cda5d542ee00a8e2643acb6f9a7))
+* **settings:** drop the configurable account size ([21b46f4](https://github.com/KasperSkytte/tradezulu/commit/21b46f40f65b88a7dc7ba6d595a3be54d529c5d0))
+* **trades:** show each trade as a share of the balance it risked ([4448c31](https://github.com/KasperSkytte/tradezulu/commit/4448c31bc993a931f8af5ecd9866c8373e943ed5))
+
+
+### Bug fixes
+
+* **calendar:** measure a day against that morning's balance ([dd3fe9c](https://github.com/KasperSkytte/tradezulu/commit/dd3fe9c47de5a916fee2b3b97291779c3933083f))
+
 ## [1.6.0](https://github.com/KasperSkytte/tradezulu/compare/v1.5.0...v1.6.0) (2026-07-31)
 
 
