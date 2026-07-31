@@ -143,18 +143,7 @@ you pass — only `tz-<account>` and `tz-template-*` are removed, so a terminal
 you set up yourself is safe. Wine and Bottles are left alone entirely if any
 other bottle is still installed.
 
-## Known issues
-
-Open problems are tracked as
-[GitHub issues](https://github.com/KasperSkytte/tradezulu/issues) — worth a look
-before reporting something. The ones to know about today:
-
-- **A stop attached after entry** is lost if the terminal restarts before the
-  trade closes, so that trade has no R
-  ([#7](https://github.com/KasperSkytte/tradezulu/issues/7)). Stops set with the
-  order are unaffected.
-
-## Behind a reverse proxy
+## Behind a reverse proxy (nginx example)
 
 TradeZulu binds to `127.0.0.1:8420`, so put nginx in front:
 
