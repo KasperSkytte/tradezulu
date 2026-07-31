@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.9.2](https://github.com/KasperSkytte/tradezulu/compare/v1.9.1...v1.9.2) (2026-07-31)
+
+
+### Bug fixes
+
+* **accounts:** make forgetting an account delete its history ([2970594](https://github.com/KasperSkytte/tradezulu/commit/2970594fbbe8fbef00732a70ea2ef2c8c776248b))
+* **agent:** give a new master account its own row instead of the old one's ([7f8ff3f](https://github.com/KasperSkytte/tradezulu/commit/7f8ff3f3b0e876b4935f1418cf8bd8ea6636cf9d))
+* **stats:** scope the equity series to one account and rebase it to the window ([85b23b6](https://github.com/KasperSkytte/tradezulu/commit/85b23b6636dde2fe61cbb07df27ee04653c7611e))
+
 ## [1.9.1](https://github.com/KasperSkytte/tradezulu/compare/v1.9.0...v1.9.1) (2026-07-31)
 
 
