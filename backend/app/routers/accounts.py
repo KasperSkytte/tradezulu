@@ -172,6 +172,7 @@ def arm(account_id: int, payload: SlaveArmIn, db: Session = Depends(get_db)) -> 
             "orders. Add one before taking it live.",
         )
 
+    going_live = payload.enabled and not payload.dry_run and account.copy_dry_run
     account.copy_enabled = payload.enabled
     account.copy_dry_run = payload.dry_run
     if payload.enabled:
@@ -179,6 +180,33 @@ def arm(account_id: int, payload: SlaveArmIn, db: Session = Depends(get_db)) -> 
         account.copy_halted = False
         account.copy_halt_reason = ""
         account.copy_halted_at = None
+
+    if going_live:
+        # A dry-run link records a position that was never actually opened. Left
+        # marked open, the copier reads it as "already copied" and never places
+        # the real order -- so watching an account in dry-run would quietly stop
+        # it from ever trading when armed. They are closed out here, because
+        # going live starts from what the broker actually holds.
+        stale = db.scalars(
+            select(CopyLink).where(
+                CopyLink.slave_account_id == account.id,
+                CopyLink.status == "open",
+                CopyLink.dry_run.is_(True),
+            )
+        ).all()
+        for link in stale:
+            link.status = "closed"
+            link.close_reason = "dry run ended"
+            link.closed_at = datetime.now(timezone.utc)
+        if stale:
+            db.add(
+                CopyEvent(
+                    slave_account_id=account.id,
+                    action="resume",
+                    outcome="ok",
+                    message=f"cleared {len(stale)} dry-run position(s) before going live",
+                )
+            )
 
     db.add(
         CopyEvent(
