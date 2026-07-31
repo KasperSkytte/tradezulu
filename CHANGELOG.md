@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.8.0](https://github.com/KasperSkytte/tradezulu/compare/v1.7.0...v1.8.0) (2026-07-31)
+
+
+### Features
+
+* **stats:** measure a period against the balance it opened with ([9f92e82](https://github.com/KasperSkytte/tradezulu/commit/9f92e82542a4132e33088fb18f3b60353acf8c04))
+
+
+### Bug fixes
+
+* **calendar:** show the day's return, not its win rate ([d8bbb3b](https://github.com/KasperSkytte/tradezulu/commit/d8bbb3bf4557c88d931a9c378f0742bac26d2b86))
+* **ui:** stop the page panning sideways on a phone ([842f15d](https://github.com/KasperSkytte/tradezulu/commit/842f15d00c0392338fef0e656a2c574756c8388a))
+
+
+### Documentation
+
+* refresh the screenshots and correct what they showed ([67dda38](https://github.com/KasperSkytte/tradezulu/commit/67dda38b4cd1ba8273282046cbca848409aa0e2a))
+
 ## [1.7.0](https://github.com/KasperSkytte/tradezulu/compare/v1.6.0...v1.7.0) (2026-07-31)
 
 
