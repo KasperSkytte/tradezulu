@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.0](https://github.com/KasperSkytte/tradezulu/compare/v1.5.0...v1.6.0) (2026-07-31)
+
+
+### Features
+
+* **mt5:** upload candles, so every trade has a chart to draw ([5c90f38](https://github.com/KasperSkytte/tradezulu/commit/5c90f382317fc000561fcd88a4b88deb7dfea5dc))
+* **stats:** draw equity beside balance, and fix invisible popovers ([44031f7](https://github.com/KasperSkytte/tradezulu/commit/44031f78618e7673b68538bc93e88fa6632fa62e))
+
 ## [1.5.0](https://github.com/KasperSkytte/tradezulu/compare/v1.4.0...v1.5.0) (2026-07-31)
 
 
