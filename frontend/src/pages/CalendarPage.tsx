@@ -193,30 +193,36 @@ export function CalendarPage() {
                                 compact: true,
                               })}
                             </p>
-                            {/* No win rate here. A day's win rate is a ratio
-                                of a handful of trades, and next to a real
-                                return it reads as noise -- two percentages in
-                                one cell, only one of which anyone wanted. */}
-                            <p className="mt-0.5 text-[0.65rem] text-[var(--tz-text-muted)]">
-                              {entry.trades}t
-                            </p>
                             {/* The day as a share of what the account was worth
                                 that morning: win 50 on a 200 account and that
-                                is +25%. R keeps it company where there is room. */}
+                                is +25%. It reads directly under the money and
+                                at the same weight, because it is the figure
+                                most people actually judge a day by -- squeezed
+                                onto one line beside the R it was easy to miss
+                                entirely.
+
+                                No win rate here. A day's win rate is a ratio of
+                                a handful of trades, and next to a real return it
+                                reads as noise. */}
                             <p
                               className={clsx(
-                                'tabular text-[0.65rem] font-medium',
+                                'tabular text-xs font-semibold leading-tight',
                                 pnlClass(entry.net_pnl),
                               )}
                             >
-                              {entry.return_pct != null && (
+                              {entry.return_pct != null ? (
                                 <>
                                   {entry.return_pct > 0 ? '+' : ''}
                                   {num(entry.return_pct, 2)}%
                                 </>
+                              ) : (
+                                <span className="text-[var(--tz-text-faint)]">—</span>
                               )}
-                              <span className="ml-1 hidden font-normal text-[var(--tz-text-faint)] sm:inline">
-                                {entry.r > 0 ? '+' : ''}
+                            </p>
+                            <p className="mt-0.5 text-[0.65rem] text-[var(--tz-text-muted)]">
+                              {entry.trades}t
+                              <span className="ml-1 hidden text-[var(--tz-text-faint)] sm:inline">
+                                · {entry.r > 0 ? '+' : ''}
                                 {num(entry.r, 1)}R
                               </span>
                             </p>
