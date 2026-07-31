@@ -4,13 +4,12 @@
     "",
     "Two jobs. It tells the web interface which brokers to offer and which trade",
     "servers each one has, so nobody has to remember whether their server is",
-    "called VantageMarkets-Live or VantageInternational-Live. And it tells the",
+    "called VantageMarkets-Live or VantageMarkets-Live 8. And it tells the",
     "provisioner which MetaTrader build to install, which the user never sees.",
     "",
     "  label      what the account form shows",
     "  servers    the trade servers to offer. An empty list means the form asks",
-    "             the user to type one, which is always allowed anyway -- brokers",
-    "             add servers without telling anyone.",
+    "             the user to type one, which is always allowed anyway.",
     "  installer  the MetaTrader build to use. Where a broker ships its own, use",
     "             it: the generic MetaQuotes terminal cannot resolve a name like",
     "             VantageMarkets-Live at all and offers to open a new account",
@@ -19,34 +18,58 @@
     "             to pick the template. The server name is what decides, because",
     "             it always arrives correct -- it comes from the broker.",
     "",
-    "A broker with no installer of its own runs on the generic build, which",
-    "connects to most brokers by name. Adding one is a label, its servers, and",
-    "a matches entry.",
+    "WHERE THE SERVER LISTS COME FROM, and how to add a broker:",
     "",
-    "MetaQuotes hosts a build per broker at a predictable address, which is why",
-    "those are preferred over a broker's own download page: the pages move, wrap",
-    "the file in a landing page, or hand out a different build per region."
+    "MetaTrader can enumerate them itself, and it is the only authoritative",
+    "source -- it asks MetaQuotes. In a terminal: File -> Open an Account, type",
+    "the broker's name, press 'Find your company', pick the right legal entity,",
+    "Next, then open the Server dropdown. That list is what belongs here.",
+    "",
+    "It cannot be read off disk: the terminal keeps servers.dat encrypted, so",
+    "this file is curated from what that dropdown shows rather than generated.",
+    "Pick the entity carefully -- 'Vantage' alone returns five companies, and",
+    "each has its own servers."
   ],
-
   "vantage": {
     "label": "Vantage Markets",
     "installer": "https://download.terminal.free/cdn/web/vantage.markets.pty/mt5/vantagemarkets5setup.exe",
-    "matches": ["vantage"],
+    "matches": [
+      "vantage"
+    ],
+    "_entity": "Vantage Markets (Pty) Ltd -- MetaQuotes id VantageMarkets",
     "servers": [
       "VantageMarkets-Live",
-      "VantageMarkets-Demo",
-      "VantageInternational-Live",
-      "VantageInternational-Demo"
+      "VantageMarkets-Live 2",
+      "VantageMarkets-Live 3",
+      "VantageMarkets-Live 4",
+      "VantageMarkets-Live 5",
+      "VantageMarkets-Live 6",
+      "VantageMarkets-Live 7",
+      "VantageMarkets-Live 8",
+      "VantageMarkets-Live 9",
+      "VantageMarkets-Live 10",
+      "VantageMarkets-Live 11",
+      "VantageMarkets-Live 12",
+      "VantageMarkets-Live 13",
+      "VantageMarkets-Live 14",
+      "VantageMarkets-Live 15",
+      "VantageMarkets-Live 17",
+      "VantageMarkets-Live 19",
+      "VantageMarkets-Live 21",
+      "VantageMarkets-Demo"
     ]
   },
-
   "falcon": {
     "label": "Falcon Markets",
     "installer": "",
-    "matches": ["falcon"],
-    "servers": []
+    "matches": [
+      "falcon"
+    ],
+    "_entity": "Falcon Markets Ltd. -- MetaQuotes id FalconMarkets",
+    "servers": [
+      "FalconMarkets-Server"
+    ]
   },
-
   "default": {
     "label": "Other broker",
     "installer": "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe",

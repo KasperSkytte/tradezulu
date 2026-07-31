@@ -175,7 +175,7 @@ def load_brokers() -> dict[str, dict]:
         return {
             key: value
             for key, value in json.loads(path.read_text()).items()
-            if isinstance(value, dict)
+            if isinstance(value, dict) and not key.startswith("_")
         }
     except (OSError, ValueError):
         log.warning("could not read %s; every account gets the generic terminal", path)

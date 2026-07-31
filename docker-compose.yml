@@ -13,7 +13,9 @@ services:
     build:
       context: .
       args:
-        VERSION: ${TZ_VERSION:-dev}
+        # Unset is fine: the image falls back to version.txt, which
+        # release-please keeps current.
+        VERSION: ${TZ_VERSION:-}
     container_name: tradezulu
     restart: unless-stopped
     env_file: .env

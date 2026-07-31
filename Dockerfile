@@ -44,6 +44,9 @@ COPY mt5/ ./mt5/
 # and the web interface serves it from here so the account form can offer the
 # same brokers and servers.
 COPY agent/brokers.json ./brokers.json
+# Read at runtime when TZ_VERSION was not passed in, so an image built without
+# the build arg still reports the release it was cut from rather than 0.0.0.
+COPY version.txt ./version.txt
 
 # Run unprivileged. /data is a volume, so its ownership is fixed at start-up
 # by the entrypoint rather than baked into the image.

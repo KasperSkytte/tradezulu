@@ -25,12 +25,29 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _version_file() -> str:
+    """The release this was cut from.
+
+    Set by the build when there is one; otherwise read from version.txt, which
+    release-please keeps current. Better than a hardcoded default, which is
+    wrong from the next release onwards.
+    """
+    for path in (Path("/app/version.txt"), Path(__file__).resolve().parents[2] / "version.txt"):
+        try:
+            text = path.read_text().strip()
+        except OSError:
+            continue
+        if text:
+            return text
+    return "0.0.0-dev"
+
+
 class Settings:
     """Process-wide settings. Everything user-facing lives in the DB instead."""
 
     def __init__(self) -> None:
         self.app_name: str = "TradeZulu"
-        self.version: str = os.getenv("TZ_VERSION", "0.0.0-dev")
+        self.version: str = os.getenv("TZ_VERSION", "").strip() or _version_file()
 
         # Where the SQLite database and uploaded files live.
         self.data_dir: Path = Path(os.getenv("TZ_DATA_DIR", "./data")).resolve()
