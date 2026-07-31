@@ -328,3 +328,57 @@ class TestEquityPoints:
             record_equity_point(db, account)
             db.flush()
         assert db.query(EquityPoint).count() == 1
+
+
+class TestLinkReuse:
+    """A closed link must not stop a new one being recorded."""
+
+    def test_a_closed_link_does_not_block_the_next_copy(self, db):
+        """The bug this guards: one master trade became a hundred orders.
+
+        record_result looked up the link by master position id alone, so a
+        *closed* link -- left by a dry run, or by a position closed and taken
+        again -- matched forever. The link for the real fill was never written,
+        the planner kept seeing an uncopied position, and it opened another
+        order on every single poll.
+        """
+        from types import SimpleNamespace
+
+        from app.models import Account, CopyLink
+        from app.services.copier.agent import record_result
+
+        account = Account(login="9", server="X", role="slave")
+        db.add(account)
+        db.flush()
+
+        db.add(
+            CopyLink(
+                slave_account_id=account.id,
+                master_position_id=777,
+                slave_position_id=0,
+                symbol="EURUSD",
+                slave_symbol="EURUSD",
+                direction="long",
+                slave_volume=0.01,
+                status="closed",
+                dry_run=True,
+            )
+        )
+        db.flush()
+
+        record_result(
+            db,
+            account,
+            SimpleNamespace(
+                ok=True, action="open", master_position_id=777, ticket=12345,
+                symbol="EURUSD", direction="long", volume=0.01, price=1.1,
+                stop_loss=0.0, take_profit=0.0, id="cmd", message="filled",
+            ),
+        )
+        db.flush()
+
+        live = db.query(CopyLink).filter(
+            CopyLink.master_position_id == 777, CopyLink.status == "open"
+        ).all()
+        assert len(live) == 1, "the fill should have produced exactly one open link"
+        assert live[0].slave_position_id == 12345

@@ -348,30 +348,41 @@ def record_result(db: Session, account: Account, result: Any) -> None:
         return
 
     if action == "open" and master_id and ticket:
-        existing = db.scalar(
+        # One link per master position per slave -- the schema enforces it --
+        # so a fill updates whatever link is already there rather than adding
+        # another. Skipping when one exists was the bug: a *closed* link, left
+        # by a dry run or by a position taken a second time, matched forever.
+        # The fill was then never recorded, the planner kept seeing an uncopied
+        # position, and it opened again on every poll. One master trade became a
+        # hundred orders on the slave.
+        link = db.scalar(
             select(CopyLink).where(
                 CopyLink.slave_account_id == account.id,
                 CopyLink.master_position_id == master_id,
             )
         )
-        if existing is None:
-            db.add(
-                CopyLink(
-                    slave_account_id=account.id,
-                    master_position_id=master_id,
-                    slave_position_id=ticket,
-                    symbol=str(getattr(result, "symbol", "") or ""),
-                    slave_symbol=str(getattr(result, "symbol", "") or ""),
-                    direction=str(getattr(result, "direction", "") or ""),
-                    slave_volume=float(getattr(result, "volume", 0.0) or 0.0),
-                    open_price=float(getattr(result, "price", 0.0) or 0.0),
-                    status="open",
-                    # A real fill, not a rehearsal. The column defaults to True,
-                    # and leaving it would make a live position look like a dry
-                    # run -- so it would never be matched to its real ticket.
-                    dry_run=False,
-                )
+        if link is None:
+            link = CopyLink(
+                slave_account_id=account.id,
+                master_position_id=master_id,
+                symbol=str(getattr(result, "symbol", "") or ""),
             )
+            db.add(link)
+
+        link.slave_position_id = ticket
+        link.slave_symbol = str(getattr(result, "symbol", "") or "")
+        link.direction = str(getattr(result, "direction", "") or "")
+        link.slave_volume = float(getattr(result, "volume", 0.0) or 0.0)
+        link.open_price = float(getattr(result, "price", 0.0) or 0.0)
+        link.status = "open"
+        link.opened_at = datetime.now(timezone.utc)
+        link.closed_at = None
+        link.close_reason = ""
+        # A real fill, not a rehearsal. The column defaults to True, and leaving
+        # it would make a live position look like a dry run -- so it would never
+        # be matched to its real ticket.
+        link.dry_run = False
+
     elif action == "close" and master_id:
         link = db.scalar(
             select(CopyLink).where(
