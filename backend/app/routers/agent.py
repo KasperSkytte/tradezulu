@@ -199,7 +199,12 @@ def terminals(db: Session = Depends(get_db)) -> dict[str, Any]:
                 "server": server,
                 "broker": account.broker or "",
                 "password": password,
-                "enabled": bool(account.copy_enabled) or account.role == "master",
+                # A terminal is started for any account with credentials,
+                # whether or not copying is armed. copy_enabled decides whether
+                # the copier *acts*, not whether the account is connected --
+                # and a slave in dry-run has to be connected to report what it
+                # would have done, which is the whole point of dry-run.
+                "enabled": True,
             }
         )
 
