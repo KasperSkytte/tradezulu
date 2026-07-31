@@ -252,10 +252,15 @@ export function Toggle({
           checked ? 'bg-zulu-500' : 'bg-[var(--tz-border-strong)]',
         )}
       >
+        {/* Positioned with `left`, not a transform. The translate utilities
+            were emitting no transform at all, which left the knob at its static
+            position -- flush against the right edge of the track whether the
+            switch was on or off. A length either end animates and, unlike a
+            transform, is obvious when it is wrong. */}
         <span
           className={clsx(
-            'absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform',
-            checked ? 'translate-x-4.5' : 'translate-x-0.5',
+            'absolute top-0.5 h-4 w-4 rounded-full bg-white transition-[left] duration-150',
+            checked ? 'left-[calc(100%-1.125rem)]' : 'left-0.5',
           )}
         />
       </button>
