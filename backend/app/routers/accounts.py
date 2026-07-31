@@ -33,6 +33,7 @@ from ..schemas import (
     SlaveAccountOut,
     SlaveArmIn,
 )
+from ..services.accounts import purge_account
 from ..services.copier.config import defaults as copy_defaults
 from ..services.crypto import decrypt, encrypt
 
@@ -244,16 +245,25 @@ def clear_halt(account_id: int, db: Session = Depends(get_db)) -> SlaveAccountOu
     return _as_out(account, db)
 
 
-@router.delete("/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
-def remove_account(account_id: int, db: Session = Depends(get_db)) -> None:
+@router.delete("/{account_id}")
+def remove_account(account_id: int, db: Session = Depends(get_db)) -> dict[str, int]:
+    """Remove the account and everything filed under it.
+
+    Its trades, deals, equity samples and copy history go with it. Leaving
+    those behind would keep the account in every total while hiding it from the
+    interface, and hand its history to the next account added with the same
+    number.
+    """
     account = _get(db, account_id)
     if account.role == "master":
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            "The master account cannot be removed here; it holds your journal.",
+            "The master account is removed from Settings -> MetaTrader 5, with "
+            "the credentials that created it.",
         )
-    db.delete(account)
+    removed = purge_account(db, account)
     db.commit()
+    return removed
 
 
 @router.get("/{account_id}/events", response_model=list[CopyEventOut])

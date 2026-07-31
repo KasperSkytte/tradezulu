@@ -254,7 +254,7 @@ function AccountRow({
                 variant="ghost"
                 icon={<Trash2 size={15} />}
                 onClick={() => {
-                  if (window.confirm(`Remove ${account.name}? Its copy history goes with it.`))
+                  if (window.confirm(`Remove ${account.name}?\n\nIts whole history goes with it: trades, equity samples and copy activity. This cannot be undone.`))
                     remove.mutate()
                 }}
                 title="Remove this account"

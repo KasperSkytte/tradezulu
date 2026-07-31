@@ -34,6 +34,7 @@ from ..schemas import (
     MT5IngestResponse,
     SyncStatus,
 )
+from ..services.accounts import purge_account
 from ..services.aggregation import (
     _parse_time,
     rebuild_trades,
@@ -260,12 +261,21 @@ def write_credentials(
 
 @router.delete("/credentials", response_model=MT5CredentialsOut)
 def delete_credentials(_user: CurrentUser, db: DbSession) -> dict[str, Any]:
-    """Forget the stored account.
+    """Forget the stored account, and everything it put in the journal.
+
+    Forgetting has to mean forgetting. Clearing the credentials alone left the
+    account's trades, deals and equity samples in the database: gone from the
+    interface, still counted in every total, and silently inherited by the next
+    account added with the same number.
 
     The terminal that was provisioned from these keeps running until the
     provisioner's next pass, which stops asking for it once it is no longer in
     the plan. Nothing is torn down from here.
     """
+    master = db.scalar(select(Account).where(Account.role == "master"))
+    if master is not None:
+        removed = purge_account(db, master)
+        log.info("mt5: forgot account %s and %s trades", master.login, removed["trades"])
     clear_credentials(db)
     db.commit()
     return credentials_status(db)

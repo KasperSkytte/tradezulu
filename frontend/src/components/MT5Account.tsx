@@ -15,7 +15,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Loader2, Lock, Trash2 } from 'lucide-react'
 import { api } from '../lib/api'
-import type { BrokerList, MT5Credentials, SyncStatus } from '../lib/types'
+import type { BrokerList, MT5Credentials, SyncStatus, SystemInfo } from '../lib/types'
 import { Button, Field } from './ui'
 
 const OTHER = '__other__'
@@ -74,6 +74,13 @@ export function MT5Account({ status }: { status?: SyncStatus }) {
     },
   })
 
+  // Only to say how much is about to go. "Forget the stored account?" is not a
+  // decision anyone can make; "delete 2,085 trades" is.
+  const { data: system } = useQuery({
+    queryKey: ['system'],
+    queryFn: () => api.get<SystemInfo>('/settings/system'),
+  })
+
   const forget = useMutation({
     mutationFn: () => api.delete<MT5Credentials>('/mt5/credentials'),
     onSuccess: () => {
@@ -81,8 +88,8 @@ export function MT5Account({ status }: { status?: SyncStatus }) {
       setServer('')
       setLogin('')
       setPassword('')
-      void queryClient.invalidateQueries({ queryKey: ['mt5-credentials'] })
-      void queryClient.invalidateQueries({ queryKey: ['sync-status'] })
+      // The journal has just lost an account: every cached figure is stale.
+      void queryClient.invalidateQueries()
     },
   })
 
@@ -209,7 +216,14 @@ export function MT5Account({ status }: { status?: SyncStatus }) {
             icon={<Trash2 size={15} />}
             loading={forget.isPending}
             onClick={() => {
-              if (confirm('Forget the stored MetaTrader account?')) forget.mutate()
+              const stored = system?.trades ?? 0
+              const warning = stored
+                ? `Forget account ${credentials?.login ?? ''} and delete its ` +
+                  `${stored.toLocaleString()} trades?\n\n` +
+                  'Its whole history goes: trades, deals, equity samples and copy ' +
+                  'activity. This cannot be undone.'
+                : `Forget account ${credentials?.login ?? ''}?`
+              if (confirm(warning)) forget.mutate()
             }}
           >
             Forget

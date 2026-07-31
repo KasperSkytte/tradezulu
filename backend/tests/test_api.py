@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 INGEST_HEADERS = {"X-API-Key": "test-ingest-token"}
 
@@ -542,3 +542,59 @@ class TestEquitySeries:
         assert body["single_account"] is False
         assert body["points"] == []
         assert "one account" in body["sampling"]
+
+
+class TestForgettingTheAccount:
+    """Forgetting the MetaTrader account forgets what it put in the journal."""
+
+    @pytest.fixture()
+    def journalled(self, client, auth_client):
+        auth_client.put(
+            "/api/mt5/credentials",
+            json={"login": "5000123", "server": "Test-Server", "password": "investor"},
+        )
+        for index in range(3):
+            client.post(
+                "/api/mt5/ingest",
+                json=deal_payload(datetime(2026, 6, 1 + index, 10), position_id=9000 + index),
+                headers=INGEST_HEADERS,
+            )
+        return auth_client
+
+    def test_the_trades_go_with_it(self, journalled, db):
+        """The bug: only the credentials row was deleted.
+
+        The account disappeared from the interface and its trades stayed in the
+        database -- still counted in every total, and inherited by the next
+        account added with the same number.
+        """
+        from app.models import Account, Trade
+
+        assert db.scalar(select(func.count()).select_from(Trade)) == 3
+
+        response = journalled.delete("/api/mt5/credentials")
+        assert response.status_code == 200
+        assert response.json()["configured"] is False
+
+        db.expire_all()
+        assert db.scalar(select(func.count()).select_from(Trade)) == 0
+        assert db.scalar(select(func.count()).select_from(Account)) == 0
+
+    def test_the_statistics_forget_it_too(self, journalled, db):
+        journalled.delete("/api/mt5/credentials")
+        body = journalled.get(
+            "/api/stats/summary", params={"start": "2026-06-01", "end": "2026-06-30"}
+        ).json()
+        assert body["counts"]["total"] == 0
+
+    def test_a_readded_account_starts_empty(self, journalled, db):
+        """Nothing to inherit, which was the other half of the problem."""
+        journalled.delete("/api/mt5/credentials")
+        journalled.put(
+            "/api/mt5/credentials",
+            json={"login": "5000123", "server": "Test-Server", "password": "investor"},
+        )
+        body = journalled.get(
+            "/api/stats/summary", params={"start": "2026-06-01", "end": "2026-06-30"}
+        ).json()
+        assert body["counts"]["total"] == 0

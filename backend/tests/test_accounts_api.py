@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.models import Account, CopyEvent
 from app.services.crypto import decrypt
@@ -162,8 +162,48 @@ class TestEditing:
 
 class TestRemoving:
     def test_a_slave_can_be_removed(self, auth_client, slave):
-        assert auth_client.delete(f"/api/accounts/{slave['id']}").status_code == 204
+        response = auth_client.delete(f"/api/accounts/{slave['id']}")
+        assert response.status_code == 200
         assert all(a["id"] != slave["id"] for a in auth_client.get("/api/accounts").json())
+
+    def test_removing_it_takes_its_history_with_it(self, auth_client, slave, db):
+        """The bug: an account vanished from the interface and stayed in the sums.
+
+        Its trades still counted towards every total, and the next account
+        added with the same number inherited them.
+        """
+        from datetime import date, datetime
+
+        from app.models import CopyEvent, CopyLink, EquityPoint, Trade
+
+        account_id = slave["id"]
+        db.add(Trade(account_id=account_id, position_id=1, symbol="EURUSD", direction="long",
+                     opened_at=datetime(2026, 6, 1, 9), closed_at=datetime(2026, 6, 1, 10),
+                     trade_date=date(2026, 6, 1), volume=1.0, closed_volume=1.0,
+                     entry_price=1.1, exit_price=1.11, net_pnl=25.0))
+        db.add(EquityPoint(account_id=account_id, time=datetime(2026, 6, 1, 10),
+                           balance=1_000.0, equity=1_000.0))
+        db.add(CopyLink(slave_account_id=account_id, master_position_id=5, symbol="EURUSD"))
+        db.add(CopyEvent(slave_account_id=account_id, action="open", outcome="ok"))
+        db.commit()
+
+        removed = auth_client.delete(f"/api/accounts/{account_id}").json()
+        assert removed["trades"] == 1
+        assert removed["equity_points"] == 1
+        assert removed["copy_links"] == 1
+        assert removed["copy_events"] == 1
+
+        for model, column in (
+            (Trade, Trade.account_id),
+            (EquityPoint, EquityPoint.account_id),
+            (CopyLink, CopyLink.slave_account_id),
+            # No foreign key behind this one, so it needs deleting explicitly --
+            # otherwise it survives pointing at an id nobody can resolve.
+            (CopyEvent, CopyEvent.slave_account_id),
+        ):
+            assert db.scalar(
+                select(func.count()).select_from(model).where(column == account_id)
+            ) == 0, f"{model.__tablename__} rows outlived the account"
 
     def test_the_master_cannot_be_removed(self, auth_client, db):
         master = db.scalar(select(Account).where(Account.role == "master"))
