@@ -19,8 +19,19 @@ const SIZING_MODES = [
   { value: 'equity_ratio', label: 'Match the equity ratio', hint: 'As above, but on equity rather than balance.' },
   { value: 'multiplier', label: "Multiply the master's lots", hint: 'Ignores account sizes entirely.' },
   { value: 'fixed_lot', label: 'Always the same lot size', hint: 'Whatever the master traded.' },
-  { value: 'risk_percent', label: 'Risk a percentage of equity', hint: "Sized against the master's stop distance." },
+  {
+    value: 'risk_percent_balance',
+    label: 'Risk a percentage of balance',
+    hint: "Sized against the master's stop distance. Balance ignores open trades, so the amount risked stays the same while a position is running.",
+  },
+  {
+    value: 'risk_percent',
+    label: 'Risk a percentage of equity',
+    hint: "Sized against the master's stop distance. Equity moves with open trades, so a losing position shrinks the next trade.",
+  },
 ]
+
+const RISK_MODES = new Set(['risk_percent', 'risk_percent_balance'])
 
 const BREACH_ACTIONS = [
   { value: 'close_all', label: 'Close everything and stop' },
@@ -35,7 +46,6 @@ const EMPTY: CopySettings = {
   risk_percent: 1,
   max_lot: 0,
   min_lot: 0,
-  scale: 1,
   mirror_stops: true,
   max_risk_percent_per_trade: 2,
   max_lot_per_trade: 0,
@@ -174,27 +184,39 @@ export function SlaveForm({
                   autoComplete="new-password"
                 />
               </Field>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Symbol prefix" hint="e.g. FX_">
-                  <input
-                    className="tz-input"
-                    value={prefix}
-                    onChange={(event) => setPrefix(event.target.value)}
-                  />
-                </Field>
-                <Field label="Symbol suffix" hint="e.g. .r">
-                  <input
-                    className="tz-input"
-                    value={suffix}
-                    onChange={(event) => setSuffix(event.target.value)}
-                  />
-                </Field>
-              </div>
             </div>
+            {/* Symbol naming used to be two text boxes here. Nobody should have
+                to know their broker writes EURUSD as EURUSD+ -- the symbol list
+                the terminal reports says so, and it is read off that. Anything
+                set by hand earlier still wins, so an existing account keeps
+                working. */}
+            <p className="mt-3 text-xs text-[var(--tz-text-faint)]">
+              {prefix || suffix ? (
+                <>
+                  Symbol naming is set by hand for this account:{' '}
+                  <code>
+                    {prefix}EURUSD{suffix}
+                  </code>
+                  .{' '}
+                  <button
+                    type="button"
+                    className="underline hover:text-[var(--tz-text)]"
+                    onClick={() => {
+                      setPrefix('')
+                      setSuffix('')
+                    }}
+                  >
+                    Detect it instead
+                  </button>
+                </>
+              ) : (
+                "The broker's symbol naming — a EURUSD+ or an FX_EURUSD — is worked out from the symbol list the terminal reports."
+              )}
+            </p>
           </section>
 
           <section>
-            <h3 className="tz-label">How big should each copy be?</h3>
+            <h3 className="tz-label">Position sizing</h3>
             <div className="space-y-3">
               <select
                 className="tz-input"
@@ -218,17 +240,34 @@ export function SlaveForm({
                 {settings.mode === 'fixed_lot' && (
                   <Num label="Lots" value={settings.fixed_lot} onChange={(v) => set('fixed_lot', v)} step={0.01} />
                 )}
-                {settings.mode === 'risk_percent' && (
+                {RISK_MODES.has(settings.mode) && (
                   <Num label="Risk per trade (%)" value={settings.risk_percent} onChange={(v) => set('risk_percent', v)} step={0.1} />
                 )}
-                <Num label="Never exceed (lots)" value={settings.max_lot} onChange={(v) => set('max_lot', v)} step={0.01} zero="no cap" />
-                <Num label="Extra scaling" value={settings.scale} onChange={(v) => set('scale', v)} step={0.05} />
+                <Num
+                  label="Max position size (lots)"
+                  value={settings.max_lot}
+                  onChange={(v) => set('max_lot', v)}
+                  step={0.01}
+                  zero="no cap"
+                />
+                {/* Sizing rounds down and never up, so a slave a hair smaller
+                    than the master computes 0.00998 lots and refuses the trade
+                    outright. This is the way out, and it was previously stored
+                    but never shown. */}
+                <Num
+                  label="Min position size (lots)"
+                  value={settings.min_lot}
+                  onChange={(v) => set('min_lot', v)}
+                  step={0.01}
+                  zero="the broker's own minimum"
+                />
               </div>
 
               <Toggle
                 checked={settings.mirror_stops}
                 onChange={(value) => set('mirror_stops', value)}
                 label="Follow the master's stop and target changes"
+                description="Move the copy's stop and target whenever the master moves its own."
               />
             </div>
           </section>
@@ -247,18 +286,48 @@ export function SlaveForm({
               <Toggle
                 checked={settings.require_stop_loss}
                 onChange={(value) => set('require_stop_loss', value)}
-                label="Skip any master trade that has no stop loss"
+                label="Require a stop loss"
+                description="Skip any master trade that has none, rather than copying it naked."
               />
             </div>
           </section>
 
           <section>
+            <h3 className="tz-label">Which instruments</h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <SymbolList
+                label="Only these"
+                hint="Leave empty to copy everything the master trades."
+                value={settings.allowed_symbols}
+                onChange={(value) => set('allowed_symbols', value)}
+              />
+              <SymbolList
+                label="Never these"
+                hint="Checked after the list above."
+                value={settings.blocked_symbols}
+                onChange={(value) => set('blocked_symbols', value)}
+              />
+            </div>
+            <p className="mt-2 text-xs text-[var(--tz-text-faint)]">
+              Base names, separated by spaces or commas — the broker's own prefix and suffix are
+              worked out for you, so <code>EURUSD</code> matches <code>EURUSD+</code> too.
+            </p>
+          </section>
+
+          <section>
             <h3 className="tz-label">Stop the account when…</h3>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-4">
               <Num label="Down today (%)" value={settings.max_daily_drawdown_percent} onChange={(v) => set('max_daily_drawdown_percent', v)} step={0.5} zero="no limit" />
               <Num label="Below peak (%)" value={settings.equity_stop_percent} onChange={(v) => set('equity_stop_percent', v)} step={0.5} zero="no limit" />
-              <Num label="Equity floor" value={settings.equity_stop_amount} onChange={(v) => set('equity_stop_amount', v)} step={100} zero="none" />
+              <Num label="Equity falls to" value={settings.equity_stop_amount} onChange={(v) => set('equity_stop_amount', v)} step={100} zero="none" />
+              <Num label="Up today (%)" value={settings.daily_profit_target_percent} onChange={(v) => set('daily_profit_target_percent', v)} step={0.5} zero="no target" />
             </div>
+            <p className="mt-2 text-xs text-[var(--tz-text-faint)]">
+              “Equity falls to” is an amount in account currency, not a loss —
+              the account stops when equity reaches it. The daily figures are measured against
+              what the account was worth when the day opened, and profit against what has actually
+              been banked rather than what is still on the table.
+            </p>
             <div className="mt-3">
               <Field label="When one of those trips">
                 <select
@@ -277,11 +346,10 @@ export function SlaveForm({
           </section>
 
           <section>
-            <h3 className="tz-label">Prop firm rules</h3>
-            <div className="grid gap-3 sm:grid-cols-4">
+            <h3 className="tz-label">Take profit off the table</h3>
+            <div className="grid gap-3 sm:grid-cols-3">
               <Num label="Bank a winner at" value={settings.take_profit_at_amount} onChange={(v) => set('take_profit_at_amount', v)} step={50} zero="off" />
               <Num label="…or at (R)" value={settings.take_profit_at_r} onChange={(v) => set('take_profit_at_r', v)} step={0.5} zero="off" />
-              <Num label="Daily target (%)" value={settings.daily_profit_target_percent} onChange={(v) => set('daily_profit_target_percent', v)} step={0.5} zero="off" />
               <Num label="One day max (% of profit)" value={settings.max_day_share_of_profit_percent} onChange={(v) => set('max_day_share_of_profit_percent', v)} step={5} zero="off" />
             </div>
             <p className="mt-2 text-xs text-[var(--tz-text-faint)]">
@@ -309,6 +377,40 @@ export function SlaveForm({
         </div>
       </div>
     </div>
+  )
+}
+
+function SymbolList({
+  label,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string
+  hint?: string
+  value: string[]
+  onChange: (value: string[]) => void
+}) {
+  // Held as typed rather than as the parsed array, so a trailing space or a
+  // half-written name does not disappear under the cursor between keystrokes.
+  const [text, setText] = useState(value.join(' '))
+  return (
+    <Field label={label} hint={hint}>
+      <input
+        className="tz-input"
+        value={text}
+        placeholder="EURUSD GBPUSD"
+        onChange={(event) => {
+          setText(event.target.value)
+          onChange(
+            event.target.value
+              .split(/[\s,]+/)
+              .map((item) => item.trim().toUpperCase())
+              .filter(Boolean),
+          )
+        }}
+      />
+    </Field>
   )
 }
 

@@ -55,6 +55,16 @@ export const GLOSSARY: Record<string, string> = {
     'The copier works out exactly what it would do and records it, without sending a single order. The safe way to watch a new account for a day.',
   'sizing mode':
     'How a copy is sized against the master: a fixed lot, a multiplier, in proportion to balance or equity, or by risking a fixed percentage against the master stop.',
+  'position sizing':
+    'How big each copied trade should be. Everything else on the form limits or refuses a trade; this decides the number of lots in the first place.',
+  'max position size (lots)':
+    'A hard ceiling on any single copy, whatever the sizing worked out. 0 means no ceiling.',
+  'min position size (lots)':
+    "The smallest order to send. Sizing always rounds down, so a slave a fraction smaller than the master can compute 0.00998 lots and refuse the trade outright; setting a minimum lets it round up to this instead. 0 uses the broker's own minimum and refuses anything under it.",
+  'require a stop loss':
+    'Refuse to copy a master trade that has no stop attached, rather than opening an unprotected position on the slave.',
+  'equity falls to':
+    'An amount in account currency, not a loss. The account stops when equity reaches this number.',
   'balance ratio':
     "Size copies in proportion to the two accounts' balances. A slave with half the balance takes half the size.",
   'equity ratio': 'The same, measured on equity, so open profit counts towards what the slave risks.',

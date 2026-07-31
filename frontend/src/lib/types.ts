@@ -405,7 +405,6 @@ export interface CopySettings {
   risk_percent: number
   max_lot: number
   min_lot: number
-  scale: number
   mirror_stops: boolean
   max_risk_percent_per_trade: number
   max_lot_per_trade: number

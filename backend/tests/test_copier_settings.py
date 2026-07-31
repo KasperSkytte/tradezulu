@@ -275,12 +275,6 @@ class TestSizingLimits:
         pair.master_holds(position())
         assert only_open(pair.slave_polls())["volume"] == 0.75
 
-    def test_scale_is_applied_last(self, pair):
-        pair.configure(mode="fixed_lot", fixed_lot=1.0, scale=0.25)
-        pair.arm()
-        pair.master_holds(position())
-        assert only_open(pair.slave_polls())["volume"] == 0.25
-
     def test_a_size_below_the_brokers_minimum_is_refused_not_rounded_up(self, pair):
         pair.configure(mode="fixed_lot", fixed_lot=0.004)
         pair.arm()
