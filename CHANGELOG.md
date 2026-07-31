@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.4.0](https://github.com/KasperSkytte/tradezulu/compare/v1.3.0...v1.4.0) (2026-07-31)
+
+
+### Features
+
+* **install:** add an uninstaller that cannot delete the wrong thing ([f6042c7](https://github.com/KasperSkytte/tradezulu/commit/f6042c7ff89317788d31ae7269b8513ed60f0a85))
+* **install:** let a service account own and run the terminals ([d41b25a](https://github.com/KasperSkytte/tradezulu/commit/d41b25ac26c834540dbe23af18334fb198e3eebf))
+
+
+### Bug fixes
+
+* **install:** find the Wine build by pattern, and let the user read it ([561c4f1](https://github.com/KasperSkytte/tradezulu/commit/561c4f12b06c8754cb4f09f5bad48d3925888f4c))
+* **install:** give the agent a runtime directory of its own ([5436b75](https://github.com/KasperSkytte/tradezulu/commit/5436b75394de4df3138f98fb0598cbd21e4ed42b))
+* **install:** install the agent as a system service ([2b12251](https://github.com/KasperSkytte/tradezulu/commit/2b122510e73368971f5f5f315a39445595bc903a))
+
 ## [1.3.0](https://github.com/KasperSkytte/tradezulu/compare/v1.2.1...v1.3.0) (2026-07-31)
 
 
