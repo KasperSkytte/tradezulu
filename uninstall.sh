@@ -76,7 +76,9 @@ else
   RUN_HOME="${HOME}"
 fi
 BOTTLES="${RUN_HOME}/.var/app/com.usebottles.bottles/data/bottles"
-SODA_DIR="${BOTTLES}/runners/soda-9.0-1"
+# Glob rather than name it: Bottles installs this runner as "soda-9.0-1" and
+# the release tarball unpacks as "soda-9.0-1-x86_64".
+SODA_DIR="$(find "${BOTTLES}/runners" -maxdepth 1 -name 'soda-*' -type d 2>/dev/null | sort | tail -1)"
 
 # --- what is actually here ---------------------------------------------------
 

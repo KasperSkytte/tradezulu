@@ -89,7 +89,13 @@ else
   ${SUDO} -u "${RUN_USER}" mkdir -p "${RUN_HOME}/.run"
 fi
 BOTTLES="${RUN_HOME}/.var/app/com.usebottles.bottles/data/bottles"
-SODA_DIR="${BOTTLES}/runners/soda-9.0-1"
+
+# Not a fixed directory name. Bottles' own component manager installs this
+# runner as "soda-9.0-1", but the release tarball unpacks as
+# "soda-9.0-1-x86_64" -- so anything hardcoding either name works on one
+# machine and fails on the next. Everything else here globs soda-*; so does
+# this.
+soda_dir() { find "${BOTTLES}/runners" -maxdepth 1 -name 'soda-*' -type d 2>/dev/null | sort | tail -1; }
 
 # --- the site ----------------------------------------------------------------
 
@@ -167,7 +173,7 @@ else
 fi
 
 step "Installing the Soda Wine build"
-if [ -x "${SODA_DIR}/bin/wine" ]; then
+if [ -n "$(soda_dir)" ] && [ -x "$(soda_dir)/bin/wine" ]; then
   say "already installed"
 else
   # Mainline Wine loads MetaTrader but its inter-process layer never answers.
@@ -177,10 +183,16 @@ else
   TMP="$(mktemp -d)"
   say "downloading soda-9.0-1 (~62 MB)"
   curl -fL --retry 3 --max-time 900 -o "${TMP}/soda.tar.xz" "${SODA_URL}"
+  # The download happens as root but the unpacking does not, and mktemp -d
+  # makes a directory only root can read. Without this the tar is handed a
+  # file the account cannot open.
+  chmod 755 "${TMP}"; chmod 644 "${TMP}/soda.tar.xz"
   run_as tar -C "${BOTTLES}/runners" -xf "${TMP}/soda.tar.xz"
   rm -rf "${TMP}"
-  [ -x "${SODA_DIR}/bin/wine" ] || die "Soda did not unpack to ${SODA_DIR}"
-  say "installed"
+  SODA_DIR="$(soda_dir)"
+  [ -n "${SODA_DIR}" ] && [ -x "${SODA_DIR}/bin/wine" ] \
+    || die "Soda did not unpack into ${BOTTLES}/runners"
+  say "installed as $(basename "${SODA_DIR}")"
 fi
 
 step "Building terminal templates"
