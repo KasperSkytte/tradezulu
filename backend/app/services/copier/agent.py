@@ -188,7 +188,8 @@ def commands_for(db: Session, account: Account, payload: Any) -> list[dict[str, 
     commands: list[dict[str, Any]] = []
     for action in actions:
         if action.type is ActionType.SKIP:
-            _event(db, account, action, "skipped")
+            if _is_new_skip(db, account, action):
+                _event(db, account, action, "skipped")
             continue
 
         if action.type is ActionType.HALT:
@@ -428,6 +429,33 @@ def _close_link(db: Session, account: Account, action: Any, reason: str) -> None
         link.status = "closed"
         link.closed_at = datetime.now(timezone.utc)
         link.close_reason = reason[:255]
+
+
+def _is_new_skip(db: Session, account: Account, action: Any) -> bool:
+    """Whether this skip says anything the last one did not.
+
+    A skip is a standing condition, not an event: a master position the slave
+    is too small to copy is skipped again on every poll, and an armed slave
+    polls every two seconds. Recorded blindly that is 43,200 identical rows a
+    day per position, which buries the events that do mean something and grows
+    the database for no one's benefit.
+
+    The first skip is kept, because the reason a trade was not copied is worth
+    knowing. Repeats of it are not. A *different* reason for the same position
+    is new information and is recorded.
+    """
+    previous = db.scalar(
+        select(CopyEvent)
+        .where(
+            CopyEvent.slave_account_id == account.id,
+            CopyEvent.master_position_id == action.master_position_id,
+        )
+        .order_by(CopyEvent.id.desc())
+        .limit(1)
+    )
+    if previous is None or previous.outcome != "skipped":
+        return True
+    return previous.rule != action.rule or previous.message != action.reason[:2000]
 
 
 def _event(db: Session, account: Account, action: Any, outcome: str) -> None:

@@ -382,3 +382,57 @@ class TestLinkReuse:
         ).all()
         assert len(live) == 1, "the fill should have produced exactly one open link"
         assert live[0].slave_position_id == 12345
+
+
+class TestRepeatedSkips:
+    """A standing reason not to copy is recorded once, not on every poll."""
+
+    def _poll(self, auth_client, slave):
+        auth_client.post(
+            "/api/agent/poll",
+            json=account_payload("5000", "Master-Server", positions=[position()]),
+        )
+        return auth_client.post(
+            "/api/agent/poll", json=account_payload("9001", "Slave-Server")
+        )
+
+    def _skips(self, db, slave):
+        return db.scalars(
+            select(CopyEvent).where(
+                CopyEvent.slave_account_id == slave.id, CopyEvent.outcome == "skipped"
+            )
+        ).all()
+
+    def test_the_same_reason_is_not_written_again(self, auth_client, master, slave, db):
+        """The bug: an armed slave polls every two seconds, and a master
+        position it will never copy was skipped -- and recorded -- every single
+        time. Left alone that is tens of thousands of identical rows a day."""
+        slave.copy_settings = {**slave.copy_settings, "blocked_symbols": ["EURUSD"]}
+        db.commit()
+        arm(auth_client, slave)
+
+        for _ in range(5):
+            self._poll(auth_client, slave)
+
+        skips = self._skips(db, slave)
+        assert len(skips) == 1
+        assert "EURUSD" in skips[0].message
+
+    def test_a_different_reason_is_new_information(self, auth_client, master, slave, db):
+        slave.copy_settings = {**slave.copy_settings, "blocked_symbols": ["EURUSD"]}
+        db.commit()
+        arm(auth_client, slave)
+        self._poll(auth_client, slave)
+
+        # Same position, a different reason to leave it alone.
+        db.refresh(slave)
+        slave.copy_settings = {
+            **slave.copy_settings, "blocked_symbols": [], "max_open_positions": -1,
+            "allowed_symbols": ["GBPUSD"],
+        }
+        db.commit()
+        self._poll(auth_client, slave)
+
+        skips = self._skips(db, slave)
+        assert len(skips) == 2
+        assert skips[0].rule != skips[1].rule
