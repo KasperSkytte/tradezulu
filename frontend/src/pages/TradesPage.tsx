@@ -1,18 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import {
-  ArrowDown,
-  ArrowUp,
-  ChevronLeft,
-  ChevronRight,
-  Download,
-  Inbox,
-  Plus,
-  Tags,
-} from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Download, Inbox, Plus } from 'lucide-react'
 import { useState } from 'react'
 import clsx from 'clsx'
 import { api } from '../lib/api'
+import { BulkTagMenu } from '../components/BulkTagMenu'
 import { useFilters } from '../lib/filters'
 import { useSettings } from '../lib/settings'
 import {
@@ -96,8 +88,10 @@ export function TradesPage() {
   })
 
   const bulkTag = useMutation({
-    mutationFn: (tagId: number) =>
-      api.post('/trades/bulk', { trade_ids: [...selected], add_tag_ids: [tagId] }),
+    // Several tags, one request. The endpoint always took a list; only the
+    // control in front of it insisted on one at a time.
+    mutationFn: (tagIds: number[]) =>
+      api.post('/trades/bulk', { trade_ids: [...selected], add_tag_ids: tagIds }),
     onSuccess: () => {
       setSelected(new Set())
       void queryClient.invalidateQueries({ queryKey: ['trades'] })
@@ -140,23 +134,11 @@ export function TradesPage() {
           <span className="text-sm font-medium">
             {selected.size} trade{selected.size === 1 ? '' : 's'} selected
           </span>
-          <div className="flex items-center gap-2">
-            <Tags size={15} className="text-[var(--tz-text-muted)]" />
-            <select
-              className="tz-input w-auto py-1 text-sm"
-              value=""
-              onChange={(event) => {
-                if (event.target.value) bulkTag.mutate(Number(event.target.value))
-              }}
-            >
-              <option value="">Add tag…</option>
-              {tags.map((tag) => (
-                <option key={tag.id} value={tag.id}>
-                  {tag.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          <BulkTagMenu
+            tags={tags}
+            pending={bulkTag.isPending}
+            onApply={(tagIds) => bulkTag.mutate(tagIds)}
+          />
           <Button className="ml-auto" onClick={() => setSelected(new Set())}>
             Clear selection
           </Button>
