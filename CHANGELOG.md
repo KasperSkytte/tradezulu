@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.8.2](https://github.com/KasperSkytte/tradezulu/compare/v1.8.1...v1.8.2) (2026-07-31)
+
+
+### Bug fixes
+
+* **copier:** count the account's real positions in the exposure limits ([11297c5](https://github.com/KasperSkytte/tradezulu/commit/11297c5375f2db80fded4c4038ff5807e3efcf66))
+* **copier:** read banked profit for the daily target and consistency cap ([03a1b23](https://github.com/KasperSkytte/tradezulu/commit/03a1b2365634dda1638da186c32fd0a45621897a))
+* **pwa:** reload the page when a new service worker takes over ([fd21315](https://github.com/KasperSkytte/tradezulu/commit/fd21315e4d903163ab2c795c6a5b4181fd64add5))
+* **ui:** put the toggle knob back inside its track ([c01a62d](https://github.com/KasperSkytte/tradezulu/commit/c01a62d0f2c1f266512ab5850e40fabe3e556956))
+
+
+### Refactoring
+
+* **ui:** drop the version from the sidebar ([32a9d40](https://github.com/KasperSkytte/tradezulu/commit/32a9d40476b787c633fb21d691ff372311786e24))
+
 ## [1.8.1](https://github.com/KasperSkytte/tradezulu/compare/v1.8.0...v1.8.1) (2026-07-31)
 
 
