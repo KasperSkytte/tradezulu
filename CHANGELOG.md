@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.8.1](https://github.com/KasperSkytte/tradezulu/compare/v1.8.0...v1.8.1) (2026-07-31)
+
+
+### Bug fixes
+
+* **agent:** start a terminal for every account that has credentials ([eabdda2](https://github.com/KasperSkytte/tradezulu/commit/eabdda2be56f9535e2115efacdb6d3093a86b6d4))
+* **copier:** close dry-run links when a slave is taken live ([d746b73](https://github.com/KasperSkytte/tradezulu/commit/d746b737c900861d398afde86fb1a6081cb25f21))
+* **copier:** record a standing skip once instead of on every poll ([24ea036](https://github.com/KasperSkytte/tradezulu/commit/24ea03616d591cfef3666c03d1042183c765e1d1))
+* **copier:** reuse a master position's link instead of skipping when one exists ([249a354](https://github.com/KasperSkytte/tradezulu/commit/249a354a908ae8093c005faf84951a8b4bbc388e))
+
+
+### Documentation
+
+* drop the untested-copier caveat now that it has been run live ([8991f67](https://github.com/KasperSkytte/tradezulu/commit/8991f67a0f1d03cd0951654d72c026a48bb90bea)), closes [#10](https://github.com/KasperSkytte/tradezulu/issues/10)
+
 ## [1.8.0](https://github.com/KasperSkytte/tradezulu/compare/v1.7.0...v1.8.0) (2026-07-31)
 
 
