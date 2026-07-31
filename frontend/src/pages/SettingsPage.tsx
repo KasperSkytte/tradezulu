@@ -480,6 +480,13 @@ function SyncSection() {
   const { data: status } = useQuery({
     queryKey: ['sync-status'],
     queryFn: () => api.get<SyncStatus>('/mt5/status'),
+    // Poll while a terminal is being built, so "starting" turns into "running"
+    // on its own. Without this the message is written once and sits there,
+    // which reads as stuck rather than working.
+    refetchInterval: (query) =>
+      query.state.data?.phase === 'starting' || query.state.data?.phase === 'stalled'
+        ? 5000
+        : false,
   })
   const { data: system } = useQuery({
     queryKey: ['system'],

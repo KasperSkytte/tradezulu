@@ -275,6 +275,9 @@ class SyncStatus(BaseModel):
     sync_mode: str
     #: Whether a terminal has reported in recently. None when sync is off.
     connected: bool | None = None
+    #: off | no-account | starting | connected | stalled. Lets the UI say
+    #: "starting" instead of leaving a blank screen while a terminal is built.
+    phase: str = "off"
     credentials_configured: bool = False
     message: str = ""
 

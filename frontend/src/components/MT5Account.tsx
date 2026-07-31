@@ -1,18 +1,24 @@
 /**
  * The MetaTrader account form.
  *
- * Server, account number and investor password go in here once. The password
- * is written to the server, encrypted at rest, and never sent back — the form
- * shows only whether one is stored.
+ * Broker, trade server, account number and investor password go in here once.
+ * The password is written to the server, encrypted at rest, and never sent
+ * back — the form shows only whether one is stored.
+ *
+ * Picking a broker narrows the server list to that broker's own, which is the
+ * point: MetaTrader has thousands of servers and the name has to be exact.
+ * Which MetaTrader build the broker needs is deliberately not asked about —
+ * that is the provisioner's business.
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
-import { AlertTriangle, CheckCircle2, KeyRound, Lock, Trash2, Zap } from 'lucide-react'
-import { ApiError, api } from '../lib/api'
-import { money } from '../lib/format'
-import type { MT5ConnectResult, MT5Credentials, SyncStatus } from '../lib/types'
+import { useEffect, useMemo, useState } from 'react'
+import { AlertTriangle, CheckCircle2, Loader2, Lock, Trash2 } from 'lucide-react'
+import { api } from '../lib/api'
+import type { BrokerList, MT5Credentials, SyncStatus } from '../lib/types'
 import { Button, Field } from './ui'
+
+const OTHER = '__other__'
 
 export function MT5Account({ status }: { status?: SyncStatus }) {
   const queryClient = useQueryClient()
@@ -21,20 +27,36 @@ export function MT5Account({ status }: { status?: SyncStatus }) {
     queryKey: ['mt5-credentials'],
     queryFn: () => api.get<MT5Credentials>('/mt5/credentials'),
   })
+  const { data: brokerList } = useQuery({
+    queryKey: ['mt5-brokers'],
+    queryFn: () => api.get<BrokerList>('/mt5/brokers'),
+    staleTime: 60 * 60 * 1000,
+  })
+  const brokers = brokerList?.brokers ?? []
 
+  const [broker, setBroker] = useState('')
   const [server, setServer] = useState('')
   const [login, setLogin] = useState('')
   const [password, setPassword] = useState('')
   const [dirty, setDirty] = useState(false)
-  const [result, setResult] = useState<
-    { kind: 'ok' | 'error'; text: string; detail?: string } | null
-  >(null)
 
+  // A stored server tells us the broker: it is the same string the provisioner
+  // matches on, so the form reopens where it was left rather than blank.
   useEffect(() => {
-    if (!credentials || dirty) return
+    if (!credentials || dirty || brokers.length === 0) return
     setServer(credentials.server)
     setLogin(credentials.login)
-  }, [credentials, dirty])
+    const owner = brokers.find((b) =>
+      b.servers.some((s) => s.toLowerCase() === credentials.server.toLowerCase()),
+    )
+    setBroker(owner?.key ?? (credentials.server ? OTHER : ''))
+  }, [credentials, dirty, brokers])
+
+  const chosen = brokers.find((b) => b.key === broker)
+  const servers = useMemo(() => chosen?.servers ?? [], [chosen])
+  // A broker with no servers listed, or "other", means typing it. Brokers add
+  // servers without telling anyone, so this is never a dead end.
+  const freeText = broker === OTHER || broker === '' || servers.length === 0
 
   const save = useMutation({
     mutationFn: () =>
@@ -52,39 +74,13 @@ export function MT5Account({ status }: { status?: SyncStatus }) {
     },
   })
 
-  const connect = useMutation({
-    mutationFn: () => api.post<MT5ConnectResult>('/mt5/connect'),
-    onSuccess: (body) => {
-      const account = body.account
-      setResult({
-        kind: 'ok',
-        text: account
-          ? `Connected to ${account.company || account.server} as ${account.login}`
-          : 'Connected',
-        detail: account
-          ? `Balance ${money(account.balance, '')} ${account.currency}` +
-            (account.trade_allowed
-              ? ' · this login can trade — consider using the investor password instead'
-              : ' · read-only investor login')
-          : undefined,
-      })
-      void queryClient.invalidateQueries({ queryKey: ['sync-status'] })
-      void queryClient.invalidateQueries({ queryKey: ['accounts'] })
-    },
-    onError: (error) =>
-      setResult({
-        kind: 'error',
-        text: error instanceof ApiError ? error.message : 'Could not connect',
-      }),
-  })
-
   const forget = useMutation({
     mutationFn: () => api.delete<MT5Credentials>('/mt5/credentials'),
     onSuccess: () => {
+      setBroker('')
       setServer('')
       setLogin('')
       setPassword('')
-      setResult(null)
       void queryClient.invalidateQueries({ queryKey: ['mt5-credentials'] })
       void queryClient.invalidateQueries({ queryKey: ['sync-status'] })
     },
@@ -95,7 +91,6 @@ export function MT5Account({ status }: { status?: SyncStatus }) {
 
   const track = <T,>(setter: (value: T) => void) => (value: T) => {
     setDirty(true)
-    setResult(null)
     setter(value)
   }
 
@@ -110,17 +105,59 @@ export function MT5Account({ status }: { status?: SyncStatus }) {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Broker">
+          <select
+            className="tz-input"
+            value={broker}
+            onChange={(event) => {
+              const next = event.target.value
+              track(setBroker)(next)
+              // Keep a typed server when moving to free text; otherwise the
+              // old broker's server would be left selected under a new broker.
+              const list = brokers.find((b) => b.key === next)?.servers ?? []
+              setServer(list.length === 1 ? list[0] : list.includes(server) ? server : '')
+            }}
+          >
+            <option value="">Select your broker…</option>
+            {brokers.map((b) => (
+              <option key={b.key} value={b.key}>
+                {b.label}
+              </option>
+            ))}
+            <option value={OTHER}>Not listed — type the server</option>
+          </select>
+        </Field>
+
         <Field
           label="Trade server"
-          hint="Exactly as it appears in MetaTrader under File → Open an Account, e.g. ICMarketsSC-Live12."
+          hint={
+            freeText
+              ? 'Exactly as it appears in MetaTrader under File → Open an Account.'
+              : undefined
+          }
         >
-          <input
-            className="tz-input"
-            placeholder="YourBroker-Live"
-            autoComplete="off"
-            value={server}
-            onChange={(event) => track(setServer)(event.target.value)}
-          />
+          {freeText ? (
+            <input
+              className="tz-input"
+              placeholder="YourBroker-Live"
+              autoComplete="off"
+              value={server}
+              onChange={(event) => track(setServer)(event.target.value)}
+            />
+          ) : (
+            <select
+              className="tz-input"
+              value={server}
+              onChange={(event) => track(setServer)(event.target.value)}
+            >
+              <option value="">Select a server…</option>
+              {servers.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          )}
         </Field>
 
         <Field label="Account number">
@@ -137,7 +174,6 @@ export function MT5Account({ status }: { status?: SyncStatus }) {
         <Field
           label="Investor password"
           hint="The read-only password your broker issues alongside the main one. It cannot place trades, so TradeZulu physically cannot touch your account."
-          className="sm:col-span-2"
         >
           <input
             type="password"
@@ -167,17 +203,6 @@ export function MT5Account({ status }: { status?: SyncStatus }) {
         >
           {configured ? 'Update account' : 'Save account'}
         </Button>
-        <Button
-          icon={<Zap size={15} />}
-          disabled={!configured || save.isPending}
-          loading={connect.isPending}
-          onClick={() => {
-            setResult(null)
-            connect.mutate()
-          }}
-        >
-          Test connection
-        </Button>
         {configured && (
           <Button
             variant="danger"
@@ -192,35 +217,39 @@ export function MT5Account({ status }: { status?: SyncStatus }) {
         )}
       </div>
 
-      {result && (
-        <div
-          className={`mt-3 flex items-start gap-1.5 text-sm ${
-            result.kind === 'ok' ? 'text-[var(--tz-gain-text)]' : 'text-[var(--tz-loss-text)]'
-          }`}
-        >
-          {result.kind === 'ok' ? (
-            <CheckCircle2 size={15} className="mt-0.5 shrink-0" />
-          ) : (
-            <AlertTriangle size={15} className="mt-0.5 shrink-0" />
-          )}
-          <span>
-            {result.text}
-            {result.detail && (
-              <span className="mt-0.5 block text-xs text-[var(--tz-text-muted)]">
-                {result.detail}
-              </span>
-            )}
-          </span>
-        </div>
-      )}
-
-      {status && status.connected === false && (
-        <p className="mt-3 flex items-start gap-1.5 text-sm text-[var(--tz-text-muted)]">
-          <KeyRound size={14} className="mt-0.5 shrink-0" />
-          No terminal has reported in yet. One is started for this account automatically,
-          usually within a minute.
-        </p>
-      )}
+      {/* There is nothing to "test": saving is what starts a terminal, and the
+          terminal reporting in is the only proof that matters. */}
+      <TerminalState status={status} configured={configured} />
     </div>
   )
+}
+
+function TerminalState({ status, configured }: { status?: SyncStatus; configured: boolean }) {
+  if (!status || !configured) return null
+
+  if (status.phase === 'starting') {
+    return (
+      <p className="mt-3 flex items-start gap-1.5 text-sm text-[var(--tz-text-muted)]">
+        <Loader2 size={14} className="mt-0.5 shrink-0 animate-spin" />
+        {status.message || 'Starting a MetaTrader terminal for this account…'}
+      </p>
+    )
+  }
+  if (status.phase === 'connected') {
+    return (
+      <p className="mt-3 flex items-start gap-1.5 text-sm text-[var(--tz-gain-text)]">
+        <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
+        Terminal running and reporting.
+      </p>
+    )
+  }
+  if (status.phase === 'stalled') {
+    return (
+      <p className="mt-3 flex items-start gap-1.5 text-sm text-[var(--tz-loss-text)]">
+        <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+        {status.message}
+      </p>
+    )
+  }
+  return null
 }

@@ -1,28 +1,56 @@
 {
   "_comment": [
-    "Which installer to use for each broker.",
+    "Brokers TradeZulu knows about.",
+    "",
+    "Two jobs. It tells the web interface which brokers to offer and which trade",
+    "servers each one has, so nobody has to remember whether their server is",
+    "called VantageMarkets-Live or VantageInternational-Live. And it tells the",
+    "provisioner which MetaTrader build to install, which the user never sees.",
+    "",
+    "  label      what the account form shows",
+    "  servers    the trade servers to offer. An empty list means the form asks",
+    "             the user to type one, which is always allowed anyway -- brokers",
+    "             add servers without telling anyone.",
+    "  installer  the MetaTrader build to use. Where a broker ships its own, use",
+    "             it: the generic MetaQuotes terminal cannot resolve a name like",
+    "             VantageMarkets-Live at all and offers to open a new account",
+    "             instead, which looks exactly like a rejected password.",
+    "  matches    substrings that identify this broker from a server name, used",
+    "             to pick the template. The server name is what decides, because",
+    "             it always arrives correct -- it comes from the broker.",
+    "",
+    "A broker with no installer of its own runs on the generic build, which",
+    "connects to most brokers by name. Adding one is a label, its servers, and",
+    "a matches entry.",
     "",
     "MetaQuotes hosts a build per broker at a predictable address, which is why",
-    "these are preferred over the brokers' own download pages: the pages move,",
-    "wrap the file in a landing page, or hand out a different build per region.",
-    "",
-    "The generic MetaQuotes terminal will connect to most brokers by name, so",
-    "'default' is a working fallback rather than a placeholder. A broker-specific",
-    "build is still better where one exists -- it ships that broker's server list,",
-    "so the terminal finds the server without being told where to look.",
-    "",
-    "To add a broker: find its installer under download.mql5.com or the broker's",
-    "CDN, add an entry here, and run make-template.sh <key>. Nothing else changes."
+    "those are preferred over a broker's own download page: the pages move, wrap",
+    "the file in a landing page, or hand out a different build per region."
   ],
 
-  "default": {
-    "label": "MetaQuotes (works with most brokers)",
-    "installer": "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe",
-    "matches": []
-  },
   "vantage": {
     "label": "Vantage Markets",
     "installer": "https://download.terminal.free/cdn/web/vantage.markets.pty/mt5/vantagemarkets5setup.exe",
-    "matches": ["vantage"]
+    "matches": ["vantage"],
+    "servers": [
+      "VantageMarkets-Live",
+      "VantageMarkets-Demo",
+      "VantageInternational-Live",
+      "VantageInternational-Demo"
+    ]
+  },
+
+  "falcon": {
+    "label": "Falcon Markets",
+    "installer": "",
+    "matches": ["falcon"],
+    "servers": []
+  },
+
+  "default": {
+    "label": "Other broker",
+    "installer": "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe",
+    "matches": [],
+    "servers": []
   }
 }

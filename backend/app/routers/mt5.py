@@ -39,6 +39,7 @@ from ..services.aggregation import (
     rebuild_trades,
     upsert_deals,
 )
+from ..services.brokers import list_brokers
 from ..services.credentials import (
     clear_credentials,
     credentials_status,
@@ -231,6 +232,17 @@ def cursor(db: DbSession, login: Annotated[str | None, Query()] = None) -> dict[
     }
 
 
+@router.get("/brokers")
+def brokers(_user: CurrentUser) -> dict[str, Any]:
+    """Brokers and their trade servers, for the account form.
+
+    Which MetaTrader build each one needs is not included. That is the
+    provisioner's business, and having to know it is the setup step this
+    exists to remove.
+    """
+    return {"brokers": list_brokers()}
+
+
 @router.get("/credentials", response_model=MT5CredentialsOut)
 def read_credentials(_user: CurrentUser, db: DbSession) -> dict[str, Any]:
     """Everything about the stored account except the password itself."""
@@ -270,27 +282,39 @@ def status_(_user: CurrentUser, db: DbSession, config: AppConfig) -> SyncStatus:
     # Terminals report in rather than being polled, so "connected" is simply
     # whether one has been heard from lately. A minute is generous: a master
     # polls every ten seconds and a slave every two.
+    #
+    # The distinction that matters to someone who has just saved an account is
+    # between "nothing is happening" and "your terminal is being built". The
+    # second takes minutes the first time -- a MetaTrader install has to be
+    # copied and logged in -- and without saying so the page looks broken.
     connected: bool | None = None
+    phase = "off"
     if mode == "ea":
         if not creds["configured"]:
-            message = "Add your account under Settings -> MetaTrader 5."
+            phase = "no-account"
+            message = "Add your account below and a terminal is started for it."
         elif account is None or account.last_sync_at is None:
+            phase = "starting"
             connected = False
             message = (
-                "No terminal has reported in yet. One is started for you within "
-                "a minute or so of the account being added."
+                "Starting a MetaTrader terminal for this account. The first one "
+                "takes a few minutes; after that it is seconds."
             )
         else:
             age = datetime.now(timezone.utc) - account.last_sync_at.replace(tzinfo=timezone.utc)
             connected = age < timedelta(minutes=1)
+            phase = "connected" if connected else "stalled"
             if not connected:
-                message = "The terminal has not reported in for a while."
+                message = (
+                    "The terminal has not reported in for "
+                    f"{int(age.total_seconds() // 60)} minutes."
+                )
 
     if account is None:
         return SyncStatus(
             account_id=None, login=None, name=None, balance=None, equity=None, currency=None,
             last_sync_at=None, last_sync_source=None, total_deals=0, total_trades=0,
-            open_trades=0, sync_mode=mode, connected=connected,
+            open_trades=0, sync_mode=mode, connected=connected, phase=phase,
             credentials_configured=creds["configured"], message=message,
         )
 
@@ -316,6 +340,7 @@ def status_(_user: CurrentUser, db: DbSession, config: AppConfig) -> SyncStatus:
         ) or 0,
         sync_mode=mode,
         connected=connected,
+        phase=phase,
         credentials_configured=creds["configured"],
         message=message,
     )

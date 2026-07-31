@@ -40,6 +40,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/app ./app
 COPY --from=frontend /build/dist ./static
 COPY mt5/ ./mt5/
+# The broker list is shared: the provisioner reads it from agent/ on the host,
+# and the web interface serves it from here so the account form can offer the
+# same brokers and servers.
+COPY agent/brokers.json ./brokers.json
 
 # Run unprivileged. /data is a volume, so its ownership is fixed at start-up
 # by the entrypoint rather than baked into the image.

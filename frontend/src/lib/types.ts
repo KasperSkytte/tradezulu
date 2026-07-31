@@ -306,6 +306,8 @@ export interface SyncStatus {
   open_trades: number
   sync_mode: string
   connected: boolean | null
+  /** off | no-account | starting | connected | stalled */
+  phase: string
   credentials_configured: boolean
   message: string
 }
@@ -318,21 +320,6 @@ export interface MT5Credentials {
   password_readable: boolean
 }
 
-export interface MT5ConnectResult {
-  ok: boolean
-  account?: {
-    login: string
-    name: string
-    server: string
-    company: string
-    currency: string
-    leverage: number
-    balance: number
-    equity: number
-    trade_allowed: boolean
-  }
-  account_id?: number
-}
 
 export interface Account {
   id: number
@@ -392,7 +379,6 @@ export interface SyncLogEntry {
   message: string
   created_at: string
 }
-
 
 export interface CopySettings {
   mode: string
@@ -461,4 +447,14 @@ export interface CopyEvent {
   message: string
   latency_ms: number
   created_at: string
+}
+
+export interface Broker {
+  key: string
+  label: string
+  servers: string[]
+}
+
+export interface BrokerList {
+  brokers: Broker[]
 }
