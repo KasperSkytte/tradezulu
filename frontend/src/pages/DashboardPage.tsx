@@ -30,9 +30,14 @@ export function DashboardPage() {
     queryFn: () => api.get<Summary>('/stats/summary', params),
   })
 
+  // Scoped to the account on show, like everything else. Unscoped, this
+  // returned every account's samples interleaved by time -- and since the line
+  // shares an axis with cumulative P&L, a 10,000 account's equity next to a
+  // 240 account's flattened the P&L line onto the baseline.
+  const equityParams = { account_id: params.account_id, days: 90 }
   const { data: equitySeries } = useQuery({
-    queryKey: ['stats', 'equity'],
-    queryFn: () => api.get<EquitySeries>('/stats/equity', { days: 90 }),
+    queryKey: ['stats', 'equity', equityParams],
+    queryFn: () => api.get<EquitySeries>('/stats/equity', equityParams),
     staleTime: 60_000,
   })
 
@@ -72,19 +77,28 @@ export function DashboardPage() {
     )
   }
 
-  // Equity as the terminal reported it, bucketed to one value per day. Only
-  // exists from the first time a terminal reported in -- there is nothing to
-  // reconstruct it from before that -- so the line simply starts later, or
+  // Equity as the terminal reported it, bucketed to one value per day -- the
+  // last sample of each day, which is where the account actually ended it.
+  // Only exists from the first time a terminal reported in; there is nothing
+  // to reconstruct it from before that, so the line simply starts later, or
   // does not appear at all on a journal built from imports.
   const equityByDay = new Map<string, number>()
-  let equityBase: number | null = null
   for (const point of equitySeries?.points ?? []) {
-    const day = point.time.slice(0, 10)
-    if (equityBase === null) equityBase = point.equity
-    // Plotted as change since the first sample, so it shares an axis with
-    // cumulative P&L. Absolute equity is thousands next to hundreds and would
-    // flatten the realised line into the baseline.
-    equityByDay.set(day, Math.round((point.equity - equityBase) * 100) / 100)
+    equityByDay.set(point.time.slice(0, 10), point.equity)
+  }
+
+  // Rebased to the first day *on show*, not to the first sample ever taken.
+  // Both series then start at zero together and the axis fits the movement
+  // rather than the distance between an account's balance and the origin --
+  // otherwise a month of +£200 gets an axis sized for a £2,000 drift since
+  // whenever sampling happened to begin, and reads as a flat line.
+  const firstDayWithEquity = summary.daily
+    .map((day) => equityByDay.get(String(day.date).slice(0, 10)))
+    .find((value) => value != null)
+  const equityFor = (date: string) => {
+    const value = equityByDay.get(date.slice(0, 10))
+    if (value == null || firstDayWithEquity == null) return undefined
+    return Math.round((value - firstDayWithEquity) * 100) / 100
   }
 
   // Accumulate by day rather than by trade: several trades on one date would
@@ -105,7 +119,7 @@ export function DashboardPage() {
       return {
         label: dateOnly(day.date, 'd MMM'),
         value: Math.round(running * 100) / 100,
-        equity: equityByDay.get(String(day.date).slice(0, 10)),
+        equity: equityFor(String(day.date)),
         extra: `${money(day.net_pnl, currency, { sign: true })} on the day${
           counts ? ` \u00b7 ${counts}` : ''
         }`,

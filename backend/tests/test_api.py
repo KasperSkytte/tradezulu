@@ -501,3 +501,44 @@ class TestAccountScope:
         body = self._summary(auth_client)
         assert body["single_account"] is True
         assert body["max_drawdown"] is not None
+
+
+class TestEquitySeries:
+    """An equity curve belongs to one account, or to none."""
+
+    @pytest.fixture()
+    def sampled(self, auth_client, db):
+        from app.models import Account, EquityPoint
+
+        first = db.scalar(select(Account).where(Account.role == "master"))
+        other = Account(login="4321", server="Other-Server", name="Small", role="slave",
+                        initial_balance=240.0, balance=240.0)
+        db.add(other)
+        db.flush()
+        now = datetime(2026, 6, 10, 12)
+        for minute in range(3):
+            db.add(EquityPoint(account_id=first.id, time=now + timedelta(minutes=minute),
+                               balance=10_000.0, equity=10_000.0 + minute))
+            db.add(EquityPoint(account_id=other.id, time=now + timedelta(minutes=minute, seconds=30),
+                               balance=240.0, equity=240.0 + minute))
+        db.commit()
+        return auth_client, first.id, other.id
+
+    def test_one_account_gets_its_own_curve(self, sampled):
+        client, _, other = sampled
+        body = client.get("/api/stats/equity", params={"days": 365, "account_id": other}).json()
+        assert body["single_account"] is True
+        assert len(body["points"]) == 3
+        assert all(point["equity"] < 300 for point in body["points"])
+
+    def test_several_accounts_return_nothing_rather_than_a_zigzag(self, sampled):
+        """The bug: samples from every account interleaved by time.
+
+        One row at 240, the next at 10,000, read as a single line -- which then
+        shares a y-axis with cumulative P&L and flattens it onto the baseline.
+        """
+        client, _, _ = sampled
+        body = client.get("/api/stats/equity", params={"days": 365}).json()
+        assert body["single_account"] is False
+        assert body["points"] == []
+        assert "one account" in body["sampling"]

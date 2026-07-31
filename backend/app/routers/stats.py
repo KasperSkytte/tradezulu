@@ -356,6 +356,16 @@ def equity(
         query = query.where(EquityPoint.account_id == account_id)
 
     points = list(db.scalars(query.order_by(EquityPoint.time)).all())
+
+    # Every account samples on its own heartbeat, so without an account this
+    # query returns them interleaved by time -- one row at 240, the next at
+    # 10,000, and a "series" that is really two accounts taking turns. Read as
+    # one line that swings by the difference between the accounts on every
+    # sample, which is not a curve anyone held.
+    single = len({p.account_id for p in points}) <= 1
+    if not single:
+        points = []
+
     return {
         "points": [
             {
@@ -366,8 +376,13 @@ def equity(
             }
             for p in points
         ],
+        "single_account": single,
         # So the UI can say why it is empty rather than drawing nothing.
-        "sampling": "Recorded from each terminal report; not backfilled.",
+        "sampling": (
+            "Recorded from each terminal report; not backfilled."
+            if single
+            else "An equity curve belongs to one account. Pick one to see it."
+        ),
     }
 
 

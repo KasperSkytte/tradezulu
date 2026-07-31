@@ -491,5 +491,8 @@ export interface EquityPoint {
 
 export interface EquitySeries {
   points: EquityPoint[]
+  /** False when no account was given and several have samples, in which case
+   *  points is empty: an equity curve belongs to one account. */
+  single_account?: boolean
   sampling: string
 }
