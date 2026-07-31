@@ -38,6 +38,11 @@ input bool   SendHistory      = true;  // Send closed deals so the journal fills
 input int    HistorySeconds   = 60;    // How often to look for new ones
 input int    FirstSyncDays    = 730;   // How far back to go the first time
 input int    DealsPerRequest  = 200;   // Batch size; a long history is sent in pieces
+input bool   UploadCandles    = true;  // Send bars around each trade, so charts have something to draw
+input ENUM_TIMEFRAMES CandleTimeframe = PERIOD_M15;  // Which timeframe to send
+input int    CandlesBefore    = 150;   // Bars before the entry
+input int    CandlesAfter     = 80;    // Bars after the exit
+input int    CandleBackfillDays = 60;  // How far back to fetch charts for trades already journalled
 
 //--- state ----------------------------------------------------------
 string g_status       = "starting";
@@ -51,6 +56,7 @@ ulong    g_last_ticket  = 0;      // highest deal the server already has
 bool     g_cursor_known = false;
 datetime g_next_history = 0;
 int      g_sent_deals   = 0;
+bool     g_candles_done = false;   // the one-off backfill for trades already journalled
 
 //--- stops seen on live positions -----------------------------------
 // MetaTrader records a stop on the *order*, so a stop attached after entry --
@@ -715,6 +721,58 @@ void FetchCursor()
       Print("TradeZulu: journal already has deals up to ticket ", g_last_ticket);
 }
 
+string TimeframeName(const ENUM_TIMEFRAMES timeframe)
+{
+   switch(timeframe)
+   {
+      case PERIOD_M1:  return "M1";
+      case PERIOD_M5:  return "M5";
+      case PERIOD_M15: return "M15";
+      case PERIOD_M30: return "M30";
+      case PERIOD_H1:  return "H1";
+      case PERIOD_H4:  return "H4";
+      case PERIOD_D1:  return "D1";
+      case PERIOD_W1:  return "W1";
+   }
+   return "M15";
+}
+
+// Bars around one trade, so the journal can draw where it happened. Without
+// these the chart has nothing to plot and shows an empty panel, which reads as
+// broken rather than as "no data was collected".
+string CandlesJson(const string symbol, const datetime from, const datetime to)
+{
+   MqlRates rates[];
+   ArraySetAsSeries(rates, false);
+   int span = PeriodSeconds(CandleTimeframe);
+   datetime start = from - (datetime)(span * MathMax(1, CandlesBefore));
+   datetime end   = to   + (datetime)(span * MathMax(1, CandlesAfter));
+
+   int got = CopyRates(symbol, CandleTimeframe, start, end, rates);
+   if(got <= 0)
+      return "";
+
+   int digits = (int)SymbolInfoInteger(symbol, SYMBOL_DIGITS);
+   if(digits <= 0)
+      digits = 5;
+
+   string bars = "";
+   for(int i = 0; i < got; i++)
+   {
+      if(i > 0) bars += ",";
+      bars += "{" + JInt("time", (long)rates[i].time);
+      bars += "," + JNum("open",  rates[i].open,  digits);
+      bars += "," + JNum("high",  rates[i].high,  digits);
+      bars += "," + JNum("low",   rates[i].low,   digits);
+      bars += "," + JNum("close", rates[i].close, digits);
+      bars += "," + JNum("volume", (double)rates[i].tick_volume, 0);
+      bars += "}";
+   }
+   return "{" + JStr("symbol", symbol)
+        + "," + JStr("timeframe", TimeframeName(CandleTimeframe))
+        + ",\"candles\":[" + bars + "]}";
+}
+
 bool PostDeals(const string deals)
 {
    string body = "{" + JStr("source", "ea")
@@ -724,6 +782,79 @@ bool PostDeals(const string deals)
    if(!HttpPost("/mt5/ingest", body, reply))
       return false;
    return true;
+}
+
+void TrackWindow(string &symbols[], datetime &first[], datetime &last[],
+                 const string symbol, const datetime when)
+{
+   for(int i = 0; i < ArraySize(symbols); i++)
+   {
+      if(symbols[i] != symbol)
+         continue;
+      if(when < first[i]) first[i] = when;
+      if(when > last[i])  last[i]  = when;
+      return;
+   }
+   int at = ArraySize(symbols);
+   ArrayResize(symbols, at + 1);
+   ArrayResize(first,   at + 1);
+   ArrayResize(last,    at + 1);
+   symbols[at] = symbol;
+   first[at]   = when;
+   last[at]    = when;
+}
+
+// One request per symbol, and never in the same request as the deals.
+//
+// A batch of deals plus two hundred bars for each symbol they touched is a
+// large body, and WebRequest fails outright rather than truncating -- the
+// deals were being lost along with the candles. Separate requests keep each
+// one small, and a failed candle upload costs a chart rather than a trade.
+void PostWindows(string &symbols[], datetime &first[], datetime &last[])
+{
+   for(int i = 0; i < ArraySize(symbols); i++)
+   {
+      string one = CandlesJson(symbols[i], first[i], last[i]);
+      if(StringLen(one) == 0)
+         continue;
+      string body = "{" + JStr("source", "ea")
+                  + ",\"account\":" + AccountJson()
+                  + ",\"deals\":[]"
+                  + ",\"candles\":[" + one + "]}";
+      string reply;
+      if(!HttpPost("/mt5/ingest", body, reply))
+         Print("TradeZulu: could not send candles for ", symbols[i]);
+   }
+}
+
+// Walk recent history and send bars for every symbol traded in it, whether or
+// not the deals themselves are new. Bounded to CandleBackfillDays so a
+// two-year history does not turn into hundreds of requests on startup.
+void BackfillCandles(const datetime now)
+{
+   datetime from = now - (datetime)(86400 * (long)MathMax(1, CandleBackfillDays));
+   if(!HistorySelect(from, now + 3600))
+      return;
+
+   string   symbols[];
+   datetime first[], last[];
+   int total = HistoryDealsTotal();
+   for(int i = 0; i < total; i++)
+   {
+      ulong ticket = HistoryDealGetTicket(i);
+      if(ticket == 0)
+         continue;
+      if(HistoryDealGetInteger(ticket, DEAL_TYPE) > DEAL_TYPE_SELL)
+         continue;
+      TrackWindow(symbols, first, last,
+                  HistoryDealGetString(ticket, DEAL_SYMBOL),
+                  (datetime)HistoryDealGetInteger(ticket, DEAL_TIME));
+   }
+   if(ArraySize(symbols) > 0)
+   {
+      Print("TradeZulu: sending chart data for ", ArraySize(symbols), " symbol(s)");
+      PostWindows(symbols, first, last);
+   }
 }
 
 void SendClosedDeals()
@@ -748,6 +879,11 @@ void SendClosedDeals()
    int    in_batch = 0;
    ulong  newest = g_last_ticket;
 
+   // One candle window per symbol touched by this batch, rather than per deal:
+   // twenty trades on EURUSD in a day want one set of bars, not twenty.
+   string   seen_symbols[];
+   datetime seen_first[], seen_last[];
+
    for(int i = 0; i < total; i++)
    {
       ulong ticket = HistoryDealGetTicket(i);
@@ -761,13 +897,22 @@ void SendClosedDeals()
       if(ticket > newest)
          newest = ticket;
 
+      if(UploadCandles && HistoryDealGetInteger(ticket, DEAL_TYPE) <= DEAL_TYPE_SELL)
+         TrackWindow(seen_symbols, seen_first, seen_last,
+                     HistoryDealGetString(ticket, DEAL_SYMBOL),
+                     (datetime)HistoryDealGetInteger(ticket, DEAL_TIME));
+
       if(in_batch >= MathMax(20, DealsPerRequest))
       {
          if(!PostDeals(batch))
             return;      // keep the cursor where it was; the batch is retried
          g_sent_deals += in_batch;
+         PostWindows(seen_symbols, seen_first, seen_last);
          batch = "";
          in_batch = 0;
+         ArrayResize(seen_symbols, 0);
+         ArrayResize(seen_first, 0);
+         ArrayResize(seen_last, 0);
       }
    }
 
@@ -776,11 +921,24 @@ void SendClosedDeals()
       if(!PostDeals(batch))
          return;
       g_sent_deals += in_batch;
+      PostWindows(seen_symbols, seen_first, seen_last);
    }
 
    // Only now, once everything is acknowledged. Moving it earlier would skip
    // whatever was in a batch that failed to send.
    g_last_ticket = newest;
+
+   // Charts for trades the journal already has.
+   //
+   // Candles otherwise only ride along with new deals, so an account whose
+   // history was sent before this existed would never get any -- every trade
+   // in it would draw an empty chart forever. Done once per run, over a
+   // bounded window, because it is a backfill and not a routine.
+   if(UploadCandles && !g_candles_done)
+   {
+      g_candles_done = true;
+      BackfillCandles(now);
+   }
 }
 
 bool HttpPost(const string path, const string body, string &reply)
@@ -812,7 +970,8 @@ bool HttpPost(const string path, const string body, string &reply)
    reply = CharArrayToString(result, 0, WHOLE_ARRAY, CP_UTF8);
    if(status < 200 || status >= 300)
    {
-      Print("TradeZulu: server returned ", status, " ", StringSubstr(reply, 0, 200));
+      Print("TradeZulu: server returned ", status, " for ", url,
+            " body=", StringLen(body), "B reply=", StringSubstr(reply, 0, 200));
       return false;
    }
    return true;

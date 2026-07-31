@@ -303,8 +303,13 @@ function TradingViewChart({ trade, timeframe }: { trade: TradeDetail; timeframe:
   const container = useRef<HTMLDivElement>(null)
   const { settings } = useSettings()
 
-  const mapped = settings.charts.symbol_map[trade.symbol]
-  const symbol = mapped || `${settings.charts.tradingview_prefix}${trade.symbol}`
+  // Brokers decorate their symbols -- XAUUSD+, EURUSD.r, US30cash -- and
+  // TradingView knows none of those, so the widget silently shows nothing.
+  // An explicit mapping still wins; this is only for the common case of a
+  // suffix bolted onto an otherwise ordinary ticker.
+  const bare = trade.symbol.replace(/[^A-Z0-9]+$/, '') || trade.symbol
+  const mapped = settings.charts.symbol_map[trade.symbol] ?? settings.charts.symbol_map[bare]
+  const symbol = mapped || `${settings.charts.tradingview_prefix}${bare}`
 
   useEffect(() => {
     const element = container.current
