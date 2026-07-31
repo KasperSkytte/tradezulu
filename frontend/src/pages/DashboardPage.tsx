@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { ArrowUpRight, Ban, Inbox, TrendingUp } from 'lucide-react'
 import { api } from '../lib/api'
 import { useFilters } from '../lib/filters'
+import { define } from '../lib/glossary'
 import { useSettings } from '../lib/settings'
 import {
   dateOnly,
@@ -18,7 +19,7 @@ import type { Summary, Trade, TradePage } from '../lib/types'
 import { CumulativeChart, OutcomeSplit, SignedBarChart } from '../components/charts'
 import { Gauge, Sparkline, StatTile, WinLossBar } from '../components/StatTile'
 import { ZuluScoreCard } from '../components/ZuluScoreCard'
-import { Card, CardHeader, DirectionBadge, EmptyState, ErrorState, Skeleton } from '../components/ui'
+import { Card, CardHeader, DirectionBadge, EmptyState, ErrorState, Hint, Skeleton } from '../components/ui'
 
 export function DashboardPage() {
   const { params, filters } = useFilters()
@@ -342,10 +343,12 @@ function Row({
   value: React.ReactNode
   hint?: string
 }) {
+  const explain = hint ?? define(label)
   return (
     <div className="flex items-center justify-between gap-3">
-      <dt className="text-[var(--tz-text-muted)]" title={hint}>
+      <dt className="flex items-center gap-1.5 text-[var(--tz-text-muted)]">
         {label}
+        {explain && <Hint text={explain} />}
       </dt>
       <dd className="tabular font-medium">{value}</dd>
     </div>

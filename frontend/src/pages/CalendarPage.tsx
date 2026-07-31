@@ -15,11 +15,12 @@ import {
 } from 'date-fns'
 import clsx from 'clsx'
 import { api } from '../lib/api'
+import { define } from '../lib/glossary'
 import { useSettings } from '../lib/settings'
 import { dateOnly, isoDate, money, num, percent, pnlClass, profitFactor } from '../lib/format'
 import type { CalendarResponse, DayDetail, DailyPoint, Trade } from '../lib/types'
 import { Dialog } from '../components/Dialog'
-import { Button, Card, CardHeader, ErrorState, Skeleton } from '../components/ui'
+import { Button, Card, CardHeader, ErrorState, Hint, Skeleton } from '../components/ui'
 
 export function CalendarPage() {
   const { currency, weekStartsOn } = useSettings()
@@ -234,9 +235,13 @@ export function CalendarPage() {
 }
 
 function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  const explain = define(label)
   return (
     <span className="flex items-baseline gap-1.5">
-      <span className="text-xs text-[var(--tz-text-muted)]">{label}</span>
+      <span className="flex items-center gap-1 text-xs text-[var(--tz-text-muted)]">
+        {label}
+        {explain && <Hint text={explain} />}
+      </span>
       <span
         className={clsx('tabular font-semibold', accent && pnlClass(Number(value.replace(/[^0-9.-]/g, ''))))}
       >
@@ -366,9 +371,13 @@ function MiniStat({
   value: string
   className?: string
 }) {
+  const explain = define(label)
   return (
     <div className="rounded-lg bg-[var(--tz-surface-2)] px-3 py-2">
-      <p className="text-xs text-[var(--tz-text-muted)]">{label}</p>
+      <p className="flex items-center gap-1 text-xs text-[var(--tz-text-muted)]">
+        {label}
+        {explain && <Hint text={explain} />}
+      </p>
       <p className={clsx('tabular mt-0.5 font-semibold', className)}>{value}</p>
     </div>
   )

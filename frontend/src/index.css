@@ -73,6 +73,12 @@
     --tz-gain-text: #0f8a55;
     --tz-loss-text: #a8232f;
     --tz-flat: #64748b;
+    /* Breakevens are neither a win nor a loss, and commission alone keeps them
+       off exactly zero -- so they get a colour rather than being rounded into
+       red or green. Blue is free here; where the palette already spends blue
+       on gains, this becomes a neutral instead. */
+    --tz-breakeven: #2f6fed;
+    --tz-breakeven-text: #2563c9;
     /* The replay chart draws entry alongside exit. With a green accent the
        two would read as one colour, so entry gets a hue of its own. */
     --tz-entry: #1f6fd0;
@@ -89,12 +95,18 @@
     --tz-loss: #b9700a;
     --tz-gain-text: #1a62ba;
     --tz-loss-text: #a5630a;
+    /* Blue is the gain colour in this palette, so breakevens take a neutral
+       slate instead -- the point is that they read as neither. */
+    --tz-breakeven: #64748b;
+    --tz-breakeven-text: #55617a;
   }
   .dark.cb {
     --tz-gain: #4593e8;
     --tz-loss: #c58217;
     --tz-gain-text: #6fadee;
     --tz-loss-text: #dc9a2f;
+    --tz-breakeven: #94a3b8;
+    --tz-breakeven-text: #aab6c8;
   }
 
   .dark {
@@ -117,6 +129,8 @@
     --tz-gain-text: #34d399;
     --tz-loss-text: #f87171;
     --tz-flat: #94a3b8;
+    --tz-breakeven: #5b9bff;
+    --tz-breakeven-text: #7db0ff;
     --tz-entry: #4593e8;
 
     --color-zulu-400: #2fd8a0;

@@ -20,6 +20,7 @@ import {
   duration,
   money,
   num,
+  outcomeClass,
   pnlClass,
   price,
   rMultiple,
@@ -378,10 +379,10 @@ function TradeRow({
       <td className="tabular hidden px-3 py-2 text-right text-[var(--tz-text-muted)] lg:table-cell">
         {trade.planned_r === null ? '—' : `${trade.planned_r.toFixed(1)}R`}
       </td>
-      <td className={clsx('tabular px-3 py-2 text-right font-medium', pnlClass(trade.realized_r))}>
+      <td className={clsx('tabular px-3 py-2 text-right font-medium', outcomeClass(trade.outcome, trade.realized_r))}>
         {rMultiple(trade.realized_r)}
       </td>
-      <td className={clsx('tabular px-3 py-2 text-right font-semibold', pnlClass(trade.net_pnl))}>
+      <td className={clsx('tabular px-3 py-2 text-right font-semibold', outcomeClass(trade.outcome, trade.net_pnl))}>
         {money(trade.net_pnl, currency, { sign: true })}
       </td>
       <td className="tabular hidden px-3 py-2 text-right text-xs text-[var(--tz-text-muted)] xl:table-cell">
@@ -430,10 +431,10 @@ function TradeCard({ trade, currency }: { trade: Trade; currency: string }) {
           </p>
         </div>
         <div className="shrink-0 text-right">
-          <p className={clsx('tabular font-semibold', pnlClass(trade.net_pnl))}>
+          <p className={clsx('tabular font-semibold', outcomeClass(trade.outcome, trade.net_pnl))}>
             {money(trade.net_pnl, currency, { sign: true })}
           </p>
-          <p className={clsx('tabular text-xs', pnlClass(trade.realized_r))}>
+          <p className={clsx('tabular text-xs', outcomeClass(trade.outcome, trade.realized_r))}>
             {rMultiple(trade.realized_r)}
           </p>
         </div>

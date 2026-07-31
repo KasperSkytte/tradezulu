@@ -1,5 +1,6 @@
 import clsx from 'clsx'
 import type { ReactNode } from 'react'
+import { define } from '../lib/glossary'
 import { Hint } from './ui'
 
 export function StatTile({
@@ -25,7 +26,10 @@ export function StatTile({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <p className="text-xs font-medium leading-tight text-[var(--tz-text-muted)]">{label}</p>
-          {hint && <Hint text={hint} />}
+          {/* An explicit hint wins; otherwise the glossary answers for the
+              label, so a term is never left unexplained just because nobody
+              remembered to write one at this call site. */}
+          {(hint ?? define(label)) && <Hint text={hint ?? define(label)!} />}
         </div>
         <p
           className="tabular mt-1 text-xl font-semibold tracking-tight 2xl:text-2xl"

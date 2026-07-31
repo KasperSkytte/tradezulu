@@ -109,6 +109,31 @@ export function pnlClass(value: number | null | undefined): string {
   return value > 0 ? 'text-[var(--tz-gain-text)]' : 'text-[var(--tz-loss-text)]'
 }
 
+/**
+ * Colour for a trade's result, by outcome rather than by sign.
+ *
+ * A breakeven rarely lands on exactly zero -- commission alone puts it a few
+ * pence either side -- so colouring by sign paints it red or green and hides
+ * the one fact that matters about it: it was neither. Breakevens get their own
+ * colour, and the sign is only consulted for genuine wins and losses.
+ */
+export function outcomeClass(
+  outcome: string | null | undefined,
+  value: number | null | undefined,
+): string {
+  if (outcome === 'breakeven') return 'text-[var(--tz-breakeven-text)]'
+  return pnlClass(value)
+}
+
+/** Mark colour (bars, dots) for a trade's result. */
+export function outcomeColor(
+  outcome: string | null | undefined,
+  value: number | null | undefined,
+): string {
+  if (outcome === 'breakeven') return 'var(--tz-breakeven)'
+  return pnlColor(value)
+}
+
 /** Mark colour (bars, areas, dots) for a signed value. */
 export function pnlColor(value: number | null | undefined): string {
   if (value === null || value === undefined || value === 0) return 'var(--tz-flat)'

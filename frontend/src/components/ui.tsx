@@ -1,5 +1,6 @@
 import clsx from 'clsx'
 import { Info, Loader2 } from 'lucide-react'
+import { define } from '../lib/glossary'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 
 export function Card({
@@ -31,20 +32,45 @@ export function CardHeader({
     <div className={clsx('mb-4 flex items-start justify-between gap-3', className)}>
       <div className="flex items-center gap-1.5">
         <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
-        {hint && <Hint text={hint} />}
+        {(hint ?? (typeof title === 'string' ? define(title) : undefined)) && (
+          <Hint text={hint ?? define(String(title))!} />
+        )}
       </div>
       {action}
     </div>
   )
 }
 
-export function Hint({ text }: { text: string }) {
+/**
+ * An explanation on hover, and on keyboard focus.
+ *
+ * This used to be the native `title` attribute, which on most systems shows
+ * nothing but a changed cursor unless you hover for a second and a half — so
+ * the explanations were written and then effectively invisible. This draws its
+ * own, immediately.
+ *
+ * `group` plus `peer` rather than React state: no re-render, and it works the
+ * same for a mouse and for a tab key.
+ */
+export function Hint({ text, className }: { text: string; className?: string }) {
   return (
-    <span
-      title={text}
-      className="inline-flex cursor-help text-[var(--tz-text-faint)] transition-colors hover:text-[var(--tz-text-muted)]"
-    >
-      <Info size={13} strokeWidth={2} />
+    <span className={clsx('relative inline-flex', className)}>
+      <button
+        type="button"
+        aria-label={text}
+        // Explanations are read-only, so this never needs to be activated --
+        // but it must be focusable, or the text is mouse-only.
+        onClick={(event) => event.preventDefault()}
+        className="peer inline-flex cursor-help rounded-full text-[var(--tz-text-faint)] outline-none transition-colors hover:text-[var(--tz-text-muted)] focus-visible:text-[var(--tz-text-muted)] focus-visible:ring-1 focus-visible:ring-[var(--tz-accent)]"
+      >
+        <Info size={13} strokeWidth={2} />
+      </button>
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 w-64 -translate-x-1/2 rounded-md border border-[var(--tz-border)] bg-[var(--tz-surface-1)] px-2.5 py-2 text-xs font-normal leading-snug text-[var(--tz-text)] opacity-0 shadow-lg transition-opacity duration-100 peer-hover:opacity-100 peer-focus-visible:opacity-100"
+      >
+        {text}
+      </span>
     </span>
   )
 }
@@ -114,7 +140,9 @@ export function OutcomeBadge({ outcome }: { outcome: string }) {
   const map: Record<string, { label: string; color: string }> = {
     win: { label: 'Win', color: 'var(--color-gain-500)' },
     loss: { label: 'Loss', color: 'var(--color-loss-500)' },
-    breakeven: { label: 'Breakeven', color: 'var(--color-flat-400)' },
+      // Its own colour, not the grey used for "no data": a breakeven is a
+      // result, and one worth seeing at a glance among wins and losses.
+      breakeven: { label: 'Breakeven', color: 'var(--tz-breakeven)' },
     open: { label: 'Open', color: 'var(--color-zulu-400)' },
   }
   const entry = map[outcome] ?? map.open
@@ -250,7 +278,14 @@ export function Field({
     <div className={className}>
       <div className="flex items-center gap-1.5">
         <span className="tz-label">{label}</span>
-        {hint && <span className="mb-1.5"><Hint text={hint} /></span>}
+        {/* An explicit hint wins; otherwise the glossary answers for the
+            label, so a term like "Kelly fraction" is explained wherever it
+            appears rather than only where somebody remembered. */}
+        {(hint ?? define(label)) && (
+          <span className="mb-1.5">
+            <Hint text={hint ?? define(label)!} />
+          </span>
+        )}
       </div>
       {children}
     </div>
