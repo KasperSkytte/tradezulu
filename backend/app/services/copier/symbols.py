@@ -21,6 +21,45 @@ class SymbolRules:
     suffix: str = ""
 
 
+#: Instruments almost every retail broker carries, used to read the naming
+#: convention off a symbol list. They are only anchors -- nothing is traded
+#: because it appears here.
+_ANCHORS = (
+    "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCHF", "USDCAD", "NZDUSD",
+    "EURGBP", "EURJPY", "GBPJPY", "XAUUSD",
+)
+
+
+def detect_affixes(available: list[str]) -> tuple[str, str]:
+    """Read the broker's prefix and suffix off its own symbol list.
+
+    Nobody should have to know that their broker writes EURUSD as ``EURUSD+``
+    or ``FX_EURUSD``. The list the terminal reports says so already: find the
+    majors in it, and whatever sits either side of the familiar six letters is
+    the convention.
+
+    Several anchors must agree, so one oddly named instrument cannot decide it.
+    Plain names win ties, because a broker that carries both ``EURUSD`` and
+    ``EURUSD.r`` is one where the plain name works.
+    """
+    votes: dict[tuple[str, str], int] = {}
+    for name in available:
+        upper = name.upper()
+        for anchor in _ANCHORS:
+            at = upper.find(anchor)
+            if at < 0:
+                continue
+            pair = (name[:at], name[at + len(anchor):])
+            votes[pair] = votes.get(pair, 0) + 1
+            break
+
+    if not votes:
+        return "", ""
+    # Most agreement first; an empty affix breaks the tie in its own favour.
+    best = max(votes.items(), key=lambda item: (item[1], not item[0][0] and not item[0][1]))
+    return best[0] if best[1] >= 2 else ("", "")
+
+
 def candidates(master_symbol: str, rules: SymbolRules) -> list[str]:
     """Names to try on the slave, best guess first.
 

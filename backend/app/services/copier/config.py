@@ -14,7 +14,7 @@ from typing import Any
 
 from .risk import BreachAction, RiskConfig
 from .sizing import SizingConfig, SizingMode
-from .symbols import SymbolRules
+from .symbols import SymbolRules, detect_affixes
 
 
 def _float(source: dict[str, Any], key: str, default: float) -> float:
@@ -69,7 +69,6 @@ def sizing_from(settings: dict[str, Any] | None) -> SizingConfig:
         risk_percent=_float(data, "risk_percent", 1.0),
         max_lot=_float(data, "max_lot", 0.0),
         min_lot=_float(data, "min_lot", 0.0),
-        scale=_float(data, "scale", 1.0) or 1.0,
     )
 
 
@@ -102,13 +101,31 @@ def risk_from(settings: dict[str, Any] | None) -> RiskConfig:
     )
 
 
-def symbol_rules_from(prefix: str, suffix: str, overrides: dict[str, Any] | None) -> SymbolRules:
+def symbol_rules_from(
+    prefix: str,
+    suffix: str,
+    overrides: dict[str, Any] | None,
+    available: list[str] | None = None,
+) -> SymbolRules:
+    """Naming rules for one slave, detected unless they were set by hand.
+
+    ``available`` is the broker's own symbol list. When nothing is configured,
+    the convention is read off it -- a broker that writes ``EURUSD+`` says so
+    in every symbol it reports, and nobody should have to type that in. A value
+    the user did set always wins, because they may be describing something the
+    list cannot show.
+    """
     clean: dict[str, str] = {}
     for key, value in (overrides or {}).items():
         key, value = str(key).strip(), str(value).strip()
         if key and value:
             clean[key.upper()] = value
-    return SymbolRules(overrides=clean, prefix=(prefix or "").strip(), suffix=(suffix or "").strip())
+
+    prefix, suffix = (prefix or "").strip(), (suffix or "").strip()
+    if not prefix and not suffix and available:
+        prefix, suffix = detect_affixes(available)
+
+    return SymbolRules(overrides=clean, prefix=prefix, suffix=suffix)
 
 
 def mirror_stops_enabled(settings: dict[str, Any] | None) -> bool:
@@ -129,7 +146,6 @@ def defaults() -> dict[str, Any]:
         "risk_percent": 1.0,
         "max_lot": 0.0,
         "min_lot": 0.0,
-        "scale": 1.0,
         "mirror_stops": True,
         "max_risk_percent_per_trade": 2.0,
         "max_lot_per_trade": 0.0,

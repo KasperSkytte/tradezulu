@@ -328,3 +328,49 @@ class TestSizingModesEndToEnd:
         )
         actions = plan([master_position()], MASTER_ACCOUNT, ctx, TODAY)
         assert actions[0].volume == pytest.approx(10.0)
+
+
+class TestAffixDetection:
+    """Reading the broker's naming convention off its own symbol list."""
+
+    def test_a_suffix_every_major_shares_is_detected(self):
+        from app.services.copier.symbols import detect_affixes
+
+        assert detect_affixes(["EURUSD+", "GBPUSD+", "USDJPY+", "XAUUSD+"]) == ("", "+")
+
+    def test_a_prefix_is_detected(self):
+        from app.services.copier.symbols import detect_affixes
+
+        assert detect_affixes(["FX_EURUSD", "FX_GBPUSD", "FX_USDJPY"]) == ("FX_", "")
+
+    def test_plain_names_win_when_the_broker_carries_both(self):
+        from app.services.copier.symbols import detect_affixes
+
+        assert detect_affixes(
+            ["EURUSD", "EURUSD.r", "GBPUSD", "GBPUSD.r", "USDJPY", "USDJPY.r"]
+        ) == ("", "")
+
+    def test_one_odd_instrument_cannot_decide_it(self):
+        from app.services.copier.symbols import detect_affixes
+
+        assert detect_affixes(["EURUSD", "GBPUSD", "USDJPY", "XAUUSD.spot"]) == ("", "")
+
+    def test_an_unrecognisable_list_detects_nothing(self):
+        from app.services.copier.symbols import detect_affixes
+
+        assert detect_affixes(["SPX500", "GER40"]) == ("", "")
+
+    def test_a_detected_suffix_resolves_the_masters_symbol(self):
+        """End to end: nothing configured, and the trade still lands."""
+        from app.services.copier.config import symbol_rules_from
+        from app.services.copier.symbols import resolve
+
+        available = ["EURUSD+", "GBPUSD+", "USDJPY+", "XAUUSD+"]
+        rules = symbol_rules_from("", "", {}, available)
+        assert resolve("EURUSD", rules, available) == "EURUSD+"
+
+    def test_a_configured_affix_still_wins(self):
+        from app.services.copier.config import symbol_rules_from
+
+        rules = symbol_rules_from("", ".r", {}, ["EURUSD+", "GBPUSD+", "USDJPY+"])
+        assert rules.suffix == ".r"

@@ -327,7 +327,10 @@ def _context_for(
         sizing=sizing_from(settings),
         risk=risk_from(settings),
         symbol_rules=symbol_rules_from(
-            account.symbol_prefix, account.symbol_suffix, account.symbol_map
+            account.symbol_prefix,
+            account.symbol_suffix,
+            account.symbol_map,
+            [s["symbol"] for s in symbols],
         ),
         available_symbols=[s["symbol"] for s in symbols],
         specs=specs,
