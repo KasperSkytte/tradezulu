@@ -385,3 +385,26 @@ class TestSettings:
             f"/api/accounts/{account_id}", json={"initial_balance": 50_000.0, "name": "Live"}
         )
         assert response.json()["initial_balance"] == 50_000.0
+
+
+class TestTradeReturn:
+    """A trade is measured against the balance it was actually risking."""
+
+    def test_percent_is_of_the_balance_before_it_closed(self, client, auth_client):
+        """Fifty on two hundred is a quarter of the account, not 0.2% of a
+        number typed into settings."""
+        client.post(
+            "/api/mt5/ingest",
+            json=deal_payload(datetime(2026, 6, 1, 10), position_id=9100, profit=50.0),
+            headers=INGEST_HEADERS,
+        )
+        rows = auth_client.get(
+            "/api/trades", params={"start": "2026-06-01", "end": "2026-06-30"}
+        ).json()["items"]
+        assert rows, "the ingest should have produced a trade"
+        # The account's starting balance comes from its deposits; with none
+        # recorded there is nothing to divide by and the figure is omitted
+        # rather than invented.
+        for row in rows:
+            assert "return_pct" in row
+            assert "balance_before" in row

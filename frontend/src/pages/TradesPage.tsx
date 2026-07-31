@@ -52,6 +52,10 @@ const COLUMNS: { key: SortKey | null; label: string; align?: 'right'; hideBelow?
   { key: 'planned_r', label: 'Plan', align: 'right', hideBelow: 'lg' },
   { key: 'realized_r', label: 'R', align: 'right' },
   { key: 'net_pnl', label: 'Net P&L', align: 'right' },
+  // What the trade did to the account it was taken on, at the moment it
+  // closed. 50 on a 200 account is a quarter of everything; the same 50 on
+  // 20,000 is noise, and the money column alone cannot tell them apart.
+  { key: null, label: '% of bal', align: 'right', hideBelow: 'lg' },
   { key: 'duration', label: 'Held', align: 'right', hideBelow: 'xl' },
   { key: null, label: 'Tags', hideBelow: 'lg' },
 ]
@@ -366,6 +370,16 @@ function TradeRow({
       </td>
       <td className={clsx('tabular px-3 py-2 text-right font-semibold', outcomeClass(trade.outcome, trade.net_pnl))}>
         {money(trade.net_pnl, currency, { sign: true })}
+      </td>
+      <td
+        className={clsx(
+          'tabular hidden px-3 py-2 text-right lg:table-cell',
+          outcomeClass(trade.outcome, trade.net_pnl),
+        )}
+      >
+        {trade.return_pct == null
+          ? '—'
+          : `${trade.return_pct > 0 ? '+' : ''}${num(trade.return_pct, 2)}%`}
       </td>
       <td className="tabular hidden px-3 py-2 text-right text-xs text-[var(--tz-text-muted)] xl:table-cell">
         {duration(trade.duration_seconds)}

@@ -23,6 +23,10 @@ export interface Execution {
 }
 
 export interface Trade {
+  /** Balance just before this trade closed, and its result as a share of it.
+      Null when the account's starting balance is unknown. */
+  balance_before?: number | null
+  return_pct?: number | null
   id: number
   account_id: number
   position_id: number

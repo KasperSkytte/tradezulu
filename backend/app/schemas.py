@@ -67,6 +67,11 @@ class ExecutionOut(ORMModel):
 
 
 class TradeOut(ORMModel):
+    #: Balance just before this trade closed, and its result as a share of it.
+    #: Computed per request from everything that closed earlier, so it is never
+    #: stored and never stale.
+    balance_before: float | None = None
+    return_pct: float | None = None
     id: int
     account_id: int
     position_id: int
