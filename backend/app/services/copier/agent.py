@@ -17,13 +17,13 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ...models import Account, CopyEvent, CopyLink, EquityPoint
+from ...models import Account, CopyEvent, CopyLink, EquityPoint, Trade
 from .config import mirror_stops_enabled, risk_from, sizing_from, symbol_rules_from
 from .engine import ActionType, CopiedPosition, MasterPosition, SlaveContext, plan
 from .risk import OpenPosition, SlaveSnapshot
@@ -309,6 +309,9 @@ def _context_for(
         if link.dry_run
     ]
 
+    realised_by_day = _realised_by_day(db, account)
+    today = datetime.now(timezone.utc).date()
+
     return SlaveContext(
         account_id=account.id,
         account=AccountState(balance=account.balance, equity=account.equity),
@@ -318,6 +321,8 @@ def _context_for(
             day_start_equity=account.day_start_equity or account.equity,
             peak_equity=account.peak_equity or account.equity,
             open_positions=held,
+            day_realised_pnl=realised_by_day.get(today, 0.0),
+            realised_by_day=realised_by_day,
         ),
         sizing=sizing_from(settings),
         risk=risk_from(settings),
@@ -329,6 +334,31 @@ def _context_for(
         copied=copied,
         halted=account.copy_halted,
     )
+
+
+def _realised_by_day(db: Session, account: Account) -> dict[date, float]:
+    """Banked profit per day for this account, from its own closed trades.
+
+    Two rules are measured against this and neither could fire without it: the
+    daily profit target, and the prop-firm consistency cap that refuses to let
+    one day be most of the profit. Both are about money actually taken, not
+    what is on the table -- a position running at +500 has been banked by
+    nobody -- so this reads closed trades rather than equity.
+
+    The whole account is summed rather than a window. A consistency rule asks
+    what share of *total* profit one day is, so it has no window by
+    construction, and the daily target only ever looks at today.
+    """
+    rows = db.execute(
+        select(Trade.trade_date, func.sum(Trade.net_pnl))
+        .where(
+            Trade.account_id == account.id,
+            Trade.closed_at.is_not(None),
+            Trade.trade_date.is_not(None),
+        )
+        .group_by(Trade.trade_date)
+    ).all()
+    return {day: float(total or 0.0) for day, total in rows}
 
 
 def _command(db: Session, account: Account, action: Any) -> dict[str, Any]:
