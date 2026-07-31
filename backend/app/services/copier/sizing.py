@@ -26,6 +26,10 @@ class SizingMode(str, Enum):
     #: Risk a fixed percentage of the slave's equity on the master's stop
     #: distance. Falls back to balance ratio when there is no stop.
     RISK_PERCENT = "risk_percent"
+    #: The same, measured against balance. Balance ignores open positions, so
+    #: the size risked does not shrink while a trade is under water and grow
+    #: while it is ahead -- which is what most people mean by "risk 1%".
+    RISK_PERCENT_BALANCE = "risk_percent_balance"
 
 
 @dataclass(frozen=True)
@@ -69,8 +73,6 @@ class SizingConfig:
     max_lot: float = 0.0
     #: Never send an order smaller than this; 0 means the broker's minimum.
     min_lot: float = 0.0
-    #: Scale the final result once more, for fine tuning.
-    scale: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -112,8 +114,6 @@ def compute_volume(
 
     if raw <= 0:
         return SizingResult(0.0, reason, capped_by="sizing")
-
-    raw *= max(0.0, config.scale)
 
     capped_by: str | None = None
     if config.max_lot > 0 and raw > config.max_lot:
@@ -171,7 +171,11 @@ def _raw_volume(
         ratio = slave_account.equity / master_account.equity
         return master.volume * ratio, f"equity ratio {ratio:.3f}"
 
-    if mode == SizingMode.RISK_PERCENT:
+    if mode in (SizingMode.RISK_PERCENT, SizingMode.RISK_PERCENT_BALANCE):
+        on_balance = mode is SizingMode.RISK_PERCENT_BALANCE
+        base = slave_account.balance if on_balance else slave_account.equity
+        against = "balance" if on_balance else "equity"
+
         if master.stop_loss is None or master.stop_loss <= 0:
             # No stop means no risk to size against; fall back rather than
             # guess, and say so in the reason so the log explains itself.
@@ -187,9 +191,9 @@ def _raw_volume(
         if distance <= 0 or spec.value_per_unit <= 0:
             return 0.0, "stop distance or contract value is unusable"
 
-        budget = slave_account.equity * (config.risk_percent / 100.0)
+        budget = base * (config.risk_percent / 100.0)
         volume = budget / (distance * spec.value_per_unit)
-        return volume, f"{config.risk_percent:g}% of {slave_account.equity:,.0f} equity"
+        return volume, f"{config.risk_percent:g}% of {base:,.0f} {against}"
 
     return 0.0, f"unknown sizing mode {mode}"
 

@@ -135,6 +135,41 @@ class TestRiskPercent:
         assert size(config, AccountState(50_000, 50_000), spec=spec).volume == 0
 
 
+class TestRiskPercentOfBalance:
+    """The same rule measured against balance rather than equity.
+
+    Balance ignores open positions, so the size risked does not shrink while a
+    trade is under water and grow while it is ahead -- which is what most
+    people mean when they say they risk 1%.
+    """
+
+    def test_ignores_what_open_trades_are_doing(self):
+        config = SizingConfig(mode=SizingMode.RISK_PERCENT_BALANCE, risk_percent=1.0)
+        # Balance 50,000 with 10,000 of open loss against it.
+        result = size(config, AccountState(50_000, 40_000))
+        assert result.volume == pytest.approx(2.5)
+        assert "balance" in result.reason
+
+    def test_equity_mode_does_not(self):
+        config = SizingConfig(mode=SizingMode.RISK_PERCENT, risk_percent=1.0)
+        result = size(config, AccountState(50_000, 40_000))
+        assert result.volume == pytest.approx(2.0)
+        assert "equity" in result.reason
+
+    def test_it_still_falls_back_without_a_stop(self):
+        config = SizingConfig(mode=SizingMode.RISK_PERCENT_BALANCE, risk_percent=1.0)
+        no_stop = MasterTrade("EURUSD", "long", 1.0, 1.1000, None)
+        result = size(config, AccountState(10_000, 10_000), trade=no_stop)
+        assert "no stop" in result.reason
+
+    def test_every_mode_is_a_valid_setting(self):
+        """A mode the form can offer that config.py cannot read is a trap."""
+        from app.services.copier.config import sizing_from
+
+        for mode in SizingMode:
+            assert sizing_from({"mode": mode.value}).mode is mode
+
+
 class TestCaps:
     def test_max_lot_clamps(self):
         config = SizingConfig(mode=SizingMode.MULTIPLIER, multiplier=10.0, max_lot=2.0)
@@ -148,10 +183,6 @@ class TestCaps:
         result = size(config, AccountState(5_000, 5_000), spec=spec)
         assert result.volume == 3.0
         assert result.capped_by == "broker_volume_max"
-
-    def test_scale_applies_last(self):
-        config = SizingConfig(mode=SizingMode.MULTIPLIER, multiplier=1.0, scale=0.5)
-        assert size(config, AccountState(5_000, 5_000)).volume == 0.5
 
 
 class TestTooSmall:
