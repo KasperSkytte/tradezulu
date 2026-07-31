@@ -14,23 +14,29 @@
 #   ./install.sh                      # site + terminals for the generic build
 #   ./install.sh --brokers default,vantage
 #   ./install.sh --no-terminals       # journal only, no copying
+#   sudo ./install.sh --user labrat   # owned and run by a service account
+#
+# Wine, the terminals and the provisioning service all belong to one user. That
+# is whoever runs this script, unless --user names another -- which is what you
+# want on a server, where nobody should be logging in as the account that holds
+# a broker session.
 #
 # To undo all of this, see ./uninstall.sh
 #
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BOTTLES="${HOME}/.var/app/com.usebottles.bottles/data/bottles"
 SODA_URL="https://github.com/bottlesdevs/wine/releases/download/soda-9.0-1/soda-9.0-1-x86_64.tar.xz"
-SODA_DIR="${BOTTLES}/runners/soda-9.0-1"
 BROKERS="default"
 TERMINALS=1
+RUN_USER=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --brokers) BROKERS="$2"; shift 2 ;;
     --no-terminals) TERMINALS=0; shift ;;
-    -h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --user) RUN_USER="$2"; shift 2 ;;
+    -h|--help) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -45,6 +51,45 @@ need_root() {
   else die "this step needs root and sudo is not installed"
   fi
 }
+
+# --- who owns the terminals --------------------------------------------------
+#
+# Everything under Wine -- the runtime, the templates, the account prefixes --
+# lives in one user's home and is found through $HOME. So there is exactly one
+# question to settle up front: which user. Packages and systemd still need
+# root; only the Wine side is done as this account.
+#
+# Without --user that is whoever ran the script, which is what you want
+# interactively. With it, root can set the whole thing up to be owned and run
+# by a service account that has no login of its own.
+if [ -z "${RUN_USER}" ]; then
+  RUN_USER="$(id -un)"
+  RUN_HOME="${HOME}"
+  run_as() { "$@"; }
+else
+  need_root
+  id "${RUN_USER}" >/dev/null 2>&1 || die "no such user: ${RUN_USER}"
+  RUN_HOME="$(getent passwd "${RUN_USER}" | cut -d: -f6)"
+  # A service account often has no home, or has one only nominally: `daemon`
+  # is listed at /usr/sbin, which exists and is emphatically not a home. Taking
+  # it at face value would mean chowning a system directory to a service
+  # account, so the passwd entry is trusted only when the account actually owns
+  # what it points at. Otherwise Wine gets a directory beside the checkout,
+  # created here, rather than one invented in /home or an edit to the account.
+  if [ -n "${RUN_HOME}" ] && [ -d "${RUN_HOME}" ] \
+     && [ "$(stat -c '%U' "${RUN_HOME}" 2>/dev/null)" = "${RUN_USER}" ]; then
+    say "using ${RUN_USER}'s home: ${RUN_HOME}"
+  else
+    RUN_HOME="${HERE}/.home"
+    say "${RUN_USER} has no home of its own; using ${RUN_HOME}"
+    ${SUDO} mkdir -p "${RUN_HOME}"
+    ${SUDO} chown -R "${RUN_USER}" "${RUN_HOME}"
+  fi
+  run_as() { ${SUDO} -u "${RUN_USER}" env "HOME=${RUN_HOME}" "XDG_RUNTIME_DIR=${RUN_HOME}/.run" "$@"; }
+  ${SUDO} -u "${RUN_USER}" mkdir -p "${RUN_HOME}/.run"
+fi
+BOTTLES="${RUN_HOME}/.var/app/com.usebottles.bottles/data/bottles"
+SODA_DIR="${BOTTLES}/runners/soda-9.0-1"
 
 # --- the site ----------------------------------------------------------------
 
@@ -128,11 +173,11 @@ else
   # Mainline Wine loads MetaTrader but its inter-process layer never answers.
   # Soda is Proton-derived and does not have that fault. This is the single
   # most important choice in the whole setup.
-  mkdir -p "${BOTTLES}/runners" "${BOTTLES}/bottles"
+  run_as mkdir -p "${BOTTLES}/runners" "${BOTTLES}/bottles"
   TMP="$(mktemp -d)"
   say "downloading soda-9.0-1 (~62 MB)"
   curl -fL --retry 3 --max-time 900 -o "${TMP}/soda.tar.xz" "${SODA_URL}"
-  tar -C "${BOTTLES}/runners" -xf "${TMP}/soda.tar.xz"
+  run_as tar -C "${BOTTLES}/runners" -xf "${TMP}/soda.tar.xz"
   rm -rf "${TMP}"
   [ -x "${SODA_DIR}/bin/wine" ] || die "Soda did not unpack to ${SODA_DIR}"
   say "installed"
@@ -143,26 +188,31 @@ step "Building terminal templates"
 IFS=',' read -ra WANTED <<< "${BROKERS}"
 for broker in "${WANTED[@]}"; do
   say "--- ${broker} ---"
-  "${HERE}/agent/make-template.sh" "${broker}"
+  run_as "${HERE}/agent/make-template.sh" "${broker}"
   # The two permissions the Expert Advisor needs live encrypted in
   # MetaTrader's own config and can only be set through its dialog. Doing it
   # on the template means every account inherits them and nobody ever meets
   # this step.
-  "${HERE}/agent/set-permissions.sh" "${broker}" || say \
+  run_as "${HERE}/agent/set-permissions.sh" "${broker}" || say \
     "could not set permissions automatically for ${broker} -- run agent/set-permissions.sh ${broker}"
 done
 
 step "Installing the provisioning service"
-# A system service that runs as whoever ran this script.
+# A system service that runs as the user who owns the terminals.
 #
 # Not a --user service: that needs a login session to talk to, so it cannot be
 # installed by anything running unattended -- a configuration management tool,
 # or a plain `sudo ./install.sh` -- which is exactly how a server gets set up.
 # Running as this user rather than root matters too: the terminals were built
 # under this HOME, and Wine will not find them under any other.
-RUN_USER="$(id -un)"
 TOKEN="$(grep '^TZ_INGEST_TOKEN=' "${HERE}/.env" | cut -d= -f2-)"
 need_root
+# The service runs from here, so the account behind it has to be able to read
+# it. A checkout made by root -- by a configuration management run, say -- is
+# not readable by a service account by default.
+if [ "${RUN_USER}" != "$(id -un)" ]; then
+  ${SUDO} chown -R "${RUN_USER}" "${HERE}/agent" "${HERE}/mt5"
+fi
 ${SUDO} tee /etc/systemd/system/tradezulu-agent.service >/dev/null <<EOF
 [Unit]
 Description=TradeZulu terminal provisioner
@@ -172,7 +222,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=${RUN_USER}
-Environment=HOME=${HOME}
+Environment=HOME=${RUN_HOME}
 Environment=TZ_URL=http://127.0.0.1:8420
 Environment=TZ_INGEST_TOKEN=${TOKEN}
 Environment=TZ_DISPLAY=:77

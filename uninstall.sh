@@ -9,6 +9,11 @@
 #   ./uninstall.sh --dry-run       # print what would happen, change nothing
 #   ./uninstall.sh --purge-data    # also delete the journal and its secrets
 #   ./uninstall.sh --all           # everything, including Wine and packages
+#   sudo ./uninstall.sh --user labrat   # if it was installed with --user
+#
+# --user must match what install.sh was given: the terminals live in that
+# account's home, and looking in the wrong one finds nothing and reports
+# success.
 #
 # What is *never* touched, whatever you pass: MetaTrader prefixes that
 # TradeZulu did not create. Only bottles named tz-<account> and tz-template-*
@@ -17,9 +22,8 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BOTTLES="${HOME}/.var/app/com.usebottles.bottles/data/bottles"
-SODA_DIR="${BOTTLES}/runners/soda-9.0-1"
 SERVICE="/etc/systemd/system/tradezulu-agent.service"
+RUN_USER=""
 
 PURGE_DATA=0
 PURGE_WINE=0
@@ -33,9 +37,10 @@ while [ $# -gt 0 ]; do
     --purge-wine)     PURGE_WINE=1; shift ;;
     --purge-packages) PURGE_PACKAGES=1; shift ;;
     --all)            PURGE_DATA=1; PURGE_WINE=1; PURGE_PACKAGES=1; shift ;;
+    --user)           RUN_USER="$2"; shift 2 ;;
     --dry-run|-n)     DRY_RUN=1; shift ;;
     --yes|-y)         ASSUME_YES=1; shift ;;
-    -h|--help)        sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)        sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -54,6 +59,24 @@ SUDO=""
 if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then
   SUDO="sudo"
 fi
+
+# Where the terminals live. The same rule as install.sh: one user's home holds
+# all of it, and that user is whoever ran the script unless --user says
+# otherwise. The service file records what was actually used, so prefer it over
+# guessing -- an uninstall that looks in the wrong home finds nothing to do and
+# cheerfully says it is finished.
+if [ -z "${RUN_USER}" ] && [ -r "${SERVICE}" ]; then
+  RUN_HOME="$(sed -n 's/^Environment=HOME=//p' "${SERVICE}" | head -1)"
+  RUN_USER="$(sed -n 's/^User=//p' "${SERVICE}" | head -1)"
+fi
+if [ -n "${RUN_USER:-}" ] && [ "${RUN_USER}" != "$(id -un)" ]; then
+  [ -n "${RUN_HOME:-}" ] || RUN_HOME="$(getent passwd "${RUN_USER}" | cut -d: -f6)"
+  [ -n "${RUN_HOME}" ] || RUN_HOME="${HERE}/.home"
+else
+  RUN_HOME="${HOME}"
+fi
+BOTTLES="${RUN_HOME}/.var/app/com.usebottles.bottles/data/bottles"
+SODA_DIR="${BOTTLES}/runners/soda-9.0-1"
 
 # --- what is actually here ---------------------------------------------------
 
