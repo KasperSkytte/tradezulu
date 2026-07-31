@@ -24,7 +24,6 @@ const FALLBACK: AppSettings = {
     fallback_risk_mode: 'percent_of_balance',
     fixed_risk_amount: 100,
     risk_percent: 1,
-    account_size: 0,
     include_commission_in_pnl: true,
     include_swap_in_pnl: true,
     r_uses_net_pnl: true,

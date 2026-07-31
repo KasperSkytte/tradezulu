@@ -47,8 +47,6 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "fallback_risk_mode": "percent_of_balance",
         "fixed_risk_amount": 100.0,
         "risk_percent": 1.0,
-        # Account size used for percentage metrics; 0 => use account balance.
-        "account_size": 0.0,
         "include_commission_in_pnl": True,
         "include_swap_in_pnl": True,
         # Count costs against the risk when computing realized R.

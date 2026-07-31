@@ -323,17 +323,6 @@ function RiskSection() {
             />
           </Field>
 
-          <Field
-            label={`Account size (${currency})`}
-            hint="Used for percentage risk, drawdown percentages and Sharpe. Leave at 0 to use the account's starting balance."
-            className="sm:col-span-2"
-          >
-            <NumberField
-              value={risk.account_size}
-              step={100}
-              onCommit={(value) => void apply({ risk: { account_size: value } })}
-            />
-          </Field>
         </div>
 
         <div className="mt-2 border-t border-[var(--tz-border)] pt-2">

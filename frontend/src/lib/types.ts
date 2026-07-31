@@ -272,7 +272,6 @@ export interface AppSettings {
     fallback_risk_mode: 'from_stop' | 'fixed_amount' | 'percent_of_balance' | 'none'
     fixed_risk_amount: number
     risk_percent: number
-    account_size: number
     include_commission_in_pnl: boolean
     include_swap_in_pnl: boolean
     r_uses_net_pnl: boolean

@@ -489,9 +489,19 @@ def _sync_executions(db: Session, trade: Trade, executions: list[dict[str, Any]]
 
 
 def resolve_account_size(account: Account | None, risk_cfg: dict[str, Any]) -> float:
-    configured = float(risk_cfg.get("account_size") or 0)
-    if configured > 0:
-        return configured
+    """What the account is worth, from the account itself.
+
+    There used to be a configurable "account size" that overrode this. It was
+    removed: a number typed in once describes the account as it was that day,
+    and every percentage measured against it drifts further from the truth as
+    the balance moves. An account that doubles should show a 2% day as 2% of
+    what it is worth now, not of what it was worth in January.
+
+    Deposits are what ``initial_balance`` records, so it is preferred over the
+    current balance -- the balance already includes profit, and dividing profit
+    by a figure containing it understates every return.
+    """
+    del risk_cfg  # kept for call-site compatibility; nothing here is configurable
     if account is None:
         return 0.0
     if account.initial_balance > 0:
