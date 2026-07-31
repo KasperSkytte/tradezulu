@@ -195,6 +195,10 @@ def calendar(
         "month": f"{year:04d}-{mon:02d}",
         "start": first,
         "end": last,
+        # So a day can be shown as a share of the account rather than only in
+        # currency. 2R at 1% risk is 2% of the account, and that is the number
+        # most people actually judge a day by.
+        "account_size": _account_size(db, config, filters.account_id),
         "days": sorted(days.values(), key=lambda d: str(d["date"])),
         "weeks": sorted(weeks.values(), key=lambda w: w["week_start"]),
         "summary": {

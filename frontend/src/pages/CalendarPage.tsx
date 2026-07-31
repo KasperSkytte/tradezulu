@@ -62,6 +62,7 @@ export function CalendarPage() {
   }, [query.data])
 
   const summary = query.data?.summary
+  const accountSize = query.data?.account_size ?? 0
 
   return (
     <div className="space-y-4">
@@ -90,6 +91,16 @@ export function CalendarPage() {
         {summary && (
           <div className="ml-auto flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
             <Stat label="Net P&L" value={money(summary.net_pnl, currency, { sign: true })} accent />
+          {accountSize > 0 && summary.net_pnl !== null && (
+            <Stat
+              label="Return"
+              value={`${summary.net_pnl > 0 ? '+' : ''}${num(
+                (summary.net_pnl / accountSize) * 100,
+                2,
+              )}%`}
+              accent
+            />
+          )}
             <Stat label="Trades" value={String(summary.counts.total)} />
             <Stat label="Win rate" value={percent(summary.win_rate)} />
             <Stat label="Profit factor" value={profitFactor(summary.profit_factor)} />
@@ -189,6 +200,17 @@ export function CalendarPage() {
                             <p className="tabular text-[0.65rem] text-[var(--tz-text-faint)]">
                               {entry.r > 0 ? '+' : ''}
                               {num(entry.r, 1)}R
+                              {/* The same day as a share of the account: 2R at
+                                  1% risk is 2%, and that is the figure most
+                                  people judge a day by. Needs a known account
+                                  size, so it is omitted rather than guessed. */}
+                              {accountSize > 0 && (
+                                <>
+                                  {' · '}
+                                  {entry.net_pnl > 0 ? '+' : ''}
+                                  {num((entry.net_pnl / accountSize) * 100, 2)}%
+                                </>
+                              )}
                             </p>
                           </div>
                         )}

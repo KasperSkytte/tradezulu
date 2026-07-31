@@ -226,6 +226,8 @@ export interface CalendarResponse {
   month: string
   start: string
   end: string
+  /** 0 when unknown, in which case percentages are omitted rather than guessed. */
+  account_size: number
   days: DailyPoint[]
   weeks: CalendarWeek[]
   summary: Pick<
