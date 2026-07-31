@@ -115,6 +115,23 @@ MetaTrader runs on the host rather than in a container, which is not for want
 of trying — [docs/metatrader.md](docs/metatrader.md) covers how it is put
 together and what was ruled out.
 
+## Known issues
+
+Open problems are tracked as
+[GitHub issues](https://github.com/KasperSkytte/tradezulu/issues) — worth a look
+before reporting something. The ones to know about today:
+
+- **Chart replay is empty.** No candles are uploaded yet
+  ([#6](https://github.com/KasperSkytte/tradezulu/issues/6)). Set
+  **Settings → Charts → TradingView** in the meantime.
+- **A stop attached after entry** is lost if the terminal restarts before the
+  trade closes, so that trade has no R
+  ([#7](https://github.com/KasperSkytte/tradezulu/issues/7)). Stops set with the
+  order are unaffected.
+- **Copying to a slave has not been run against a live account**
+  ([#10](https://github.com/KasperSkytte/tradezulu/issues/10)). The rules are
+  well covered by tests, but arm your first slave on a demo.
+
 ## Behind a reverse proxy
 
 TradeZulu binds to `127.0.0.1:8420`, so put nginx in front:
