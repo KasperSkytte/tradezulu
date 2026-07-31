@@ -196,3 +196,42 @@ else's laptop works exactly like one sitting beside the server.
 The bridge container has been removed. If it is ever worth retrying, the code is
 in the git history (`git log --diff-filter=D -- mt5-bridge/`) and the list above
 is what not to try first.
+
+## Looking at a terminal
+
+The terminals draw on a virtual display (`:77` by default), which is right
+until something goes wrong: a login that failed, a dialog waiting for an answer,
+an Expert Advisor that never attached. All of those are visible on screen and
+invisible in the logs.
+
+`agent/tz-view.sh` reads that display. It only reads it, so it is safe to run
+against terminals that are trading.
+
+```bash
+./agent/tz-view.sh list             # which terminals are up, and their windows
+./agent/tz-view.sh shot             # a PNG of the whole display
+./agent/tz-view.sh shot 22609000    # just that account's window
+./agent/tz-view.sh watch            # a live view over VNC
+```
+
+`list` is usually enough — MetaTrader puts the account number and server in the
+window title, so a terminal that is logged in says so, and one still sitting at
+a login prompt says that too:
+
+```
+display :77 (1400x1000)
+
+  2097164      22609000 - VantageMarkets-Live: Read Only
+  4194316      25862011 - VantageMarkets-Demo: Demo Account
+
+terminals running, by prefix:
+  pid 1805395  tz-1
+  pid 1802281  tz-2
+```
+
+`shot` needs ImageMagick and `watch` needs x11vnc; neither is installed by
+`install.sh`, because neither is needed to run anything — the script names the
+package when you reach for it. `watch` binds to loopback only and serves
+view-only, so it is reachable through an SSH tunnel and not from the network:
+the display holds logged-in trading terminals, and x11vnc's own authentication
+is not worth relying on. It prints the `ssh -L` command to paste.
