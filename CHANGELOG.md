@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.3.0](https://github.com/KasperSkytte/tradezulu/compare/v1.2.1...v1.3.0) (2026-07-31)
+
+
+### Features
+
+* **agent:** let the master terminal claim its own account row ([8c95c3a](https://github.com/KasperSkytte/tradezulu/commit/8c95c3acf48ee018188ad088dd39d1618cd3642a))
+* **agent:** provision a terminal per account without anyone configuring it ([b5d3b9b](https://github.com/KasperSkytte/tradezulu/commit/b5d3b9b9789754a58a43a34d78bce8afc3f875da))
+* **agent:** restart terminals weekly, and drop the containerised bridge ([b02f351](https://github.com/KasperSkytte/tradezulu/commit/b02f3513cb5a38961a99b1de24daee666a548e39))
+* **copier:** drive the terminals with an Expert Advisor, not the Python API ([5eaf27b](https://github.com/KasperSkytte/tradezulu/commit/5eaf27bbf313edfdf3ad789e12dc437d1c381297))
+* **install:** set up a server from one script, terminals included ([c5db917](https://github.com/KasperSkytte/tradezulu/commit/c5db917c946cd2b3c7c367c59819f9260c42f130))
+* **mt5:** send closed deals, so the journal fills itself ([9ff0597](https://github.com/KasperSkytte/tradezulu/commit/9ff0597f942d41edd6d0051f8d3ee3aad19d519e))
+
+
+### Bug fixes
+
+* **agent:** make a provisioned terminal actually run its expert ([e4b0f4d](https://github.com/KasperSkytte/tradezulu/commit/e4b0f4d22cac841b6e30ae8872265acb37264f5a))
+* **mt5-bridge:** prefer IPv4, and ship the tools needed to see the terminal ([b5c368b](https://github.com/KasperSkytte/tradezulu/commit/b5c368b1fc2021a60a2cfa22bf6ed352db70df43))
+
+
+### Documentation
+
+* correct the WoW64 theory -- the installer is 64-bit ([2e6831d](https://github.com/KasperSkytte/tradezulu/commit/2e6831dfaa7fe7a8650e09604f9b2138aba4bb91))
+* MetaQuotes' own Linux recipe, and where following it stops ([d0e378f](https://github.com/KasperSkytte/tradezulu/commit/d0e378f7e64ccff827fb3b222ea5559ca256e36f))
+* native winhttp/wininet do not help either ([1b66c53](https://github.com/KasperSkytte/tradezulu/commit/1b66c53c502662b3da146f0151df5ee47ca916d0))
+* point at the issue tracker, and name the three that matter ([cb88960](https://github.com/KasperSkytte/tradezulu/commit/cb88960db2ca9645f1a7f93361de07e1bd63dfc9))
+* the GUI works and the login dialog was the blocker; the network is not ([c5f540b](https://github.com/KasperSkytte/tradezulu/commit/c5f540b276723928234be29f711f3779ddbf8816))
+* the staging image has no WoW64, which is why the recipe cannot finish ([6177cd1](https://github.com/KasperSkytte/tradezulu/commit/6177cd1eca34253c99079f3a1d5bb54b6255b4e2))
+* the terminal never authorises, so the EA route is closed too ([af05d5e](https://github.com/KasperSkytte/tradezulu/commit/af05d5e8251d6313138eda56f12653c7f9502965))
+
 ## [1.2.1](https://github.com/KasperSkytte/tradezulu/compare/v1.2.0...v1.2.1) (2026-07-29)
 
 
