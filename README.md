@@ -89,15 +89,12 @@ docker compose run --rm --service-ports -e TZ_DEMO=1 tradezulu demo
 - Stats per account or all of them together, with equity curves each.
 - Installable on a phone as a PWA.
 
-| Calendar                                   | Trades                                 | Reports                                  |
-|--------------------------------------------|----------------------------------------|------------------------------------------|
-| ![Calendar](docs/screenshots/calendar.png) | ![Trades](docs/screenshots/trades.png) | ![Reports](docs/screenshots/reports.png) |
-
 It is a PWA, so it installs on a phone and is laid out for one — the calendar
 drops to the figures that matter, and the trade list becomes cards rather than
 a table you have to pan across.
 
-<img src="docs/screenshots/mobile.png" alt="TradeZulu on a phone" width="300">
+More screenshots — calendar, trades, reports, a trade in detail, and the phone
+layout — are in [docs/screenshots.md](docs/screenshots.md).
 
 ## Connect MetaTrader 5
 
