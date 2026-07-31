@@ -205,6 +205,30 @@ class TestTooSmall:
         config = SizingConfig(mode=SizingMode.MULTIPLIER, multiplier=0.01, min_lot=0.01)
         assert size(config, AccountState(10_000, 10_000)).volume == 0.01
 
+    def test_a_slave_a_fraction_smaller_than_the_master_still_trades(self):
+        """The case the setting exists for, which it used not to cover.
+
+        A slave 0.2% smaller computes 0.00998 lots against a 0.01 minimum. The
+        old tolerance was 0.1%, so it refused -- and went on refusing every
+        trade for as long as the accounts stayed that close.
+        """
+        config = SizingConfig(mode=SizingMode.BALANCE_RATIO, min_lot=0.01)
+        trade = MasterTrade("EURUSD", "long", 0.01, 1.1000, 1.0980)
+        result = size(config, AccountState(9_978, 9_978), trade=trade, master=AccountState(10_000, 10_000))
+        assert result.volume == 0.01
+
+    def test_a_genuinely_different_size_is_still_refused(self):
+        """Half the floor is the line: below it this is not a rounding artefact."""
+        config = SizingConfig(mode=SizingMode.MULTIPLIER, multiplier=0.004, min_lot=0.01)
+        result = size(config, AccountState(10_000, 10_000))
+        assert result.volume == 0
+        assert result.capped_by == "below_minimum"
+
+    def test_without_a_configured_minimum_it_still_refuses(self):
+        """Rounding up is opt-in. Nobody gets silently over-sized."""
+        config = SizingConfig(mode=SizingMode.MULTIPLIER, multiplier=0.009)
+        assert size(config, AccountState(10_000, 10_000)).volume == 0
+
 
 class TestMoneyAtRisk:
     def test_computes_the_loss_at_the_stop(self):

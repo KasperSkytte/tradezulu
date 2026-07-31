@@ -128,8 +128,17 @@ def compute_volume(
     floor = max(config.min_lot, spec.volume_min)
     if volume < floor:
         # Rounding down took it under the minimum the broker will accept.
-        # Sending the minimum instead would silently over-risk, so refuse.
-        if config.min_lot > 0 and raw >= config.min_lot * 0.999:
+        # Sending the minimum anyway would silently over-risk, so it is only
+        # done when a minimum was explicitly configured -- that setting is the
+        # user saying "round a small size up to this rather than skipping it".
+        #
+        # The threshold is half the floor, not a hair under it. A slave a
+        # fraction smaller than its master computes 0.00998 lots against a 0.01
+        # minimum, and a 0.1% tolerance refused exactly that -- so the one
+        # setting meant to solve the problem never did. Below half, the request
+        # is a different size rather than a rounding artefact, and refusing is
+        # still right.
+        if config.min_lot > 0 and raw >= config.min_lot * 0.5:
             volume = round_to_step(floor, spec.volume_step)
         else:
             return SizingResult(
