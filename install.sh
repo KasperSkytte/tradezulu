@@ -85,8 +85,22 @@ else
     ${SUDO} mkdir -p "${RUN_HOME}"
     ${SUDO} chown -R "${RUN_USER}" "${RUN_HOME}"
   fi
-  run_as() { ${SUDO} -u "${RUN_USER}" env "HOME=${RUN_HOME}" "XDG_RUNTIME_DIR=${RUN_HOME}/.run" "$@"; }
-  ${SUDO} -u "${RUN_USER}" mkdir -p "${RUN_HOME}/.run"
+  # Dropping privilege is not the same shape as gaining it. ${SUDO} is empty
+  # when already root, so "${SUDO} -u user cmd" becomes "-u user cmd" and the
+  # shell tries to run -u. Root drops with runuser instead, which is also the
+  # only one of the two guaranteed to be installed on a minimal server.
+  if [ "$(id -u)" -eq 0 ] && command -v runuser >/dev/null 2>&1; then
+    run_as() {
+      runuser -u "${RUN_USER}" -- \
+        env "HOME=${RUN_HOME}" "XDG_RUNTIME_DIR=${RUN_HOME}/.run" "$@"
+    }
+  else
+    run_as() {
+      sudo -u "${RUN_USER}" \
+        env "HOME=${RUN_HOME}" "XDG_RUNTIME_DIR=${RUN_HOME}/.run" "$@"
+    }
+  fi
+  run_as mkdir -p "${RUN_HOME}/.run"
 fi
 BOTTLES="${RUN_HOME}/.var/app/com.usebottles.bottles/data/bottles"
 
