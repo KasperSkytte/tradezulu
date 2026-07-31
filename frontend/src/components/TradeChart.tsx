@@ -249,7 +249,7 @@ function LocalReplay({ trade, timeframe }: { trade: TradeDetail; timeframe: stri
               title="No candles stored for this window"
               description={
                 <>
-                  The TradeZuluSync Expert Advisor uploads candles around each closed trade — set
+                  The TradeZulu Expert Advisor uploads candles around each closed trade — set
                   <code className="mx-1 rounded bg-[var(--tz-surface-2)] px-1 py-0.5 text-xs">
                     UploadCandles = true
                   </code>

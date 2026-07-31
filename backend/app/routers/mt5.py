@@ -203,7 +203,7 @@ def _infer_initial_balance(db: Session, account: Account) -> float:
     dependencies=[Depends(require_ingest_auth)],
 )
 def ingest(payload: MT5IngestRequest, db: DbSession, config: AppConfig) -> MT5IngestResponse:
-    """Receive deals pushed by the TradeZuluSync Expert Advisor."""
+    """Receive deals pushed by a terminal's Expert Advisor."""
     return _apply_ingest(
         db,
         config,

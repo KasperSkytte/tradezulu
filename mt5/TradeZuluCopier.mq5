@@ -33,12 +33,37 @@ input int    Slippage         = 20;    // Maximum deviation, in points
 input int    MagicNumber      = 0;     // Stamped on copied orders; 0 leaves it unset
 input bool   Verbose          = true;  // Log every command to the Experts tab
 
+input group "Journal"
+input bool   SendHistory      = true;  // Send closed deals so the journal fills itself
+input int    HistorySeconds   = 60;    // How often to look for new ones
+input int    FirstSyncDays    = 730;   // How far back to go the first time
+input int    DealsPerRequest  = 200;   // Batch size; a long history is sent in pieces
+
 //--- state ----------------------------------------------------------
 string g_status       = "starting";
 string g_pending      = "";   // results waiting to go back on the next poll
 int    g_done         = 0;
 int    g_failed       = 0;
 int    g_poll_seconds = 0;
+
+//--- journal --------------------------------------------------------
+ulong    g_last_ticket  = 0;      // highest deal the server already has
+bool     g_cursor_known = false;
+datetime g_next_history = 0;
+int      g_sent_deals   = 0;
+
+//--- stops seen on live positions -----------------------------------
+// MetaTrader records a stop on the *order*, so a stop attached after entry --
+// trailed, or dragged onto the chart -- never reaches the deal history. A
+// journal reading history alone therefore cannot tell what such a trade
+// risked, and every R figure for it would be wrong.
+//
+// The remedy is to watch: this EA already reads open positions every couple of
+// seconds, so it remembers the tightest stop it ever saw on each one and
+// attaches that to the entry deal when the position closes.
+ulong  g_pos_id[];
+double g_pos_sl[];
+double g_pos_tp[];
 
 //+------------------------------------------------------------------+
 int OnInit()
@@ -82,6 +107,16 @@ void OnTimer()
       EventSetTimer(g_poll_seconds);
    }
    Poll();
+
+   // The journal runs on its own clock. Copying is worth doing every couple of
+   // seconds; history is not, and walking it that often would spend the whole
+   // timer on deals that have not changed.
+   if(SendHistory && TimeCurrent() >= g_next_history)
+   {
+      g_next_history = TimeCurrent() + (datetime)MathMax(10, HistorySeconds);
+      SendClosedDeals();
+   }
+
    ShowStatus();
 }
 
@@ -154,6 +189,36 @@ string JsonValue(const string json, const string key, const int from = 0)
 }
 
 //--- what we tell the server ----------------------------------------
+int FindPosition(const ulong position_id)
+{
+   for(int i = 0; i < ArraySize(g_pos_id); i++)
+      if(g_pos_id[i] == position_id)
+         return i;
+   return -1;
+}
+
+void RememberStops(const ulong position_id, const double sl, const double tp)
+{
+   if(position_id == 0)
+      return;
+   int at = FindPosition(position_id);
+   if(at < 0)
+   {
+      at = ArraySize(g_pos_id);
+      ArrayResize(g_pos_id, at + 1);
+      ArrayResize(g_pos_sl, at + 1);
+      ArrayResize(g_pos_tp, at + 1);
+      g_pos_id[at] = position_id;
+      g_pos_sl[at] = 0.0;
+      g_pos_tp[at] = 0.0;
+   }
+   // Keep the first real stop seen rather than the latest. A stop that has
+   // been trailed into profit is no longer what the trade risked, and using
+   // it would flatter every R figure it touches.
+   if(g_pos_sl[at] == 0.0 && sl != 0.0) g_pos_sl[at] = sl;
+   if(g_pos_tp[at] == 0.0 && tp != 0.0) g_pos_tp[at] = tp;
+}
+
 string PositionsJson()
 {
    string out = "";
@@ -163,6 +228,9 @@ string PositionsJson()
       ulong ticket = PositionGetTicket(i);
       if(ticket == 0)
          continue;
+      RememberStops((ulong)PositionGetInteger(POSITION_IDENTIFIER),
+                    PositionGetDouble(POSITION_SL),
+                    PositionGetDouble(POSITION_TP));
       if(StringLen(out) > 0)
          out += ",";
       long type = PositionGetInteger(POSITION_TYPE);
@@ -515,6 +583,206 @@ double NormalizeVolume(const string symbol, const double volume)
 }
 
 //--- plumbing -------------------------------------------------------
+bool HttpGet(const string path, string &reply)
+{
+   string url = ServerUrl + path;
+   string headers = "X-API-Key: " + ApiKey + "\r\n";
+
+   char post[];
+   char result[];
+   string result_headers;
+   ArrayResize(post, 0);
+
+   ResetLastError();
+   int status = WebRequest("GET", url, headers, RequestTimeoutMs, post, result, result_headers);
+   if(status == -1)
+   {
+      int error = GetLastError();
+      if(error == 4014)
+         Print("TradeZulu: WebRequest is not allowed for ", url,
+               ". Add it under Tools -> Options -> Expert Advisors.");
+      else
+         Print("TradeZulu: WebRequest failed for ", url, " (error ", error, ")");
+      return false;
+   }
+
+   reply = CharArrayToString(result, 0, WHOLE_ARRAY, CP_UTF8);
+   return (status >= 200 && status < 300);
+}
+
+//--- the journal ----------------------------------------------------
+//
+// Closed deals are what the journal is made of, and only the terminal can
+// see them: a deal exists in the account's history and nowhere else. The
+// copier already talks to the server every couple of seconds, so it carries
+// them too rather than asking anyone to run a second Expert Advisor.
+//
+// Sending is driven by a cursor the server hands out, so a restart re-sends
+// nothing and a terminal that was off for a week catches up by itself. The
+// server keys deals by ticket, so a duplicate is a no-op even if one slips
+// through.
+
+double ValuePerUnit(const string symbol)
+{
+   double tick_value = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_VALUE);
+   double tick_size  = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_SIZE);
+   if(tick_size <= 0.0)
+      return 0.0;
+   return tick_value / tick_size;
+}
+
+string DealJson(const ulong deal_ticket)
+{
+   string symbol       = HistoryDealGetString(deal_ticket, DEAL_SYMBOL);
+   ulong  order_ticket = (ulong)HistoryDealGetInteger(deal_ticket, DEAL_ORDER);
+   long   entry        = HistoryDealGetInteger(deal_ticket, DEAL_ENTRY);
+
+   // The stop is the denominator for every R figure in the journal, so it is
+   // worth two attempts. First the entry order, which has it when the stop was
+   // set with the trade; then whatever was seen on the live position, which is
+   // the only way to know about a stop attached afterwards.
+   double sl = 0.0, tp = 0.0;
+   if(entry == DEAL_ENTRY_IN)
+   {
+      if(order_ticket > 0)
+      {
+         // Already in the cache from HistorySelect(); HistoryOrderSelect() here
+         // would throw away the deal list being walked.
+         sl = HistoryOrderGetDouble(order_ticket, ORDER_SL);
+         tp = HistoryOrderGetDouble(order_ticket, ORDER_TP);
+      }
+      int seen = FindPosition((ulong)HistoryDealGetInteger(deal_ticket, DEAL_POSITION_ID));
+      if(seen >= 0)
+      {
+         if(sl == 0.0) sl = g_pos_sl[seen];
+         if(tp == 0.0) tp = g_pos_tp[seen];
+      }
+   }
+
+   int digits = (int)SymbolInfoInteger(symbol, SYMBOL_DIGITS);
+   if(digits <= 0)
+      digits = 5;
+
+   string out = "{";
+   out += JInt("ticket", (long)deal_ticket);
+   out += "," + JInt("order", (long)order_ticket);
+   out += "," + JInt("position_id", HistoryDealGetInteger(deal_ticket, DEAL_POSITION_ID));
+   out += "," + JStr("symbol", symbol);
+   out += "," + JInt("type",  HistoryDealGetInteger(deal_ticket, DEAL_TYPE));
+   out += "," + JInt("entry", entry);
+   out += "," + JNum("volume", HistoryDealGetDouble(deal_ticket, DEAL_VOLUME), 2);
+   out += "," + JNum("price",  HistoryDealGetDouble(deal_ticket, DEAL_PRICE), digits);
+   out += "," + JNum("profit", HistoryDealGetDouble(deal_ticket, DEAL_PROFIT), 2);
+   out += "," + JNum("commission", HistoryDealGetDouble(deal_ticket, DEAL_COMMISSION), 2);
+   out += "," + JNum("swap", HistoryDealGetDouble(deal_ticket, DEAL_SWAP), 2);
+   out += "," + JNum("fee",  HistoryDealGetDouble(deal_ticket, DEAL_FEE), 2);
+   out += "," + JNum("sl", sl, digits);
+   out += "," + JNum("tp", tp, digits);
+   out += "," + JInt("magic", HistoryDealGetInteger(deal_ticket, DEAL_MAGIC));
+   out += "," + JStr("comment", HistoryDealGetString(deal_ticket, DEAL_COMMENT));
+   out += "," + JInt("time", HistoryDealGetInteger(deal_ticket, DEAL_TIME));
+   out += "," + JNum("value_per_unit", ValuePerUnit(symbol), 6);
+   out += "," + JInt("digits", digits);
+   out += "}";
+   return out;
+}
+
+string AccountJson()
+{
+   string out = "{";
+   out += JInt("login", AccountInfoInteger(ACCOUNT_LOGIN));
+   out += "," + JStr("name",    AccountInfoString(ACCOUNT_NAME));
+   out += "," + JStr("server",  AccountInfoString(ACCOUNT_SERVER));
+   out += "," + JStr("company", AccountInfoString(ACCOUNT_COMPANY));
+   out += "," + JStr("currency", AccountInfoString(ACCOUNT_CURRENCY));
+   out += "," + JInt("leverage", AccountInfoInteger(ACCOUNT_LEVERAGE));
+   out += "," + JNum("balance", AccountInfoDouble(ACCOUNT_BALANCE), 2);
+   out += "," + JNum("equity",  AccountInfoDouble(ACCOUNT_EQUITY), 2);
+   out += "}";
+   return out;
+}
+
+void FetchCursor()
+{
+   string reply;
+   string path = "/mt5/cursor?login=" + (string)AccountInfoInteger(ACCOUNT_LOGIN);
+   if(!HttpGet(path, reply))
+      return;
+
+   g_last_ticket  = (ulong)StringToInteger(JsonValue(reply, "last_deal_ticket"));
+   g_cursor_known = true;
+   if(Verbose)
+      Print("TradeZulu: journal already has deals up to ticket ", g_last_ticket);
+}
+
+bool PostDeals(const string deals)
+{
+   string body = "{" + JStr("source", "ea")
+               + ",\"account\":" + AccountJson()
+               + ",\"deals\":[" + deals + "]}";
+   string reply;
+   if(!HttpPost("/mt5/ingest", body, reply))
+      return false;
+   return true;
+}
+
+void SendClosedDeals()
+{
+   if(!g_cursor_known)
+   {
+      FetchCursor();
+      if(!g_cursor_known)
+         return;         // server unreachable; try again on the next pass
+   }
+
+   datetime now = TimeCurrent();
+   datetime from = (g_last_ticket == 0)
+                 ? now - (datetime)(86400 * (long)MathMax(1, FirstSyncDays))
+                 : now - (datetime)(86400 * 7);   // a week of overlap for late swaps
+
+   if(!HistorySelect(from, now + 3600))
+      return;
+
+   int total = HistoryDealsTotal();
+   string batch = "";
+   int    in_batch = 0;
+   ulong  newest = g_last_ticket;
+
+   for(int i = 0; i < total; i++)
+   {
+      ulong ticket = HistoryDealGetTicket(i);
+      if(ticket == 0 || ticket <= g_last_ticket)
+         continue;
+
+      // Deposits and withdrawals are sent too, not filtered out: the server
+      // works out the account's starting balance from them.
+      batch += (in_batch > 0 ? "," : "") + DealJson(ticket);
+      in_batch++;
+      if(ticket > newest)
+         newest = ticket;
+
+      if(in_batch >= MathMax(20, DealsPerRequest))
+      {
+         if(!PostDeals(batch))
+            return;      // keep the cursor where it was; the batch is retried
+         g_sent_deals += in_batch;
+         batch = "";
+         in_batch = 0;
+      }
+   }
+
+   if(in_batch > 0)
+   {
+      if(!PostDeals(batch))
+         return;
+      g_sent_deals += in_batch;
+   }
+
+   // Only now, once everything is acknowledged. Moving it earlier would skip
+   // whatever was in a batch that failed to send.
+   g_last_ticket = newest;
+}
+
 bool HttpPost(const string path, const string body, string &reply)
 {
    string url = ServerUrl + path;
@@ -553,10 +821,11 @@ bool HttpPost(const string path, const string body, string &reply)
 void ShowStatus()
 {
    Comment(StringFormat(
-      "TradeZulu copier\n%s\naccount %I64d on %s\nexecuted %d, failed %d\npolling every %ds",
+      "TradeZulu copier\n%s\naccount %I64d on %s\nexecuted %d, failed %d\n"
+      "deals sent %d\npolling every %ds",
       g_status,
       AccountInfoInteger(ACCOUNT_LOGIN),
       AccountInfoString(ACCOUNT_SERVER),
-      g_done, g_failed, g_poll_seconds));
+      g_done, g_failed, g_sent_deals, g_poll_seconds));
 }
 //+------------------------------------------------------------------+

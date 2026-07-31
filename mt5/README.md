@@ -1,56 +1,77 @@
-# TradeZuluSync
+# TradeZuluCopier
 
-An Expert Advisor that feeds your TradeZulu journal.
+One Expert Advisor doing both halves of the job:
 
-**You probably do not need this.** TradeZulu's default is to sync with just a
-trade server, an account number and an investor password — see
-[`../docs/metatrader.md`](../docs/metatrader.md). Use this instead when you
-would rather no password were stored anywhere, and you already keep a terminal
-running.
+- **Copying** — reports the account's open positions, is told what to do about
+  them, and carries it out. Every decision is the server's; this only executes.
+- **The journal** — sends closed deals as they happen, with the stop the broker
+  recorded, which is what every R figure is calculated from.
 
-It reads deal history and, optionally, candles, and POSTs them to your journal.
-It never places, modifies or closes an order — there is no trading code in it at
-all.
+## You do not need to install this
 
-## Install
+`install.sh` creates a MetaTrader terminal per account and puts this in it,
+compiled, with the server URL and token already filled in. Adding an account in
+the web interface is the whole procedure — see
+[`../docs/metatrader.md`](../docs/metatrader.md).
 
-1. MetaTrader 5 → **File → Open Data Folder**, then copy `TradeZuluSync.mq5`
+What follows is only for running it in a terminal of your own: on a Windows
+machine, say, or one you would rather manage yourself.
+
+## By hand
+
+1. MetaTrader 5 → **File → Open Data Folder**, then copy `TradeZuluCopier.mq5`
    into `MQL5\Experts\`.
 2. Open it in MetaEditor and press **F7** to compile.
-3. **Tools → Options → Expert Advisors** → tick *Allow WebRequest for listed
-   URL* and add your journal's origin, e.g. `https://journal.example.com`
-   (scheme, host and port only — no path).
-4. Drag **TradeZuluSync** onto any chart and fill in `ServerUrl` and `ApiKey`.
-5. Make sure **Algo Trading** is on.
+3. **Tools → Options → Expert Advisors**:
+   - tick **Allow algorithmic trading**
+   - untick every **Disable algorithmic trading when…** option. The first of
+     them switches trading off the moment the terminal logs in, which looks
+     exactly like the EA silently doing nothing.
+   - tick **Allow WebRequest for listed URL** and add your journal's origin,
+     e.g. `https://journal.example.com` — scheme, host and port only, no path.
+4. Drag **TradeZuluCopier** onto any chart and fill in `ServerUrl` and `ApiKey`.
+
+The chart's symbol and timeframe do not matter; it is not reading the chart.
 
 ## Inputs
 
 | Input | Default | Meaning |
 |---|---|---|
-| `ServerUrl` | — | Journal API base, ending in `/api` |
-| `ApiKey` | — | Your `TZ_INGEST_TOKEN` |
+| `ServerUrl` | — | TradeZulu's API base, ending in `/api` |
+| `ApiKey` | — | Your `TZ_INGEST_TOKEN`. Without it the EA refuses to start |
 | `RequestTimeoutMs` | 15000 | WebRequest timeout |
-| `SyncIntervalSeconds` | 60 | How often to check for new deals |
-| `FirstSyncHistoryDays` | 730 | How far back the first sync reaches |
-| `DealsPerRequest` | 300 | Deals per HTTP request |
-| `SyncOnTrade` | true | Also sync the moment a deal is added |
-| `UploadCandles` | true | Send candles so trades can be replayed offline |
-| `CandleTimeframe` | M15 | Which timeframe to upload |
-| `CandlesBefore` / `CandlesAfter` | 150 / 80 | Bars around the trade |
-| `Verbose` | true | Log every request to the Experts tab |
+| `PollSeconds` | 2 | How often to report in; the server can ask for slower |
+| `Slippage` | 20 | Maximum deviation, in points |
+| `MagicNumber` | 0 | Stamped on copied orders; 0 leaves it unset |
+| `SendHistory` | true | Send closed deals to the journal |
+| `HistorySeconds` | 60 | How often to look for new ones |
+| `FirstSyncDays` | 730 | How far back the first pass reaches |
+| `DealsPerRequest` | 200 | Deals per HTTP request |
+| `Verbose` | true | Log every command to the Experts tab |
+
+Deals are sent from a cursor the server hands out, so a restart re-sends
+nothing and a terminal that was off for a week catches up by itself. They are
+keyed by ticket, so a duplicate changes nothing.
 
 ## Why leave it running
 
-MetaTrader stores the stop loss on the *order*. A stop attached after entry —
-dragged onto the chart, or trailed — never reaches the deal history, so a
-journal reading history alone cannot know what you risked.
+MetaTrader records the stop loss on the *order*. A stop attached after entry —
+trailed, or dragged onto the chart — never reaches the deal history, so a
+journal reading history alone cannot know what the trade risked.
 
-While it runs, the EA snapshots each position's stop and target the first time
-it sees them, keeps them in `MQL5\Files\TradeZulu_stops_<login>.csv` so they
-survive restarts, and attaches them to the entry deal when the position closes.
-That is what makes the R multiples real.
+While it runs, the EA remembers the first stop it sees on each open position
+and attaches that to the entry deal when the position closes. The *first*, not
+the latest: a stop trailed into profit is no longer what the trade risked, and
+using it would flatter every R figure it touched.
 
-## Full guide
+That memory does not currently survive a restart — a position opened with no
+stop, given one later, and closed after the terminal restarted will still have
+no R. Stops set with the order are unaffected, as they are read back from the
+order itself.
 
-See [`../docs/metatrader.md`](../docs/metatrader.md), including troubleshooting
-and the two alternative import routes.
+## Read-only accounts
+
+An investor password is enough to journal an account, and means the EA cannot
+place an order on it even by mistake. Copying *to* an account needs that
+account's real password, which is why slave accounts stay in dry-run until you
+arm them.
