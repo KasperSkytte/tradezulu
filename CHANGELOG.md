@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.11.0](https://github.com/KasperSkytte/tradezulu/compare/v1.10.0...v1.11.0) (2026-07-31)
+
+
+### Features
+
+* **agent:** add a script for looking at the terminals ([3b9e173](https://github.com/KasperSkytte/tradezulu/commit/3b9e173619ff06a863de5853b9b9208f5ddf3e06))
+
+
+### Bug fixes
+
+* **agent:** add the missing re import ([87d7f71](https://github.com/KasperSkytte/tradezulu/commit/87d7f714b13fedf84f1db76c03868b172b54a393))
+* **mt5:** require a password when the stored account is changed ([a3a1572](https://github.com/KasperSkytte/tradezulu/commit/a3a157244fee0634f6d76c7d11ae2b993a871829))
+
 ## [1.10.0](https://github.com/KasperSkytte/tradezulu/compare/v1.9.2...v1.10.0) (2026-07-31)
 
 
