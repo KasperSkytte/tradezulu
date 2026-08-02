@@ -4,7 +4,7 @@
 
 **A trade copier and trading journal for MetaTrader 5, in one.**
 
-Copy one account's trades to any number of others under your own risk rules,
+Copy trades across any number of accounts under your own risk rules,
 and journal every one of them. Self-hosted, free, and yours.
 
 </div>
@@ -23,8 +23,7 @@ cd tradezulu
 That sets up everything: the site in Docker, and MetaTrader on the host with a
 terminal template per broker. It generates your `.env` and prints the login it
 made. Open <http://localhost:8420>, sign in, add your account, and a terminal
-is started and logged in for it within a minute. You install nothing by hand
-and are never asked for a URL or a token.
+is started and logged in for it within a minute.
 
 Journal only, no copying or terminals:
 
@@ -50,7 +49,7 @@ docker compose exec tradezulu list-users            # if you forgot the name
 docker compose run --rm --service-ports -e TZ_DEMO=1 tradezulu demo
 ```
 
-## What it does
+## Features
 
 **Copier** — one master account, any number of slaves, any broker.
 
@@ -95,6 +94,7 @@ drops to the figures that matter, and the trade list becomes cards rather than
 a table you have to pan across.
 
 ## Connect MetaTrader 5
+I have tried for a very long time to get metatrader5 to work properly and communicate over IPC or API within a container, but to no avail. So for now all terminals just run on the host through Wine. 
 
 **Settings → MetaTrader 5**, three fields:
 
@@ -104,20 +104,20 @@ a table you have to pan across.
 | Account number | `5000123` |
 | Investor password | the read-only one your broker issued |
 
-That is the whole setup. A MetaTrader terminal is created for the account,
+A MetaTrader terminal is created for the account,
 logged in, and given an Expert Advisor that reports back — automatically,
 within a minute or so. Nothing to install, no files to copy, no URL to type.
 
-For the journal, use the **investor password**: it is read-only, so TradeZulu
+For journaling only, just use the **investor password** for the account instead of the master password: it is read-only, so TradeZulu
 cannot trade your account even by accident. Copying to a slave account does
 need that account's full password, which is why slaves stay in dry-run until
 you arm them.
 
 Terminals are restarted every Sunday so MetaTrader's updates install during a
 quiet hour, rather than a broker's new build stopping a terminal mid-week with
-a dialog nobody is there to answer.
+a dialog nobody is there to answer. So if you trade crypto during weekend where the market is still open ensure the time suits you.
 
-MetaTrader runs on the host rather than in a container, which is not for want
+Note that MetaTrader runs on the host rather than in a container, which is not for want
 of trying — [docs/metatrader.md](docs/metatrader.md) covers how it is put
 together and what was ruled out.
 

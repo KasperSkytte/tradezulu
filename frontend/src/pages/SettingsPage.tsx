@@ -7,8 +7,8 @@ import {
   Database,
   Download,
   Gauge,
+  CandlestickChart,
   Palette,
-  Plug,
   RefreshCw,
   Shield,
   SlidersHorizontal,
@@ -20,19 +20,20 @@ import clsx from 'clsx'
 import { ApiError, api } from '../lib/api'
 import { useSettings } from '../lib/settings'
 import type { DeepPartial } from '../lib/settings'
-import { money, num, relative } from '../lib/format'
 import { PERIOD_OPTIONS } from '../lib/period'
-import type { Account, AppSettings, SyncStatus, SystemInfo, Tag } from '../lib/types'
+import type { Account, AppSettings, SystemInfo, Tag } from '../lib/types'
 import { Button, Card, CardHeader, Field, SegmentedControl, Skeleton, Toggle } from '../components/ui'
-import { MT5Account } from '../components/MT5Account'
 
+// MetaTrader and the accounts it feeds now live together on the Accounts page.
+// Having a "MetaTrader 5" section here and an Accounts page there meant setting
+// an account up in one place and finding it listed in the other.
 const SECTIONS = [
   { id: 'general', label: 'General', icon: Palette },
   { id: 'risk', label: 'Risk & R', icon: SlidersHorizontal },
   { id: 'score', label: 'Zulu Score', icon: Gauge },
-  { id: 'sync', label: 'MetaTrader 5', icon: Plug },
+  { id: 'charts', label: 'Charts', icon: CandlestickChart },
   { id: 'tags', label: 'Tags', icon: TagsIcon },
-  { id: 'account', label: 'Account', icon: Database },
+  { id: 'data', label: 'Data', icon: Database },
   { id: 'security', label: 'Security', icon: Shield },
 ] as const
 
@@ -51,7 +52,7 @@ export function SettingsPage() {
     window.history.replaceState(null, '', `#${section}`)
   }, [section])
 
-  // Links such as /settings#sync must land on the right section even when the
+  // Links such as /settings#data must land on the right section even when the
   // page is already open, which is only a hash change and not a remount.
   useEffect(() => {
     const onHashChange = () => {
@@ -89,9 +90,9 @@ export function SettingsPage() {
         {section === 'general' && <GeneralSection />}
         {section === 'risk' && <RiskSection />}
         {section === 'score' && <ScoreSection />}
-        {section === 'sync' && <SyncSection />}
+        {section === 'charts' && <ChartsSection />}
         {section === 'tags' && <TagsSection />}
-        {section === 'account' && <AccountSection />}
+        {section === 'data' && <DataSection />}
         {section === 'security' && <SecuritySection />}
       </div>
     </div>
@@ -556,29 +557,11 @@ function ScoreSection() {
 
 /* --------------------------------------------------------------------- */
 
-function SyncSection() {
-  const { settings, currency } = useSettings()
-  const { apply, saved } = useSaver()
+function DataSection() {
   const queryClient = useQueryClient()
   const fileInput = useRef<HTMLInputElement>(null)
   const [importResult, setImportResult] = useState<string | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
-
-  const { data: status } = useQuery({
-    queryKey: ['sync-status'],
-    queryFn: () => api.get<SyncStatus>('/mt5/status'),
-    // Poll while a terminal is being built, so "starting" turns into "running"
-    // on its own. Without this the message is written once and sits there,
-    // which reads as stuck rather than working.
-    refetchInterval: (query) =>
-      query.state.data?.phase === 'starting' || query.state.data?.phase === 'stalled'
-        ? 5000
-        : false,
-  })
-  const { data: system } = useQuery({
-    queryKey: ['system'],
-    queryFn: () => api.get<SystemInfo>('/settings/system'),
-  })
 
   const upload = useMutation({
     mutationFn: (file: File) => {
@@ -612,59 +595,6 @@ function SyncSection() {
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader title="Connection" action={<SavedFlag saved={saved} />} />
-
-        {status && (
-          <div className="mb-4 grid gap-3 rounded-lg bg-[var(--tz-surface-2)] p-3 sm:grid-cols-4">
-            <Fact label="Account" value={status.login && status.login !== '0' ? status.login : '—'} />
-            <Fact label="Balance" value={money(status.balance, currency)} />
-            <Fact label="Trades" value={String(status.total_trades)} />
-            <Fact label="Last sync" value={status.last_sync_at ? relative(status.last_sync_at) : 'never'} />
-          </div>
-        )}
-
-        <Field
-          label="How deals reach TradeZulu"
-          hint="A terminal is started for your account automatically and its Expert Advisor reports in. Manual import is there for history from anywhere else."
-        >
-          <SegmentedControl
-            value={settings.mt5.sync_mode}
-            onChange={(value) => void apply({ mt5: { sync_mode: value } })}
-            options={[
-              { value: 'ea', label: 'Automatic' },
-              { value: 'off', label: 'Manual import' },
-            ]}
-          />
-        </Field>
-        {settings.mt5.sync_mode === 'ea' && (
-          <div className="mt-4 space-y-4">
-            <MT5Account status={status} />
-
-            <Toggle
-              label="Refresh automatically while the journal is open"
-              checked={settings.mt5.auto_sync_on_load}
-              onChange={(value) => void apply({ mt5: { auto_sync_on_load: value } })}
-            />
-
-            {status?.connected ? (
-              <p className="flex items-center gap-1.5 text-sm text-[var(--tz-gain-text)]">
-                <Check size={14} /> Terminal is running and logged in.
-              </p>
-            ) : status?.message ? (
-              <p className="text-sm text-[var(--tz-text-muted)]">{status.message}</p>
-            ) : null}
-
-            {system && !system.ingest_token_configured && (
-              <p className="flex items-center gap-1.5 text-sm text-[var(--tz-loss-text)]">
-                <AlertTriangle size={14} /> TZ_INGEST_TOKEN is not set on the server, so the
-                terminal cannot authenticate yet.
-              </p>
-            )}
-          </div>
-        )}
-      </Card>
-
       <Card>
         <CardHeader
           title="Import a file"
@@ -736,7 +666,17 @@ function SyncSection() {
           </p>
         )}
       </Card>
+    </div>
+  )
+}
 
+/* --------------------------------------------------------------------- */
+
+function ChartsSection() {
+  const { settings } = useSettings()
+  const { apply } = useSaver()
+  return (
+    <div className="space-y-4">
       <Card>
         <CardHeader title="Charts" />
         <div className="grid gap-4 sm:grid-cols-2">
@@ -990,77 +930,6 @@ function TagsSection() {
         </div>
       )}
     </Card>
-  )
-}
-
-/* --------------------------------------------------------------------- */
-
-function AccountSection() {
-  const queryClient = useQueryClient()
-  const { currency } = useSettings()
-  const { data: accounts = [], isLoading } = useQuery({
-    queryKey: ['accounts'],
-    queryFn: () => api.get<Account[]>('/accounts'),
-  })
-
-  const update = useMutation({
-    mutationFn: ({ id, patch }: { id: number; patch: Partial<Account> }) =>
-      api.patch<Account>(`/accounts/${id}`, patch),
-    onSuccess: () => void queryClient.invalidateQueries(),
-  })
-
-  if (isLoading) return <Skeleton className="h-48" />
-
-  return (
-    <div className="space-y-4">
-      {accounts.map((account) => (
-        <Card key={account.id}>
-          <CardHeader
-            title={account.name || `Account ${account.login}`}
-            action={
-              account.is_default ? (
-                <span className="tz-chip bg-zulu-500/15 text-zulu-400">Default</span>
-              ) : (
-                <Button onClick={() => update.mutate({ id: account.id, patch: { is_default: true } })}>
-                  Make default
-                </Button>
-              )
-            }
-          />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Display name">
-              <input
-                className="tz-input"
-                defaultValue={account.name}
-                onBlur={(event) =>
-                  update.mutate({ id: account.id, patch: { name: event.target.value } })
-                }
-              />
-            </Field>
-            <Field
-              label={`Starting balance (${currency})`}
-              hint="The deposit this account began with. Drawdown percentages and percentage risk are measured against it."
-            >
-              <NumberField
-                value={account.initial_balance}
-                step={100}
-                onCommit={(value) =>
-                  update.mutate({ id: account.id, patch: { initial_balance: value } })
-                }
-              />
-            </Field>
-          </div>
-          <dl className="mt-4 space-y-1.5 border-t border-[var(--tz-border)] pt-3 text-sm">
-            <Fact inline label="Login" value={account.login} />
-            <Fact inline label="Broker" value={account.broker || '—'} />
-            <Fact inline label="Server" value={account.server || '—'} />
-            <Fact inline label="Currency" value={account.currency} />
-            <Fact inline label="Leverage" value={account.leverage ? `1:${account.leverage}` : '—'} />
-            <Fact inline label="Balance" value={num(account.balance, 2)} />
-          </dl>
-        </Card>
-      ))}
-    </div>
   )
 }
 

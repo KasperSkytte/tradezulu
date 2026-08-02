@@ -6,7 +6,7 @@
  * going live is a separate, deliberate step that says what it is about to do.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -21,11 +21,13 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import { api, ApiError } from '../lib/api'
-import { money } from '../lib/format'
-import type { CopyEvent, SlaveAccount } from '../lib/types'
-import { Button, Card, CardHeader, EmptyState, ErrorState, Skeleton } from '../components/ui'
+import { money, num } from '../lib/format'
+import { useSettings } from '../lib/settings'
+import type { Account, CopyEvent, SlaveAccount } from '../lib/types'
+import { Button, Card, CardHeader, EmptyState, ErrorState, Field, Skeleton } from '../components/ui'
 import { SlaveForm } from '../components/SlaveForm'
 import { CopyActivity } from '../components/CopyActivity'
+import { MT5Connection } from '../components/MT5Connection'
 
 export function AccountsPage() {
   const queryClient = useQueryClient()
@@ -58,6 +60,8 @@ export function AccountsPage() {
 
   return (
     <div className="space-y-5">
+      <MT5Connection />
+
       <Card>
         <CardHeader
           title="Master account"
@@ -68,7 +72,7 @@ export function AccountsPage() {
         ) : (
           <EmptyState
             title="No master account yet"
-            description="Connect one in Settings → MetaTrader 5. Everything else copies from it."
+            description="Enter its credentials above. Everything else copies from it."
           />
         )}
       </Card>
@@ -110,6 +114,8 @@ export function AccountsPage() {
         />
         <CopyActivity events={events.data ?? []} accounts={all} />
       </Card>
+
+      <JournalAccounts />
 
       {(adding || editing) && (
         <SlaveForm
@@ -311,5 +317,135 @@ function Pill({ children, className }: { children: React.ReactNode; className?: 
     >
       {children}
     </span>
+  )
+}
+
+/* --------------------------------------------------------------------- */
+
+function JournalAccounts() {
+  const queryClient = useQueryClient()
+  const { currency } = useSettings()
+  const { data: accounts = [], isLoading } = useQuery({
+    queryKey: ['accounts'],
+    queryFn: () => api.get<Account[]>('/accounts'),
+  })
+
+  const update = useMutation({
+    mutationFn: ({ id, patch }: { id: number; patch: Partial<Account> }) =>
+      api.patch<Account>(`/accounts/${id}`, patch),
+    onSuccess: () => void queryClient.invalidateQueries(),
+  })
+
+  if (isLoading) return <Skeleton className="h-48" />
+
+  return (
+    <div className="space-y-4">
+      {accounts.map((account) => (
+        <Card key={account.id}>
+          <CardHeader
+            title={account.name || `Account ${account.login}`}
+            action={
+              account.is_default ? (
+                <span className="tz-chip bg-zulu-500/15 text-zulu-400">Default</span>
+              ) : (
+                <Button onClick={() => update.mutate({ id: account.id, patch: { is_default: true } })}>
+                  Make default
+                </Button>
+              )
+            }
+          />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Display name">
+              <input
+                className="tz-input"
+                defaultValue={account.name}
+                onBlur={(event) =>
+                  update.mutate({ id: account.id, patch: { name: event.target.value } })
+                }
+              />
+            </Field>
+            <Field
+              label={`Starting balance (${currency})`}
+              hint="The deposit this account began with. Drawdown percentages and percentage risk are measured against it."
+            >
+              <NumberField
+                value={account.initial_balance}
+                step={100}
+                onCommit={(value) =>
+                  update.mutate({ id: account.id, patch: { initial_balance: value } })
+                }
+              />
+            </Field>
+          </div>
+          <dl className="mt-4 space-y-1.5 border-t border-[var(--tz-border)] pt-3 text-sm">
+            <Fact inline label="Login" value={account.login} />
+            <Fact inline label="Broker" value={account.broker || '—'} />
+            <Fact inline label="Server" value={account.server || '—'} />
+            <Fact inline label="Currency" value={account.currency} />
+            <Fact inline label="Leverage" value={account.leverage ? `1:${account.leverage}` : '—'} />
+            <Fact inline label="Balance" value={num(account.balance, 2)} />
+          </dl>
+        </Card>
+      ))}
+    </div>
+  )
+}
+
+function Fact({
+  label,
+  value,
+  inline,
+}: {
+  label: string
+  value: string
+  inline?: boolean
+}) {
+  if (inline) {
+    return (
+      <div className="flex justify-between gap-3">
+        <dt className="text-[var(--tz-text-muted)]">{label}</dt>
+        <dd className="truncate font-medium">{value}</dd>
+      </div>
+    )
+  }
+  return (
+    <div>
+      <p className="text-xs text-[var(--tz-text-muted)]">{label}</p>
+      <p className="tabular mt-0.5 font-semibold">{value}</p>
+    </div>
+  )
+}
+
+function NumberField({
+  value,
+  step,
+  disabled,
+  onCommit,
+}: {
+  value: number
+  step: number
+  disabled?: boolean
+  onCommit: (value: number) => void
+}) {
+  const [draft, setDraft] = useState(String(value))
+  useEffect(() => setDraft(String(value)), [value])
+
+  return (
+    <input
+      type="number"
+      step={step}
+      disabled={disabled}
+      className="tz-input disabled:opacity-50"
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => {
+        const parsed = Number(draft)
+        if (Number.isFinite(parsed) && parsed !== value) onCommit(parsed)
+        else setDraft(String(value))
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') event.currentTarget.blur()
+      }}
+    />
   )
 }
