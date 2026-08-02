@@ -135,30 +135,37 @@ def export_csv(
     filters.start, filters.end = range_.start, range_.end
     trades = fetch_trades(db, filters)
 
+    # Which account each trade belongs to. Without it a file covering several
+    # accounts is a pile of numbers with no way to tell them apart -- and this
+    # export covers every account unless one was asked for.
+    accounts = {
+        account.id: (account.name or account.login)
+        for account in db.scalars(select(Account))
+    }
+
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow(
         [
-            "id", "symbol", "direction", "opened_at", "closed_at", "volume",
-            "entry_price", "exit_price", "initial_stop", "initial_target",
-            "gross_profit", "commission", "swap", "net_pnl", "risk_amount",
-            "planned_r", "realized_r", "outcome", "duration_seconds", "setup",
-            "rating", "tags", "notes",
+            "account", "symbol", "direction", "opened_at", "closed_at", "volume",
+            "entry_price", "exit_price", "stop_loss", "take_profit",
+            "gross_profit", "commission", "swap", "net_pnl", "r_multiple",
+            "outcome", "setup", "rating", "tags", "notes",
         ]
     )
     for t in trades:
         writer.writerow(
             [
-                t.id, t.symbol, t.direction,
+                accounts.get(t.account_id, t.account_id),
+                t.symbol, t.direction,
                 t.opened_at.isoformat(), t.closed_at.isoformat() if t.closed_at else "",
                 t.volume, t.entry_price, t.exit_price or "", t.initial_stop or "",
                 t.initial_target or "", round(t.gross_profit, 2), round(t.commission, 2),
                 round(t.swap, 2), round(t.net_pnl, 2),
-                round(t.risk_amount, 2) if t.risk_amount else "",
-                t.planned_r or "", t.realized_r or "", t.outcome,
-                t.duration_seconds or "", t.setup, t.rating or "",
+                t.realized_r if t.realized_r is not None else "", t.outcome,
+                t.setup, t.rating or "",
                 "|".join(tag.name for tag in t.tags),
-                (t.notes or "").replace("\n", " "),
+                (t.notes or "").replace("\n", " ").replace("\r", " "),
             ]
         )
 

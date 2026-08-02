@@ -100,6 +100,67 @@ export function SettingsPage() {
 
 /* --------------------------------------------------------------------- */
 
+/** Exporting the journal.
+ *
+ *  Its own card rather than a button on the import one: they are opposite
+ *  errands, and the export is the one people come looking for. One format --
+ *  CSV opens everywhere and needs nothing installed -- and every account by
+ *  default, since a file missing half the journal is worse than no file.
+ */
+function ExportCard() {
+  const [scope, setScope] = useState('all')
+  const [busy, setBusy] = useState(false)
+  const { data: accounts = [] } = useQuery({
+    queryKey: ['accounts'],
+    queryFn: () => api.get<Account[]>('/accounts'),
+  })
+
+  const download = async () => {
+    setBusy(true)
+    try {
+      const query: Record<string, string> = { period: 'all' }
+      if (scope !== 'all') query.account_id = scope
+      const who = scope === 'all' ? 'all-accounts' : scope
+      await api.download('/trades/export.csv', query, `tradezulu-${who}-trades.csv`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        title="Export trades"
+        hint="Every closed trade as CSV: account, symbol, direction, times, prices, stop and target, costs, net P&L, R, outcome, setup, rating, tags and notes."
+      />
+      <p className="mb-3 text-sm text-[var(--tz-text-muted)]">
+        One row per trade, all of history. Opens in any spreadsheet, and reads back into TradeZulu.
+      </p>
+      <div className="flex flex-wrap items-end gap-3">
+        <Field label="Which account">
+          <select
+            className="tz-input min-w-[14rem]"
+            value={scope}
+            onChange={(event) => setScope(event.target.value)}
+          >
+            <option value="all">All accounts</option>
+            {accounts.map((account) => (
+              <option key={account.id} value={String(account.id)}>
+                {account.name || account.login}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Button variant="primary" icon={<Download size={15} />} loading={busy} onClick={download}>
+          Download CSV
+        </Button>
+      </div>
+    </Card>
+  )
+}
+
+/* --------------------------------------------------------------------- */
+
 function useSaver() {
   const { save } = useSettings()
   const [saved, setSaved] = useState(false)
@@ -610,14 +671,14 @@ function SyncSection() {
           hint="For history the Expert Advisor cannot see, or if you would rather not run one at all."
         />
         <p className="mb-3 text-sm text-[var(--tz-text-muted)]">
-          In MetaTrader 5: <strong>Toolbox → History</strong>, right-click → <strong>Report</strong>{' '}
-          → save as HTML, then drop it here. Plain CSV exports work too, as long as they have symbol,
-          open time and price columns.
+          In MetaTrader 5: <strong>Toolbox → History</strong>, right-click → <strong>Report</strong>,
+          and save as HTML or XLSX — either works. Plain CSV exports are read too, as long as they
+          have symbol, open time and price columns.
         </p>
         <input
           ref={fileInput}
           type="file"
-          accept=".html,.htm,.csv,.txt"
+          accept=".html,.htm,.xlsx,.xlsm,.csv,.txt"
           className="hidden"
           onChange={(event) => {
             const file = event.target.files?.[0]
@@ -634,20 +695,14 @@ function SyncSection() {
           >
             Choose a file
           </Button>
-          <Button
-            icon={<Download size={15} />}
-            onClick={() =>
-              void api.download('/trades/export.csv', { period: 'all' }, 'tradezulu-all-trades.csv')
-            }
-          >
-            Export everything as CSV
-          </Button>
         </div>
         {importResult && (
           <p className="mt-3 text-sm text-[var(--tz-gain-text)]">{importResult}</p>
         )}
         {importError && <p className="mt-3 text-sm text-[var(--tz-loss-text)]">{importError}</p>}
       </Card>
+
+      <ExportCard />
 
       <Card>
         <CardHeader
