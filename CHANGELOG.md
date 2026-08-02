@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.12.0](https://github.com/KasperSkytte/tradezulu/compare/v1.11.0...v1.12.0) (2026-08-02)
+
+
+### Features
+
+* **agent:** set the weekly restart window from the web interface ([7a779aa](https://github.com/KasperSkytte/tradezulu/commit/7a779aa6a0efe5593eb6a5ead11467072b8cfc1f))
+* **charts:** work the TradingView exchange prefix out from the broker ([8cb49ba](https://github.com/KasperSkytte/tradezulu/commit/8cb49ba39714bfe644a540daba0c8b8ac2c5ba54))
+* **dashboard:** show percentages rather than money by default ([1790d1b](https://github.com/KasperSkytte/tradezulu/commit/1790d1b59a1d235bba89f01b3f755ebbc1bde422))
+* **export:** give exporting its own card, covering every account ([0e41785](https://github.com/KasperSkytte/tradezulu/commit/0e41785d9ff40f446c609335f430cdf5dc3252fb))
+* **metrics:** replace drawdown with how even the losses were ([8a72eb2](https://github.com/KasperSkytte/tradezulu/commit/8a72eb2627d0e1164495ec454b70c8705b4a16e3))
+* **risk:** stop inventing risk for trades that never had a stop ([b5bf762](https://github.com/KasperSkytte/tradezulu/commit/b5bf762592175a1c36e0609691ad8191920fa7b6))
+* **tags:** make the tag groups adjustable ([e191812](https://github.com/KasperSkytte/tradezulu/commit/e191812b91d67f0dfad38af0923dd2314e48ad1d))
+
+
+### Bug fixes
+
+* **agent:** measure the Options dialog instead of guessing where it is ([fd9e815](https://github.com/KasperSkytte/tradezulu/commit/fd9e815ae448f0803e2c22941b4ef8e20264bc91))
+* **import:** read MetaTrader reports by layout, and accept the spreadsheet ([1885d77](https://github.com/KasperSkytte/tradezulu/commit/1885d77f32c61ee56ce51ab82dcb07b960adb3bf))
+
+
+### Refactoring
+
+* **ui:** put MetaTrader with the accounts it feeds ([423e3af](https://github.com/KasperSkytte/tradezulu/commit/423e3af700822e75bf9394dc92a5d2697b3f80e4))
+
 ## [1.11.0](https://github.com/KasperSkytte/tradezulu/compare/v1.10.0...v1.11.0) (2026-07-31)
 
 
