@@ -14,6 +14,11 @@ import type { SyncStatus, SystemInfo } from '../lib/types'
 import { Card, CardHeader, Field, SegmentedControl, Toggle } from './ui'
 import { MT5Account } from './MT5Account'
 
+//: Monday first, matching Python's weekday numbering on the provisioner side.
+const DAYS = [
+  'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
+]
+
 export function MT5Connection() {
   const { settings, save, currency } = useSettings()
 
@@ -75,6 +80,45 @@ export function MT5Connection() {
             checked={settings.mt5.auto_sync_on_load}
             onChange={(value) => void save({ mt5: { auto_sync_on_load: value } })}
           />
+
+          {/* MetaTrader installs its own updates on restart, so the terminals
+              are cycled weekly at a quiet hour rather than a broker's new build
+              stopping one mid-week behind a dialog nobody is there to answer. */}
+          <div className="grid gap-4 border-t border-[var(--tz-border)] pt-4 sm:grid-cols-2">
+            <Field
+              label="Restart terminals on"
+              hint="MetaTrader applies its updates when it restarts. Pick an hour you are not trading."
+            >
+              <select
+                className="tz-input"
+                value={String(settings.mt5.restart_weekday ?? 6)}
+                onChange={(event) =>
+                  void save({ mt5: { restart_weekday: Number(event.target.value) } })
+                }
+              >
+                {DAYS.map((day, index) => (
+                  <option key={day} value={String(index)}>
+                    {day}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="At">
+              <select
+                className="tz-input"
+                value={String(settings.mt5.restart_hour ?? 3)}
+                onChange={(event) =>
+                  void save({ mt5: { restart_hour: Number(event.target.value) } })
+                }
+              >
+                {Array.from({ length: 24 }, (_, hour) => (
+                  <option key={hour} value={String(hour)}>
+                    {String(hour).padStart(2, '0')}:00
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
 
           {status?.connected ? (
             <p className="flex items-center gap-1.5 text-sm text-[var(--tz-gain-text)]">

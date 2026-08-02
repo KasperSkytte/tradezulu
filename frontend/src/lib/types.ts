@@ -305,6 +305,10 @@ export interface AppSettings {
   }
   mt5: {
     sync_mode: 'ea' | 'off'
+    /** Weekly restart window so MetaTrader's own updates install quietly.
+     *  Monday=0, matching the provisioner's weekday numbering. */
+    restart_weekday: number
+    restart_hour: number
     auto_sync_on_load: boolean
     auto_sync_min_interval_seconds: number
     history_days_on_full_sync: number

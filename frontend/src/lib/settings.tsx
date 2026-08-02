@@ -38,6 +38,8 @@ const FALLBACK: AppSettings = {
   zulu_score: { weights: {}, targets: {} },
   mt5: {
     sync_mode: 'ea',
+    restart_weekday: 6,
+    restart_hour: 3,
     auto_sync_on_load: true,
     auto_sync_min_interval_seconds: 120,
     history_days_on_full_sync: 730,

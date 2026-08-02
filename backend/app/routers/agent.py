@@ -32,6 +32,7 @@ from ..db import get_db
 from ..deps import require_ingest_auth
 from ..models import Account, CopyEvent
 from ..schemas import AgentCommandResult, AgentPollIn, AgentPollOut
+from ..services.appsettings import get_app_settings
 from ..services.copier.agent import (
     commands_for,
     record_result,
@@ -284,9 +285,16 @@ def terminals(db: Session = Depends(get_db)) -> dict[str, Any]:
             }
         )
 
+    # The weekly restart window, so it can be changed in the web interface
+    # rather than by editing a unit file on the server.
+    config = get_app_settings(db)
     return {
         "callback_url": settings.internal_url.rstrip("/") + "/api",
         "api_key": settings.ingest_token or "",
+        "maintenance": {
+            "weekday": int(config["mt5"].get("restart_weekday", 6)),
+            "hour": int(config["mt5"].get("restart_hour", 3)),
+        },
         "terminals": wanted,
     }
 

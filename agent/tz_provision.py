@@ -58,6 +58,10 @@ class Plan:
     callback_url: str
     api_key: str
     terminals: list[dict]
+    #: When the weekly restart should happen, as the server has it. Kept with
+    #: the plan so the window can be changed in the web interface rather than
+    #: by editing a unit file on the machine.
+    maintenance: dict
 
 
 def fetch_plan(base_url: str, token: str) -> Plan:
@@ -71,6 +75,7 @@ def fetch_plan(base_url: str, token: str) -> Plan:
         callback_url=data.get("callback_url", ""),
         api_key=data.get("api_key", ""),
         terminals=list(data.get("terminals", [])),
+        maintenance=dict(data.get("maintenance") or {}),
     )
 
 
@@ -855,7 +860,11 @@ def main() -> int:
             # and the reconcile that follows is what brings them back. Doing it
             # the other way round would leave everything down until the next
             # cycle.
-            if forced or maintenance_due(args.maintenance_day, args.maintenance_hour):
+            # The server's window wins; the flags remain as a fallback for a
+            # provisioner that cannot reach it, and as an override for testing.
+            weekday = int(plan.maintenance.get("weekday", args.maintenance_day))
+            hour = int(plan.maintenance.get("hour", args.maintenance_hour))
+            if forced or maintenance_due(weekday, hour):
                 forced = False
                 run_maintenance(plan, args.template)
             reconcile(plan, args.template, args.expert)

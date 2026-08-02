@@ -85,6 +85,10 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         # ea  -> a terminal's Expert Advisor pushes to this server
         # off -> manual import only
         "sync_mode": "ea",
+        # When to restart the terminals so MetaTrader's own updates install
+        # during a quiet hour. Monday=0; Sunday at 3am by default.
+        "restart_weekday": 6,
+        "restart_hour": 3,
         "auto_sync_on_load": True,
         "auto_sync_min_interval_seconds": 120,
         "history_days_on_full_sync": 730,
