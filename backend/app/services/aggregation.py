@@ -233,7 +233,19 @@ def effective_net_pnl(trade: Trade, risk_cfg: dict[str, Any]) -> float:
 def compute_risk_amount(
     trade: Trade, risk_cfg: dict[str, Any], account_size: float
 ) -> tuple[float | None, str]:
-    """Return (risk in account currency, how we got there)."""
+    """Return (risk in account currency, how we got there).
+
+    Nothing is assumed. A stop that was actually recorded gives the risk; a
+    trade that never had one gives an R multiple only when the outcome reveals
+    what was at stake, and otherwise gives none at all.
+
+    The asymmetry is the point. A stop attached after entry -- or held in the
+    trader's head -- is invisible here either way, but a trade that *lost* has
+    told you what it was risking: that loss is the risk, so it is -1R by
+    definition. A trade that won has told you nothing. Inventing a number for
+    it, which is what assuming a percentage of the account did, produces an R
+    multiple out of thin air and quietly flatters every average it feeds.
+    """
     if trade.risk_override is not None and trade.risk_override > 0:
         return trade.risk_override, "override"
 
@@ -242,14 +254,11 @@ def compute_risk_amount(
         if distance > 0:
             return distance * trade.value_per_unit * trade.volume, "stop"
 
-    mode = risk_cfg.get("fallback_risk_mode", "percent_of_balance")
-    if mode == "fixed_amount":
-        amount = float(risk_cfg.get("fixed_risk_amount") or 0)
-        return (amount, "fixed") if amount > 0 else (None, "none")
-    if mode == "percent_of_balance":
-        pct = float(risk_cfg.get("risk_percent") or 0)
-        amount = account_size * pct / 100.0
-        return (amount, "percent") if amount > 0 else (None, "none")
+    if trade.closed_at is not None:
+        result = effective_net_pnl(trade, risk_cfg)
+        if result < 0:
+            return abs(result), "loss"
+
     return None, "none"
 
 

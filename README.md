@@ -94,7 +94,6 @@ drops to the figures that matter, and the trade list becomes cards rather than
 a table you have to pan across.
 
 ## Connect MetaTrader 5
-I have tried for a very long time to get metatrader5 to work properly and communicate over IPC or API within a container, but to no avail. So for now all terminals just run on the host through Wine. 
 
 **Settings → MetaTrader 5**, three fields:
 

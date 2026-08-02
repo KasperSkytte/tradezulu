@@ -375,45 +375,9 @@ function RiskSection() {
 
       <Card>
         <CardHeader
-          title="Risk per trade"
-          hint="R is money risked. When MetaTrader reports the stop loss on the entry order, TradeZulu uses it; these settings decide what happens when it does not."
+          title="Costs and R"
+          hint="R is money risked. It comes from the stop MetaTrader recorded on the entry order; a trade opened without one has an R only if it lost, because the loss is what it turned out to be risking."
         />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="When no stop loss was recorded" className="sm:col-span-2">
-            <select
-              className="tz-input"
-              value={risk.fallback_risk_mode}
-              onChange={(event) =>
-                void apply({
-                  risk: { fallback_risk_mode: event.target.value as typeof risk.fallback_risk_mode },
-                })
-              }
-            >
-              <option value="percent_of_balance">Assume a percentage of the account</option>
-              <option value="fixed_amount">Assume a fixed amount</option>
-              <option value="none">Leave the trade without an R multiple</option>
-            </select>
-          </Field>
-
-          <Field label="Assumed risk (% of account)">
-            <NumberField
-              value={risk.risk_percent}
-              step={0.05}
-              disabled={risk.fallback_risk_mode !== 'percent_of_balance'}
-              onCommit={(value) => void apply({ risk: { risk_percent: value } })}
-            />
-          </Field>
-          <Field label={`Assumed risk (${currency})`}>
-            <NumberField
-              value={risk.fixed_risk_amount}
-              step={5}
-              disabled={risk.fallback_risk_mode !== 'fixed_amount'}
-              onCommit={(value) => void apply({ risk: { fixed_risk_amount: value } })}
-            />
-          </Field>
-
-        </div>
-
         <div className="mt-2 border-t border-[var(--tz-border)] pt-2">
           <Toggle
             label="Include commission in P&L"

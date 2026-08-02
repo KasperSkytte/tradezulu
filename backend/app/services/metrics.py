@@ -435,6 +435,12 @@ def summarize(
             "breakevens": len(breakevens),
             "open": len(sets.open_trades),
             "excluded": len(sets.excluded),
+            # Worth watching rather than merely counting: a position opened
+            # with no stop recorded is one whose risk was never defined. Their
+            # winners carry no R at all -- nothing says what was at stake --
+            # so a rising number here also means the R figures describe less
+            # and less of what was actually traded.
+            "no_stop": sum(1 for t in sets.all_closed if not t.initial_stop),
         },
         "net_pnl": _r(net_pnl),
         "scored_net_pnl": _r(scored_net),

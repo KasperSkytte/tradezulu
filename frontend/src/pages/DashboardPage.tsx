@@ -289,6 +289,25 @@ export function DashboardPage() {
               hint="Like Sharpe, but only downside volatility counts against you."
               value={summary.sortino === null && summary.single_account === false ? <PerAccountOnly /> : num(summary.sortino, 2)}
             />
+            {/* A position opened with no stop had no defined risk. Its
+                winners carry no R at all, so a rising number here also means
+                the R figures below describe less of what was traded. */}
+            <Row
+              label="Trades without a stop"
+              hint="Opened with no stop loss recorded. Their losses count as -1R, since the loss is what they turned out to be risking; their winners have no R, because nothing says what was at stake."
+              value={
+                summary.counts.no_stop ? (
+                  <span className="text-[var(--tz-loss-text)]">
+                    {summary.counts.no_stop}
+                    <span className="ml-1 text-[var(--tz-text-muted)]">
+                      of {summary.counts.total}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-[var(--tz-text-faint)]">none</span>
+                )
+              }
+            />
             <Row
               label="Consistency"
               hint="100% means profit was spread evenly across winning days; 0% means one day carried everything."

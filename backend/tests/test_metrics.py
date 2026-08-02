@@ -109,6 +109,8 @@ class TestSummary:
         assert s["counts"] == {
             "total": 5, "scored": 4, "wins": 2, "losses": 2,
             "breakevens": 1, "open": 0, "excluded": 0,
+            # These fixtures carry no stop; the count is there to be noticed.
+            "no_stop": 5,
         }
         assert s["win_rate"] == 50.0
         assert s["net_pnl"] == 305.0

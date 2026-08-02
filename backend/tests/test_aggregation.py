@@ -13,6 +13,7 @@ from app.services.aggregation import (
     classify_outcome,
     compute_derived,
     compute_risk_amount,
+    effective_net_pnl,
     rebuild_trades,
     upsert_deals,
 )
@@ -187,18 +188,27 @@ class TestRisk:
         assert risk == pytest.approx(75.0)
         assert source == "override"
 
-    def test_percent_fallback_when_no_stop(self):
-        trade = make_trade(initial_stop=None)
+    def test_a_losing_trade_without_a_stop_risked_its_loss(self):
+        """It told you what was at stake by losing it."""
+        trade = make_trade(initial_stop=None, gross_profit=-120.0)
         risk, source = compute_risk_amount(trade, RISK, 20_000.0)
-        assert risk == pytest.approx(200.0)  # 1% of 20k
-        assert source == "percent"
+        assert risk == pytest.approx(abs(effective_net_pnl(trade, RISK)))
+        assert source == "loss"
 
-    def test_fixed_fallback(self):
-        cfg = {**RISK, "fallback_risk_mode": "fixed_amount", "fixed_risk_amount": 42.0}
-        trade = make_trade(initial_stop=None)
-        risk, source = compute_risk_amount(trade, cfg, 20_000.0)
-        assert risk == pytest.approx(42.0)
-        assert source == "fixed"
+    def test_a_winning_trade_without_a_stop_has_no_known_risk(self):
+        """Nothing in the record says what it stood to lose.
+
+        Assuming a percentage of the account, which is what this used to do,
+        invents an R multiple and flatters every average built on it.
+        """
+        trade = make_trade(initial_stop=None, gross_profit=300.0)
+        risk, source = compute_risk_amount(trade, RISK, 20_000.0)
+        assert risk is None
+        assert source == "none"
+
+    def test_an_open_trade_without_a_stop_has_no_risk_either(self):
+        trade = make_trade(initial_stop=None, closed_at=None)
+        assert compute_risk_amount(trade, RISK, 20_000.0)[0] is None
 
 
 class TestDerived:

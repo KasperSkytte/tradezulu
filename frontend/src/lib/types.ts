@@ -150,6 +150,9 @@ export interface Summary {
     breakevens: number
     open: number
     excluded: number
+    /** Closed trades opened with no stop recorded -- a warning sign, and the
+     *  reason some trades carry no R. */
+    no_stop?: number
   }
   net_pnl: number | null
   scored_net_pnl: number | null
