@@ -30,7 +30,7 @@ import type {
 } from 'lightweight-charts'
 import { CandlestickChart, ExternalLink } from 'lucide-react'
 import { api } from '../lib/api'
-import { useSettings } from '../lib/settings'
+import { useIsDark, useSettings } from '../lib/settings'
 import { price } from '../lib/format'
 import type { Account, BrokerList, CandleResponse, TradeDetail } from '../lib/types'
 import { EmptyState, SegmentedControl, Skeleton } from './ui'
@@ -302,6 +302,7 @@ function Legend({ color, label }: { color: string; label: string }) {
 function TradingViewChart({ trade, timeframe }: { trade: TradeDetail; timeframe: string }) {
   const container = useRef<HTMLDivElement>(null)
   const { settings } = useSettings()
+  const dark = useIsDark()
 
   // Which exchange TradingView should look the symbol up on. Nobody should
   // have to know that a Vantage feed is "VANTAGE:", so it is worked out from
@@ -340,7 +341,6 @@ function TradingViewChart({ trade, timeframe }: { trade: TradeDetail; timeframe:
     if (!element) return
     element.innerHTML = ''
 
-    const dark = document.documentElement.classList.contains('dark')
     const widget = document.createElement('div')
     widget.className = 'tradingview-widget-container__widget'
     widget.style.height = '100%'
@@ -372,7 +372,7 @@ function TradingViewChart({ trade, timeframe }: { trade: TradeDetail; timeframe:
     return () => {
       element.innerHTML = ''
     }
-  }, [symbol, timeframe, settings.general.timezone])
+  }, [symbol, timeframe, settings.general.timezone, dark])
 
   return (
     <div>

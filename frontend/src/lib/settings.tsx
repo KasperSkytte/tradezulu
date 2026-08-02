@@ -36,6 +36,10 @@ const FALLBACK: AppSettings = {
     min_trades_for_score: 10,
   },
   zulu_score: { weights: {}, targets: {} },
+  news: {
+    countries: ['us'],
+    importance: 1,
+  },
   tags: {
     categories: [
       { value: 'setup', label: 'Setup' },
@@ -168,4 +172,21 @@ export function useTagCategories(): { value: string; label: string }[] {
   const configured = settings.tags?.categories ?? []
   return [...configured.filter((c) => c.value && c.value !== 'custom'),
           { value: 'custom', label: 'Other' }]
+}
+
+/** Whether the interface is currently dark.
+ *
+ *  Read from the setting rather than from the html class, because an embedded
+ *  widget is built inside an effect that can run before the class is applied --
+ *  and, reading the DOM, would never re-run when the theme changed. It would
+ *  come up light on a dark page and stay that way until reload.
+ */
+export function useIsDark(): boolean {
+  const { settings } = useSettings()
+  const theme = settings.general.theme
+  if (theme === 'system') {
+    return typeof window !== 'undefined'
+      && window.matchMedia('(prefers-color-scheme: dark)').matches
+  }
+  return theme === 'dark'
 }

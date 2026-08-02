@@ -308,6 +308,12 @@ export interface AppSettings {
     weights: Record<string, number>
     targets: Record<string, number>
   }
+  news: {
+    /** ISO country codes shown in the economic calendar. */
+    countries: string[]
+    /** 1 high impact only, 0 medium and up, -1 everything. */
+    importance: number
+  }
   tags: {
     /** Groups the tag list is organised into. "Other" is always available for
      *  anything that does not fit, and is not stored here. */

@@ -279,6 +279,41 @@ function GeneralSection() {
         </Field>
       </div>
 
+      <div className="mt-4 grid gap-4 border-t border-[var(--tz-border)] pt-4 sm:grid-cols-2">
+        <Field
+          label="Economic calendar: countries"
+          hint="Comma-separated country codes — us, eu, gb, jp. The dollar alone is the default, since that is what moves most instruments."
+        >
+          <input
+            className="tz-input"
+            defaultValue={(settings.news?.countries ?? ['us']).join(', ')}
+            onBlur={(event) =>
+              void apply({
+                news: {
+                  countries: event.target.value
+                    .split(/[\s,]+/)
+                    .map((code) => code.trim().toLowerCase())
+                    .filter(Boolean),
+                },
+              })
+            }
+          />
+        </Field>
+        <Field label="Economic calendar: impact">
+          <select
+            className="tz-input"
+            value={String(settings.news?.importance ?? 1)}
+            onChange={(event) =>
+              void apply({ news: { importance: Number(event.target.value) } })
+            }
+          >
+            <option value="1">High impact only</option>
+            <option value="0">Medium and high</option>
+            <option value="-1">Everything</option>
+          </select>
+        </Field>
+      </div>
+
       <div className="mt-4 border-t border-[var(--tz-border)] pt-2">
         <Toggle
           label="Show currency amounts"

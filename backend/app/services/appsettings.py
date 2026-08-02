@@ -84,6 +84,13 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # Tags are grouped so a long list stays navigable. The three defaults are
     # the ones that earn their place -- what you were trading, what you got
     # wrong, and what you were feeling -- but they are only defaults.
+    # The economic calendar. High-impact dollar releases only by default: a
+    # calendar showing forty entries a day is one nobody reads, which is worse
+    # than not having one because it looks like cover.
+    "news": {
+        "countries": ["us"],
+        "importance": 1,  # 1 high, 0 medium and up, -1 everything
+    },
     "tags": {
         "categories": [
             {"value": "setup", "label": "Setup"},
