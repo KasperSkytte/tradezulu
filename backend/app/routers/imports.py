@@ -16,7 +16,11 @@ from ..services.aggregation import (
     compute_derived,
     resolve_account_size,
 )
-from ..services.importers import parse_mt5_html_report, parse_trades_csv
+from ..services.importers import (
+    parse_mt5_html_report,
+    parse_mt5_xlsx_report,
+    parse_trades_csv,
+)
 
 router = APIRouter(prefix="/import", tags=["import"])
 
@@ -36,30 +40,45 @@ async def import_file(
     if len(raw) > MAX_UPLOAD_BYTES:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "File is too large")
 
-    try:
-        content = raw.decode("utf-8")
-    except UnicodeDecodeError:
-        content = raw.decode("utf-16", errors="replace")
-
     name = (file.filename or "").lower()
     account_info: dict[str, Any] = {}
-    if name.endswith((".html", ".htm")) or "<table" in content[:8000].lower():
-        parsed = parse_mt5_html_report(content)
-        positions = parsed["positions"]
-        account_info = parsed["account"]
-        kind = "mt5_html"
-    else:
+
+    # A spreadsheet is a zip, so it has to be recognised before anything tries
+    # to read it as text -- decoding one produces mojibake that matches no
+    # parser and reports "no trades found" for a perfectly good file.
+    if name.endswith((".xlsx", ".xlsm")) or raw[:2] == b"PK":
         try:
-            positions = parse_trades_csv(content)
+            parsed = parse_mt5_xlsx_report(raw)
         except ValueError as exc:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
-        kind = "csv"
+        positions = parsed["positions"]
+        account_info = parsed["account"]
+        kind = "mt5_xlsx"
+    else:
+        try:
+            content = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            # MetaTrader writes its HTML report as UTF-16.
+            content = raw.decode("utf-16", errors="replace")
+
+        if name.endswith((".html", ".htm")) or "<table" in content[:8000].lower():
+            parsed = parse_mt5_html_report(content)
+            positions = parsed["positions"]
+            account_info = parsed["account"]
+            kind = "mt5_html"
+        else:
+            try:
+                positions = parse_trades_csv(content)
+            except ValueError as exc:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+            kind = "csv"
 
     if not positions:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            "No trades were found in that file. For MetaTrader 5 use History -> Report -> "
-            "save as HTML, or export a CSV with at least symbol, open time and price columns.",
+            "No trades were found in that file. For MetaTrader 5 use History -> Report and "
+            "save as HTML or XLSX, or export a CSV with at least symbol, open time and "
+            "price columns.",
         )
 
     if dry_run:
