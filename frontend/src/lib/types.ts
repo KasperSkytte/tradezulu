@@ -481,6 +481,16 @@ export interface Broker {
   servers: string[]
 }
 
+export interface Broker {
+  key: string
+  label: string
+  servers: string[]
+  /** TradingView's exchange prefix for this broker's feed. */
+  tradingview_prefix?: string
+  /** Substrings that identify the broker in a server or company name. */
+  matches?: string[]
+}
+
 export interface BrokerList {
   brokers: Broker[]
 }

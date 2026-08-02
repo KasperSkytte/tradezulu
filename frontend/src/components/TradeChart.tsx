@@ -32,7 +32,7 @@ import { CandlestickChart, ExternalLink } from 'lucide-react'
 import { api } from '../lib/api'
 import { useSettings } from '../lib/settings'
 import { price } from '../lib/format'
-import type { CandleResponse, TradeDetail } from '../lib/types'
+import type { Account, BrokerList, CandleResponse, TradeDetail } from '../lib/types'
 import { EmptyState, SegmentedControl, Skeleton } from './ui'
 
 const TIMEFRAMES = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1']
@@ -303,13 +303,37 @@ function TradingViewChart({ trade, timeframe }: { trade: TradeDetail; timeframe:
   const container = useRef<HTMLDivElement>(null)
   const { settings } = useSettings()
 
+  // Which exchange TradingView should look the symbol up on. Nobody should
+  // have to know that a Vantage feed is "VANTAGE:", so it is worked out from
+  // the broker the account is with -- and a prefix set by hand still wins,
+  // because a broker can be on a feed the list has not heard of.
+  const { data: brokerList } = useQuery({
+    queryKey: ['mt5-brokers'],
+    queryFn: () => api.get<BrokerList>('/mt5/brokers'),
+    staleTime: 60 * 60 * 1000,
+  })
+  const { data: accounts = [] } = useQuery({
+    queryKey: ['accounts'],
+    queryFn: () => api.get<Account[]>('/accounts'),
+    staleTime: 300_000,
+  })
+  const detected = (() => {
+    const account = accounts.find((a) => a.id === trade.account_id)
+    const haystack = `${account?.broker ?? ''} ${account?.server ?? ''}`.toLowerCase()
+    const broker = (brokerList?.brokers ?? []).find((b) =>
+      (b.matches ?? []).some((m) => m && haystack.includes(m.toLowerCase())),
+    )
+    return broker?.tradingview_prefix ?? ''
+  })()
+
   // Brokers decorate their symbols -- XAUUSD+, EURUSD.r, US30cash -- and
   // TradingView knows none of those, so the widget silently shows nothing.
   // An explicit mapping still wins; this is only for the common case of a
   // suffix bolted onto an otherwise ordinary ticker.
   const bare = trade.symbol.replace(/[^A-Z0-9]+$/, '') || trade.symbol
   const mapped = settings.charts.symbol_map[trade.symbol] ?? settings.charts.symbol_map[bare]
-  const symbol = mapped || `${settings.charts.tradingview_prefix}${bare}`
+  const prefix = settings.charts.tradingview_prefix || detected
+  const symbol = mapped || `${prefix}${bare}`
 
   useEffect(() => {
     const element = container.current

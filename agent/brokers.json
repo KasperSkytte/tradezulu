@@ -57,7 +57,8 @@
       "VantageMarkets-Live 19",
       "VantageMarkets-Live 21",
       "VantageMarkets-Demo"
-    ]
+    ],
+    "tradingview_prefix": "VANTAGE:"
   },
   "falcon": {
     "label": "Falcon Markets",
@@ -68,12 +69,14 @@
     "_entity": "Falcon Markets Ltd. -- MetaQuotes id FalconMarkets",
     "servers": [
       "FalconMarkets-Server"
-    ]
+    ],
+    "tradingview_prefix": "FALCON:"
   },
   "default": {
     "label": "Other broker",
     "installer": "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe",
     "matches": [],
-    "servers": []
+    "servers": [],
+    "tradingview_prefix": ""
   }
 }

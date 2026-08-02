@@ -55,6 +55,10 @@ def list_brokers() -> list[dict[str, Any]]:
             "key": key,
             "label": str(entry.get("label") or key),
             "servers": [str(s) for s in entry.get("servers", []) if s],
+            # TradingView's exchange prefix for this broker's feed, so a chart
+            # resolves without anyone having to know that Vantage is VANTAGE:.
+            "tradingview_prefix": str(entry.get("tradingview_prefix") or ""),
+            "matches": [str(m) for m in entry.get("matches", []) if m],
         }
         for key, entry in _load().items()
     ]

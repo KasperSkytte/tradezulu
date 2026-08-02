@@ -686,12 +686,12 @@ function ChartsSection() {
           </Field>
           <Field
             label="TradingView exchange prefix"
-            hint="For example OANDA: or FX: — prepended to your broker's symbol."
+            hint="Worked out from your broker automatically — Vantage charts resolve as VANTAGE:. Set this only to override that, for a feed the list does not know."
             className="sm:col-span-2"
           >
             <input
               className="tz-input"
-              placeholder="OANDA:"
+              placeholder="automatic"
               defaultValue={settings.charts.tradingview_prefix}
               onBlur={(event) =>
                 void apply({ charts: { tradingview_prefix: event.target.value } })
