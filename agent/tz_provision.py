@@ -501,29 +501,125 @@ def allow_webrequest(login: str, url: str) -> bool:
         log.warning("no terminal window for %s yet; will retry", login)
         return False
 
+    before = _windows(env)
     subprocess.run(["xdotool", "windowactivate", window], env=env, capture_output=True)
     time.sleep(2)
     subprocess.run(["xdotool", "key", "--window", window, "ctrl+o"], env=env, capture_output=True)
-    time.sleep(4)
 
-    # The Options dialog opens on whichever tab was last used, and it is the
-    # Experts tab that carries the list. Clicking it by name is more robust
-    # than counting tab stops, which differ between terminal builds.
-    subprocess.run(["xdotool", "mousemove", "384", "94", "click", "1"], env=env, capture_output=True)
+    dialog = _await_new_window(env, before)
+    if dialog is None:
+        log.warning("the Options dialog did not open for %s; will retry", login)
+        return False
+
+    box = _geometry(env, dialog)
+    if box is None:
+        log.warning("could not measure the Options dialog for %s; will retry", login)
+        return False
+    left, top, width, height = box
+
+    def click(fx: float, fy: float, repeat: int = 1) -> None:
+        """Click a point given as a fraction of the dialog, not of the screen."""
+        args = ["xdotool", "mousemove", str(left + int(width * fx)), str(top + int(height * fy))]
+        if repeat > 1:
+            args += ["click", "--repeat", str(repeat), "1"]
+        else:
+            args += ["click", "1"]
+        subprocess.run(args, env=env, capture_output=True)
+
+    # Measured against the dialog itself rather than the screen. The dialog is
+    # a fixed 620x389 and opens wherever the window manager puts it, so screen
+    # coordinates were only ever right for the position it happened to open at
+    # while they were written -- one of the old ones landed outside the dialog
+    # altogether.
+    click(0.26, 0.04)          # Experts tab
     time.sleep(1)
-    subprocess.run(
-        ["xdotool", "mousemove", "405", "552", "click", "--repeat", "2", "1"],
-        env=env, capture_output=True,
-    )
+    click(0.24, 0.67, repeat=2)  # the "add new URL" row, to start editing
     time.sleep(2)
     subprocess.run(["xdotool", "type", "--delay", "60", url], env=env, capture_output=True)
     time.sleep(1)
     subprocess.run(["xdotool", "key", "Return"], env=env, capture_output=True)
     time.sleep(1)
-    subprocess.run(["xdotool", "mousemove", "896", "766", "click", "1"], env=env, capture_output=True)
+    click(0.66, 0.95)          # OK
     time.sleep(2)
-    log.info("allowed WebRequest to %s for %s", url, login)
+
+    # The dialog closing is the only part of this that can be checked from
+    # outside: if it is still up, a click missed and nothing was saved.
+    if dialog in _windows(env):
+        log.warning(
+            "the Options dialog for %s did not close, so the WebRequest entry "
+            "was probably not saved; will retry",
+            login,
+        )
+        subprocess.run(["xdotool", "key", "--window", dialog, "Escape"], env=env, capture_output=True)
+        return False
+
+    log.info("entered %s into the WebRequest list for %s", url, login)
     return True
+
+
+#: How many times to drive the Options dialog before giving up and saying so.
+#: Each attempt costs a few seconds and adds a list entry if it half-worked, so
+#: this is deliberately small -- the point is to stop quietly retrying forever.
+WEBREQUEST_ATTEMPTS = 3
+
+
+def _bump_attempts(bottle: Path) -> int:
+    """Count the tries, so failure escalates instead of repeating in silence."""
+    counter = bottle / ".tz-webrequest-attempts"
+    try:
+        attempts = int(counter.read_text().strip() or 0)
+    except (OSError, ValueError):
+        attempts = 0
+    attempts += 1
+    with suppress(OSError):
+        counter.write_text(str(attempts))
+    return attempts
+
+
+def _windows(env: dict[str, str]) -> set[str]:
+    result = subprocess.run(
+        ["xdotool", "search", "--name", "."], env=env, capture_output=True, text=True
+    )
+    return set(result.stdout.split())
+
+
+def _await_new_window(
+    env: dict[str, str], before: set[str], timeout: float = 12.0
+) -> str | None:
+    """The window that appeared, waited for rather than slept through.
+
+    Found by being new rather than by its title: the dialog is called
+    "Options" in English and something else in every other language, and a
+    fixed sleep is either too short on a loaded machine or wasted time on a
+    quick one.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        time.sleep(0.5)
+        new = _windows(env) - before
+        for candidate in new:
+            box = _geometry(env, candidate)
+            # Skip Wine's invisible helpers -- input methods and the like,
+            # which are a pixel or two square.
+            if box and box[2] > 200 and box[3] > 150:
+                return candidate
+    return None
+
+
+def _geometry(env: dict[str, str], window: str) -> tuple[int, int, int, int] | None:
+    result = subprocess.run(
+        ["xdotool", "getwindowgeometry", "--shell", window],
+        env=env, capture_output=True, text=True,
+    )
+    values: dict[str, int] = {}
+    for line in result.stdout.splitlines():
+        key, _, value = line.partition("=")
+        if value.strip().lstrip("-").isdigit():
+            values[key.strip()] = int(value)
+    try:
+        return values["X"], values["Y"], values["WIDTH"], values["HEIGHT"]
+    except KeyError:
+        return None
 
 
 # --- reconcile ---------------------------------------------------------------
@@ -570,9 +666,44 @@ def reconcile(plan: Plan, template: Path, expert: Path) -> None:
         if (bottle / ".tz-permissions-set").exists():
             continue
 
+        # The permission is confirmed by the Expert Advisor reaching the
+        # server, never by the clicks appearing to work. Driving a dialog by
+        # coordinates can miss and report success either way, which is the one
+        # failure worth designing against: a terminal that is up, logged in and
+        # silently unable to reach TradeZulu looks exactly like a healthy one.
         marker = bottle / ".tz-webrequest-allowed"
-        if not marker.exists() and allow_webrequest(spec["login"], plan.callback_url):
-            marker.touch()
+        if spec.get("last_seen"):
+            if not marker.exists():
+                log.info("%s is reporting in; WebRequest permission confirmed", spec["login"])
+                marker.touch()
+            continue
+
+        if marker.exists():
+            # It worked once and has stopped. Re-driving the dialog would add a
+            # duplicate entry and fix nothing, so say so instead.
+            log.warning(
+                "%s has not reported in since its WebRequest permission was "
+                "granted. Check the terminal is logged in: agent/tz-view.sh list",
+                spec["login"],
+            )
+            continue
+
+        attempts = _bump_attempts(bottle)
+        if attempts > WEBREQUEST_ATTEMPTS:
+            log.error(
+                "%s still cannot reach TradeZulu after %d attempts at its "
+                "WebRequest permission. Its Expert Advisor is running and "
+                "sending nothing. Add %s by hand in the terminal: Tools -> "
+                "Options -> Expert Advisors -> Allow WebRequest for listed URL.",
+                spec["login"], attempts - 1, plan.callback_url,
+            )
+            continue
+
+        log.info(
+            "%s has not reported in; granting WebRequest permission (attempt %d)",
+            spec["login"], attempts,
+        )
+        allow_webrequest(spec["login"], plan.callback_url)
 
 
 # --- weekly restart -----------------------------------------------------------

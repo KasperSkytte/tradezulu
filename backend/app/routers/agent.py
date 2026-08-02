@@ -272,6 +272,15 @@ def terminals(db: Session = Depends(get_db)) -> dict[str, Any]:
                 # and a slave in dry-run has to be connected to report what it
                 # would have done, which is the whole point of dry-run.
                 "enabled": True,
+                # When this account's Expert Advisor last reached us. The
+                # provisioner has no other way to tell a terminal that is
+                # working from one whose WebRequest permission never took: both
+                # look like a running terminal from the outside.
+                "last_seen": (
+                    account.last_sync_at.replace(tzinfo=timezone.utc).isoformat()
+                    if account.last_sync_at
+                    else None
+                ),
             }
         )
 

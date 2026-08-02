@@ -197,6 +197,36 @@ The bridge container has been removed. If it is ever worth retrying, the code is
 in the git history (`git log --diff-filter=D -- mt5-bridge/`) and the list above
 is what not to try first.
 
+## The WebRequest permission
+
+An Expert Advisor may only reach a URL that is on the terminal's allowlist, and
+that list is kept encrypted in MetaTrader's own config -- there is no file to
+write. The only way in is the Options dialog, so the provisioner drives it.
+
+Wine draws the dialog's controls itself, so they are not X windows and cannot
+be found by name; only the dialog as a whole can. The clicks are therefore
+measured, but they are measured **against the dialog**, which is located by
+being the window that appeared and then read for its real geometry. Screen
+coordinates were the previous approach and were wrong the moment the dialog
+opened anywhere else -- on one live terminal the "OK" click landed on *Cancel*,
+discarding the change, and the run reported success.
+
+Nothing reports success on the strength of a click now. The permission counts
+as granted only when that account's Expert Advisor actually reaches the server,
+which the provisioner sees in the plan it already fetches. Until then it
+retries, and after a few attempts it says plainly what to do by hand.
+
+To check the layout after a MetaTrader update, or when a terminal is running
+and sending nothing:
+
+```bash
+./agent/tz-check-dialog.py 22609000
+```
+
+It opens the dialog, reports whether each click still lands inside it, and
+closes it with Escape — it changes nothing, so it is safe on a terminal that is
+trading.
+
 ## Looking at a terminal
 
 The terminals draw on a virtual display (`:77` by default), which is right
