@@ -36,6 +36,13 @@ const FALLBACK: AppSettings = {
     min_trades_for_score: 10,
   },
   zulu_score: { weights: {}, targets: {} },
+  tags: {
+    categories: [
+      { value: 'setup', label: 'Setup' },
+      { value: 'mistake', label: 'Mistake' },
+      { value: 'emotion', label: 'Behaviour' },
+    ],
+  },
   mt5: {
     sync_mode: 'ea',
     restart_weekday: 6,
@@ -147,4 +154,18 @@ export function useSettings(): SettingsState {
   const context = use(SettingsContext)
   if (!context) throw new Error('useSettings must be used inside <SettingsProvider>')
   return context
+}
+
+/** The tag groups, with "Other" appended.
+ *
+ *  Other is not stored: it is where a tag lands when its category is not one of
+ *  the configured ones, which happens whenever a group is renamed or removed
+ *  while tags still point at it. Without it those tags vanish from the menus
+ *  while still being attached to trades.
+ */
+export function useTagCategories(): { value: string; label: string }[] {
+  const { settings } = useSettings()
+  const configured = settings.tags?.categories ?? []
+  return [...configured.filter((c) => c.value && c.value !== 'custom'),
+          { value: 'custom', label: 'Other' }]
 }

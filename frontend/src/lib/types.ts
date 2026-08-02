@@ -308,6 +308,11 @@ export interface AppSettings {
     weights: Record<string, number>
     targets: Record<string, number>
   }
+  tags: {
+    /** Groups the tag list is organised into. "Other" is always available for
+     *  anything that does not fit, and is not stored here. */
+    categories: { value: string; label: string }[]
+  }
   mt5: {
     sync_mode: 'ea' | 'off'
     /** Weekly restart window so MetaTrader's own updates install quietly.

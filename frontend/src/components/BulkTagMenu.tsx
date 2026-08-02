@@ -15,15 +15,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronDown, Tags } from 'lucide-react'
 import clsx from 'clsx'
 import type { Tag } from '../lib/types'
+import { useTagCategories } from '../lib/settings'
 import { Button } from './ui'
-
-/** Order matters: this is the order they appear in the menu. */
-const SECTIONS: { key: Tag['category']; label: string }[] = [
-  { key: 'setup', label: 'Setup' },
-  { key: 'mistake', label: 'Mistakes' },
-  { key: 'emotion', label: 'Behaviour' },
-  { key: 'custom', label: 'Other' },
-]
 
 export function BulkTagMenu({
   tags,
@@ -34,6 +27,7 @@ export function BulkTagMenu({
   onApply: (tagIds: number[]) => void
   pending?: boolean
 }) {
+  const categories = useTagCategories()
   const [open, setOpen] = useState(false)
   const [chosen, setChosen] = useState<Set<number>>(new Set())
   const box = useRef<HTMLDivElement>(null)
@@ -73,9 +67,9 @@ export function BulkTagMenu({
 
   // Sections with nothing in them are not shown: an empty "Mistake" heading
   // reads as something failing to load.
-  const sections = SECTIONS.map((section) => ({
+  const sections = categories.map((section) => ({
     ...section,
-    items: tags.filter((tag) => tag.category === section.key),
+    items: tags.filter((tag) => tag.category === section.value),
   })).filter((section) => section.items.length > 0)
 
   return (
@@ -101,7 +95,7 @@ export function BulkTagMenu({
           )}
 
           {sections.map((section) => (
-            <div key={section.key} className="mb-1 last:mb-0">
+            <div key={section.value} className="mb-1 last:mb-0">
               <p className="px-2 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--tz-text-faint)]">
                 {section.label}
               </p>

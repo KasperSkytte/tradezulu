@@ -81,6 +81,16 @@ DEFAULT_SETTINGS: dict[str, Any] = {
             "consistency": 100.0,  # percent
         },
     },
+    # Tags are grouped so a long list stays navigable. The three defaults are
+    # the ones that earn their place -- what you were trading, what you got
+    # wrong, and what you were feeling -- but they are only defaults.
+    "tags": {
+        "categories": [
+            {"value": "setup", "label": "Setup"},
+            {"value": "mistake", "label": "Mistake"},
+            {"value": "emotion", "label": "Behaviour"},
+        ],
+    },
     "mt5": {
         # ea  -> a terminal's Expert Advisor pushes to this server
         # off -> manual import only

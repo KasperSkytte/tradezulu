@@ -18,7 +18,7 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import { ApiError, api } from '../lib/api'
-import { useSettings } from '../lib/settings'
+import { useSettings, useTagCategories } from '../lib/settings'
 import type { DeepPartial } from '../lib/settings'
 import { PERIOD_OPTIONS } from '../lib/period'
 import type { Account, AppSettings, SystemInfo, Tag } from '../lib/types'
@@ -734,14 +734,83 @@ function Fact({
     </div>
   )
 }
-const TAG_CATEGORIES = [
-  { value: 'setup', label: 'Setup' },
-  { value: 'mistake', label: 'Mistake' },
-  { value: 'emotion', label: 'Behaviour' },
-  { value: 'custom', label: 'Other' },
-]
+/** Editing the groups tags are filed under.
+ *
+ *  The value is what gets stored on a tag, so renaming a group's label is safe
+ *  while changing its value orphans the tags pointing at the old one -- they
+ *  fall back to "Other" rather than disappearing.
+ */
+function TagCategoriesCard() {
+  const { settings, save } = useSettings()
+  const configured = settings.tags?.categories ?? []
+  const [draft, setDraft] = useState('')
+
+  const update = (next: { value: string; label: string }[]) =>
+    void save({ tags: { categories: next } })
+
+  return (
+    <Card>
+      <CardHeader
+        title="Tag groups"
+        hint="How the tag list is organised. Setup, Mistake and Behaviour are only defaults; anything filed under a group you remove shows up under Other."
+      />
+      <div className="space-y-2">
+        {configured.map((category, index) => (
+          <div key={category.value} className="flex items-center gap-2">
+            <input
+              className="tz-input flex-1"
+              defaultValue={category.label}
+              onBlur={(event) => {
+                const label = event.target.value.trim()
+                if (!label || label === category.label) return
+                const next = [...configured]
+                next[index] = { ...category, label }
+                update(next)
+              }}
+            />
+            <code className="w-28 shrink-0 truncate text-xs text-[var(--tz-text-faint)]">
+              {category.value}
+            </code>
+            <button
+              type="button"
+              aria-label={`Remove ${category.label}`}
+              className="text-[var(--tz-text-faint)] hover:text-[var(--tz-loss-text)]"
+              onClick={() => update(configured.filter((_, i) => i !== index))}
+            >
+              <Trash2 size={15} />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-3 flex gap-2">
+        <input
+          className="tz-input flex-1"
+          placeholder="Add a group, e.g. Session"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+        />
+        <Button
+          onClick={() => {
+            const label = draft.trim()
+            if (!label) return
+            // The stored value is derived once and then fixed: tags point at
+            // it, so it must not move when the label is edited later.
+            const value = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 24)
+            if (!value || configured.some((c) => c.value === value)) return
+            update([...configured, { value, label }])
+            setDraft('')
+          }}
+        >
+          Add
+        </Button>
+      </div>
+    </Card>
+  )
+}
 
 function TagsSection() {
+  const TAG_CATEGORIES = useTagCategories()
   const queryClient = useQueryClient()
   const [name, setName] = useState('')
   const [color, setColor] = useState('#7c5cff')
@@ -793,6 +862,9 @@ function TagsSection() {
   })
 
   return (
+    <div className="space-y-4">
+      <TagCategoriesCard />
+
     <Card>
       <CardHeader
         title="Tags"
@@ -900,6 +972,7 @@ function TagsSection() {
         </div>
       )}
     </Card>
+    </div>
   )
 }
 
