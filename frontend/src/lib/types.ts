@@ -94,7 +94,7 @@ export interface ZuluScore {
     win_rate: number | null
     profit_factor: number | null
     avg_win_loss: number | null
-    max_drawdown: number | null
+    loss_consistency: number | null
     recovery_factor: number | null
     consistency: number | null
   }
@@ -182,6 +182,11 @@ export interface Summary {
   avg_risk: number | null
   max_drawdown: number | null
   max_drawdown_pct: number | null
+  /** How far the worst loss ran past a typical one. 1 means every loss was the
+   *  same size. Null when there are too few losses to have a typical one. */
+  worst_loss_multiple: number | null
+  oversized_losses: number
+  oversized_share: number | null
   recovery_factor: number | null
   sharpe: number | null
   sortino: number | null

@@ -115,6 +115,38 @@ def compute_drawdown(
     return max_dd, pct, series
 
 
+def compute_oversize(trades: Sequence[Trade]) -> tuple[float | None, int, float | None]:
+    """How far the biggest losses ran past a typical one.
+
+    This replaces max drawdown as the risk component of the score. A drawdown
+    is a property of an equity curve sampled continuously; built from closed
+    trades it only sees the account at the moments positions happened to end,
+    so a position that ran deeply against you and came back registers as
+    nothing at all. Reporting that as "maximum drawdown" states something the
+    data cannot support.
+
+    What closed trades *can* answer is whether the losses were consistent. A
+    plan sized the same way every time produces losses of roughly one size;
+    the ones that break an account are the outliers, and those are visible
+    here.
+
+    Returns (worst loss as a multiple of the median loss, how many exceeded
+    twice it, the share of losses that did).
+    """
+    losses = [abs(t.net_pnl) for t in trades if t.outcome == "loss" and t.net_pnl < 0]
+    if len(losses) < 3:
+        # A median needs something to be typical of.
+        return None, 0, None
+
+    typical = statistics.median(losses)
+    if typical <= 0:
+        return None, 0, None
+
+    worst = max(losses) / typical
+    oversized = sum(1 for value in losses if value > typical * 2)
+    return worst, oversized, oversized / len(losses) * 100.0
+
+
 def compute_sharpe(
     daily_pnl: Sequence[float],
     account_size: float,
@@ -266,7 +298,7 @@ def zulu_score(
         return {
             "score": 0.0,
             "components": dict.fromkeys(
-                ("win_rate", "profit_factor", "avg_win_loss", "max_drawdown",
+                ("win_rate", "profit_factor", "avg_win_loss", "loss_consistency",
                  "recovery_factor", "consistency")
             ),
             "targets": targets,
@@ -287,14 +319,18 @@ def zulu_score(
     else:
         pf_component = ratio_component(profit_factor, float(targets.get("profit_factor", 2.0)))
 
-    drawdown_pct = summary.get("max_drawdown_pct")
-    dd_target = float(targets.get("max_drawdown", 20.0))
-    if drawdown_pct is None:
-        dd_component = None
-    elif dd_target <= 0:
-        dd_component = 0.0
+    # How far the worst loss ran past a typical one. 1.0 means every loss was
+    # the same size, which is what a plan sized consistently looks like; the
+    # target is how much overshoot still counts as controlled.
+    worst = summary.get("worst_loss_multiple")
+    overshoot_target = float(targets.get("worst_loss_multiple", 3.0))
+    if worst is None:
+        loss_component = None
+    elif overshoot_target <= 1:
+        loss_component = 0.0
     else:
-        dd_component = max(0.0, min(100.0, (1.0 - drawdown_pct / dd_target) * 100.0))
+        over = max(0.0, worst - 1.0) / (overshoot_target - 1.0)
+        loss_component = max(0.0, min(100.0, (1.0 - over) * 100.0))
 
     components = {
         "win_rate": ratio_component(summary.get("win_rate"), float(targets.get("win_rate", 55.0))),
@@ -302,7 +338,7 @@ def zulu_score(
         "avg_win_loss": ratio_component(
             summary.get("payoff_ratio"), float(targets.get("avg_win_loss", 2.0))
         ),
-        "max_drawdown": dd_component,
+        "loss_consistency": loss_component,
         "recovery_factor": ratio_component(
             summary.get("recovery_factor"), float(targets.get("recovery_factor", 3.0))
         ),
@@ -389,6 +425,7 @@ def summarize(
 
     curve = equity_curve(sets.all_closed, account_size)
     max_dd, max_dd_pct, _ = compute_drawdown([t.net_pnl for t in sets.all_closed], account_size)
+    worst_loss_multiple, oversized_losses, oversized_share = compute_oversize(sets.all_closed)
     recovery_factor = (net_pnl / max_dd) if max_dd > 0 and net_pnl > 0 else (0.0 if max_dd > 0 else None)
 
     daily = daily_breakdown(sets.all_closed)
@@ -477,6 +514,11 @@ def summarize(
         "avg_risk": _r(_mean([t.risk_amount for t in sets.all_closed if t.risk_amount])),
         "max_drawdown": _r(max_dd),
         "max_drawdown_pct": _r(max_dd_pct, 2),
+        # What the closed-trade record can actually say about risk taken: how
+        # far the worst loss ran past a typical one, and how many did.
+        "worst_loss_multiple": _r(worst_loss_multiple, 2),
+        "oversized_losses": oversized_losses,
+        "oversized_share": _r(oversized_share, 1),
         "recovery_factor": _r(recovery_factor),
         "sharpe": _r(sharpe),
         "sortino": _r(sortino),
@@ -554,7 +596,7 @@ def _withhold_cross_account(summary: dict[str, Any]) -> None:
     summary["zulu_score"] = {
         "score": None,
         "components": dict.fromkeys(
-            ("win_rate", "profit_factor", "avg_win_loss", "max_drawdown",
+            ("win_rate", "profit_factor", "avg_win_loss", "loss_consistency",
              "recovery_factor", "consistency")
         ),
         "targets": {},

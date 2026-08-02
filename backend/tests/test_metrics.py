@@ -281,11 +281,12 @@ class TestZuluScore:
     def test_components_are_clamped(self):
         result = zulu_score(
             {"win_rate": 100.0, "profit_factor": 99.0, "payoff_ratio": 10.0,
-             "max_drawdown_pct": 90.0, "recovery_factor": 20.0, "consistency": 100.0},
+             "worst_loss_multiple": 12.0, "recovery_factor": 20.0, "consistency": 100.0},
             SCORE,
         )
         assert result["components"]["win_rate"] == 100.0
-        assert result["components"]["max_drawdown"] == 0.0
+        # A worst loss twelve times a typical one is as bad as the scale goes.
+        assert result["components"]["loss_consistency"] == 0.0
 
     def test_weights_are_respected(self):
         summary = {
@@ -299,14 +300,22 @@ class TestZuluScore:
         }
         assert zulu_score(summary, config)["score"] == 100.0
 
-    def test_missing_drawdown_is_skipped_not_zeroed(self):
+    def test_a_missing_component_is_skipped_not_zeroed(self):
+        """Too few losses to have a typical one; the score uses the rest."""
         summary = {
             "win_rate": 55.0, "profit_factor": 2.0, "payoff_ratio": 2.0,
-            "max_drawdown_pct": None, "recovery_factor": 3.0, "consistency": 100.0,
+            "worst_loss_multiple": None, "recovery_factor": 3.0, "consistency": 100.0,
         }
         result = zulu_score(summary, SCORE)
-        assert result["components"]["max_drawdown"] is None
+        assert result["components"]["loss_consistency"] is None
         assert result["score"] == 100.0
+
+    def test_even_losses_score_full_marks(self):
+        summary = {
+            "win_rate": 55.0, "profit_factor": 2.0, "payoff_ratio": 2.0,
+            "worst_loss_multiple": 1.0, "recovery_factor": 3.0, "consistency": 100.0,
+        }
+        assert zulu_score(summary, SCORE)["components"]["loss_consistency"] == 100.0
 
 
 class TestBreakdowns:
@@ -461,3 +470,45 @@ class TestCrossAccountFigures:
         assert out["account_size"] == 10_000.0
         assert out["max_drawdown"] is not None
         assert out["zulu_score"]["score"] is not None
+
+
+class TestOversizedLosses:
+    """What closed trades can say about risk, in place of a drawdown.
+
+    A drawdown belongs to an equity curve sampled continuously. Built from
+    closed trades it only sees the account when positions happened to end, so a
+    position that ran deep against you and recovered leaves no trace -- and
+    calling the result "maximum drawdown" claims something the data cannot
+    support. Whether the losses were all the same size, it can answer.
+    """
+
+    def test_even_losses_are_a_multiple_of_one(self):
+        from app.services.metrics import compute_oversize
+
+        trades = [trade(-100, day=d) for d in range(1, 6)]
+        worst, count, share = compute_oversize(trades)
+        assert worst == pytest.approx(1.0)
+        assert count == 0
+        assert share == pytest.approx(0.0)
+
+    def test_one_outsized_loss_is_found(self):
+        from app.services.metrics import compute_oversize
+
+        trades = [trade(-100, day=1), trade(-100, day=2), trade(-100, day=3),
+                  trade(-500, day=4)]
+        worst, count, share = compute_oversize(trades)
+        assert worst == pytest.approx(5.0)
+        assert count == 1
+        assert share == pytest.approx(25.0)
+
+    def test_winners_do_not_count(self):
+        from app.services.metrics import compute_oversize
+
+        trades = [trade(-100, day=1), trade(-100, day=2), trade(-100, day=3),
+                  trade(9000, day=4)]
+        assert compute_oversize(trades)[0] == pytest.approx(1.0)
+
+    def test_too_few_losses_to_have_a_typical_one(self):
+        from app.services.metrics import compute_oversize
+
+        assert compute_oversize([trade(-100, day=1)]) == (None, 0, None)

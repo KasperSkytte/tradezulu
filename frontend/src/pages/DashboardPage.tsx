@@ -294,21 +294,44 @@ export function DashboardPage() {
         <Card>
           <CardHeader title="Risk & consistency" />
           <dl className="space-y-2.5 text-sm">
+            {/* Not a drawdown. That belongs to an equity curve sampled
+                continuously; from closed trades it cannot see a position that
+                ran against you and recovered, so reporting one would claim
+                more than the data holds. How even the losses were, it can
+                answer. */}
             <Row
-              label="Max drawdown"
-              hint="Largest peak-to-trough fall in equity across the period."
+              label="Worst loss"
+              hint="The largest loss as a multiple of a typical one. 1.0 means every loss was the same size, which is what consistent sizing looks like. Large multiples are the trades that break accounts."
               value={
-                summary.max_drawdown === null ? (
-                  <PerAccountOnly />
+                summary.worst_loss_multiple == null ? (
+                  <span className="text-[var(--tz-text-faint)]">too few losses</span>
                 ) : (
+                  <span
+                    className={
+                      summary.worst_loss_multiple > 3 ? 'text-[var(--tz-loss-text)]' : undefined
+                    }
+                  >
+                    {num(summary.worst_loss_multiple, 1)}×{' '}
+                    <span className="text-[var(--tz-text-muted)]">typical</span>
+                  </span>
+                )
+              }
+            />
+            <Row
+              label="Oversized losses"
+              hint="Losses more than twice a typical one."
+              value={
+                summary.oversized_losses ? (
                   <span className="text-[var(--tz-loss-text)]">
-                    {cash(-summary.max_drawdown)}
-                    {summary.max_drawdown_pct !== null && (
+                    {summary.oversized_losses}
+                    {summary.oversized_share != null && (
                       <span className="ml-1 text-[var(--tz-text-muted)]">
-                        ({percent(summary.max_drawdown_pct)})
+                        ({percent(summary.oversized_share)})
                       </span>
                     )}
                   </span>
+                ) : (
+                  <span className="text-[var(--tz-text-faint)]">none</span>
                 )
               }
             />

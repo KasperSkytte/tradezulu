@@ -8,7 +8,7 @@ const AXIS_LABELS: Record<string, string> = {
   win_rate: 'Win rate',
   profit_factor: 'Profit factor',
   avg_win_loss: 'Avg win/loss',
-  max_drawdown: 'Drawdown',
+  loss_consistency: 'Even losses',
   recovery_factor: 'Recovery',
   consistency: 'Consistency',
 }
@@ -28,7 +28,7 @@ export function ZuluScoreCard({ score }: { score: ZuluScore }) {
       <Card className="flex flex-col">
         <CardHeader
           title="Zulu Score"
-          hint="Six weighted components, each scored 0-100 against a target you set in Settings: win rate, profit factor, average win/loss, maximum drawdown, recovery factor and consistency."
+          hint="Six weighted components, each scored 0-100 against a target you set in Settings: win rate, profit factor, average win/loss, how even the losses were, recovery factor and consistency."
         />
         <div className="flex flex-1 items-center justify-center px-6 py-12 text-center text-sm text-[var(--tz-text-muted)]">
           The score rates one account. Pick an account above to see it.
@@ -51,7 +51,7 @@ export function ZuluScoreCard({ score }: { score: ZuluScore }) {
     <Card className="flex flex-col">
       <CardHeader
         title="Zulu Score"
-        hint="Six weighted components, each scored 0-100 against a target you set in Settings: win rate, profit factor, average win/loss, maximum drawdown, recovery factor and consistency."
+        hint="Six weighted components, each scored 0-100 against a target you set in Settings: win rate, profit factor, average win/loss, how even the losses were, recovery factor and consistency."
         action={
           <Link
             to="/settings#score"

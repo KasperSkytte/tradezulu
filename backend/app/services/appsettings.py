@@ -67,7 +67,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
             "win_rate": 1.0,
             "profit_factor": 1.0,
             "avg_win_loss": 1.0,
-            "max_drawdown": 1.0,
+            "loss_consistency": 1.0,
             "recovery_factor": 1.0,
             "consistency": 1.0,
         },
@@ -76,7 +76,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
             "win_rate": 55.0,  # percent
             "profit_factor": 2.0,
             "avg_win_loss": 2.0,
-            "max_drawdown": 20.0,  # percent, lower is better
+            "worst_loss_multiple": 3.0,  # the worst loss may be 3x a typical one
             "recovery_factor": 3.0,
             "consistency": 100.0,  # percent
         },
