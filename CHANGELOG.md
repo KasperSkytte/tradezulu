@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.0](https://github.com/KasperSkytte/tradezulu/compare/v1.12.0...v1.13.0) (2026-08-02)
+
+
+### Features
+
+* **dashboard:** add an economic calendar, high-impact dollar news by default ([3a0cded](https://github.com/KasperSkytte/tradezulu/commit/3a0cded947d9045a99ae70d6d2e29ea7f0ffcae9))
+
 ## [1.12.0](https://github.com/KasperSkytte/tradezulu/compare/v1.11.0...v1.12.0) (2026-08-02)
 
 
