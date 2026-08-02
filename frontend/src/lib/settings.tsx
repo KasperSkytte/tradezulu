@@ -15,6 +15,7 @@ const FALLBACK: AppSettings = {
     theme: 'dark',
     accent: 'jade',
     colorblind_mode: false,
+    show_amounts: false,
   },
   risk: {
     breakeven_threshold_r: 0.1,
@@ -55,6 +56,10 @@ interface SettingsState {
   settings: AppSettings
   loading: boolean
   currency: string
+  /** Whether currency figures may be shown. Off by default so a screenshot of
+   *  the dashboard says how the account is doing without saying what it is
+   *  worth. */
+  showAmounts: boolean
   weekStartsOn: 0 | 1
   save: (patch: DeepPartial<AppSettings>) => Promise<AppSettings>
   saving: boolean
@@ -121,6 +126,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       settings,
       loading: isLoading,
       currency: settings.general.currency_symbol || '$',
+      showAmounts: settings.general.show_amounts ?? false,
       weekStartsOn: settings.general.week_starts_on === 'sunday' ? 0 : 1,
       save: (patch) => mutation.mutateAsync(patch),
       saving: mutation.isPending,

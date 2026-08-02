@@ -279,6 +279,7 @@ export interface AppSettings {
     theme: 'dark' | 'light' | 'system'
     accent: string
     colorblind_mode: boolean
+    show_amounts: boolean
   }
   risk: {
     breakeven_threshold_r: number

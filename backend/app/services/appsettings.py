@@ -31,6 +31,10 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         # Swaps the profit/loss green-red pair for a blue-amber pair that
         # stays distinguishable with red-green colour blindness.
         "colorblind_mode": False,
+        # Money is hidden by default so a screenshot of the dashboard can be
+        # shared without showing what the account is worth. Percentages and R
+        # say everything about how it is going and nothing about its size.
+        "show_amounts": False,
     },
     "risk": {
         # Trades whose |realized R| is below this are treated as breakeven.

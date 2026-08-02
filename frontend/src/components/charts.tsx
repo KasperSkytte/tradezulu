@@ -99,12 +99,14 @@ export function CumulativeChart({
   height = 220,
   valueLabel = 'Cumulative P&L',
   formatValue,
+  formatAxis,
 }: {
   data: CumulativePoint[]
   currency: string
   height?: number
   valueLabel?: string
   formatValue?: (value: number) => string
+  formatAxis?: (value: number) => string
 }) {
   const format = formatValue ?? ((value: number) => money(value, currency, { sign: true }))
   const last = data.at(-1)?.value ?? 0
@@ -129,7 +131,15 @@ export function CumulativeChart({
         </defs>
         <CartesianGrid {...GRID} />
         <XAxis dataKey="label" {...AXIS} minTickGap={28} />
-        <YAxis {...AXIS} width={62} tickFormatter={(value) => compactMoney(value, currency)} />
+        <YAxis
+          {...AXIS}
+          width={62}
+          // Same units as the tooltip: with amounts hidden, a
+          // currency axis would give the scale away regardless.
+          tickFormatter={(value) =>
+            formatAxis ? formatAxis(Number(value)) : compactMoney(value, currency)
+          }
+        />
         <ReferenceLine y={0} stroke="var(--tz-border-strong)" />
         <Tooltip
           cursor={{ stroke: 'var(--tz-border-strong)', strokeWidth: 1 }}
@@ -214,11 +224,13 @@ export function SignedBarChart({
   layout = 'vertical',
   valueLabel = 'Net P&L',
   formatValue,
+  formatAxis,
   onSelect,
 }: {
   data: SignedBar[]
   currency: string
   height?: number
+  formatAxis?: (value: number) => string
   /** 'vertical' means vertical bars (columns); 'horizontal' means rows. */
   layout?: 'vertical' | 'horizontal'
   valueLabel?: string
@@ -243,13 +255,25 @@ export function SignedBarChart({
         <CartesianGrid {...GRID} vertical={isRows} horizontal={!isRows} />
         {isRows ? (
           <>
-            <XAxis type="number" {...AXIS} tickFormatter={(v) => compactMoney(v, currency)} />
+            <XAxis
+              type="number"
+              {...AXIS}
+              tickFormatter={(v) =>
+                formatAxis ? formatAxis(Number(v)) : compactMoney(v, currency)
+              }
+            />
             <YAxis type="category" dataKey="label" {...AXIS} width={92} />
           </>
         ) : (
           <>
             <XAxis dataKey="label" {...AXIS} minTickGap={16} />
-            <YAxis {...AXIS} width={62} tickFormatter={(v) => compactMoney(v, currency)} />
+            <YAxis
+              {...AXIS}
+              width={62}
+              tickFormatter={(v) =>
+                formatAxis ? formatAxis(Number(v)) : compactMoney(v, currency)
+              }
+            />
           </>
         )}
         <ReferenceLine {...(isRows ? { x: 0 } : { y: 0 })} stroke="var(--tz-border-strong)" />

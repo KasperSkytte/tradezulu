@@ -23,7 +23,7 @@ import { Card, CardHeader, DirectionBadge, EmptyState, ErrorState, Hint, Skeleto
 
 export function DashboardPage() {
   const { params, filters } = useFilters()
-  const { currency } = useSettings()
+  const { currency, showAmounts } = useSettings()
 
   const summaryQuery = useQuery({
     queryKey: ['stats', 'summary', params],
@@ -77,6 +77,26 @@ export function DashboardPage() {
     )
   }
 
+  // Currency is hidden by default so this page can be screenshotted and shared
+  // without showing what the account is worth. A figure is shown as a share of
+  // the balance the period opened with instead, which says the same thing about
+  // performance and nothing about size. Falls back to the money when there is
+  // no opening balance to divide by -- several accounts in scope, say -- rather
+  // than printing a percentage of nothing.
+  const base = summary.opening_balance ?? 0
+  const cash = (value: number | null | undefined, options?: { sign?: boolean }) => {
+    if (value == null) return '—'
+    if (showAmounts || base <= 0) return money(value, currency, options)
+    const pct = (value / base) * 100
+    return `${options?.sign && pct > 0 ? '+' : ''}${num(pct, 2)}%`
+  }
+
+  // Chart axes speak the same units, or the gridlines give the scale away.
+  const axis: (value: number) => string = (value: number) =>
+    showAmounts || base <= 0
+      ? money(value, currency, { decimals: 0, compact: true })
+      : `${num((value / base) * 100, 1)}%`
+
   // Equity as the terminal reported it, bucketed to one value per day -- the
   // last sample of each day, which is where the account actually ended it.
   // Only exists from the first time a terminal reported in; there is nothing
@@ -120,7 +140,7 @@ export function DashboardPage() {
         label: dateOnly(day.date, 'd MMM'),
         value: Math.round(running * 100) / 100,
         equity: equityFor(String(day.date)),
-        extra: `${money(day.net_pnl, currency, { sign: true })} on the day${
+        extra: `${cash(day.net_pnl, { sign: true })} on the day${
           counts ? ` \u00b7 ${counts}` : ''
         }`,
       }
@@ -141,7 +161,7 @@ export function DashboardPage() {
         <StatTile
           label="Net P&L"
           hint="Sum of every closed trade in the period, including commission and swap."
-          value={money(summary.net_pnl, currency, { sign: true })}
+          value={cash(summary.net_pnl, { sign: true })}
           accent={
             (summary.net_pnl ?? 0) === 0
               ? undefined
@@ -180,7 +200,7 @@ export function DashboardPage() {
           label="Profit factor"
           hint="Gross profit divided by gross loss. Above 1 means the winners paid for the losers."
           value={profitFactor(summary.profit_factor)}
-          sub={`Expectancy ${money(summary.expectancy, currency, { sign: true })}`}
+          sub={`Expectancy ${cash(summary.expectancy, { sign: true })}`}
           visual={
             <Gauge
               value={
@@ -203,7 +223,13 @@ export function DashboardPage() {
             <WinLossBar
               win={summary.avg_win}
               loss={summary.avg_loss}
-              formatValue={(value) => money(value, currency, { decimals: 0, compact: true })}
+              formatValue={(value) =>
+                value == null
+                  ? '—'
+                  : showAmounts || base <= 0
+                    ? money(value, currency, { decimals: 0, compact: true })
+                    : `${num((value / base) * 100, 1)}%`
+              }
             />
           }
         />
@@ -219,7 +245,7 @@ export function DashboardPage() {
                 ? 'var(--tz-gain-text)'
                 : 'var(--tz-loss-text)'
           }
-          sub={`Avg risk ${money(summary.avg_risk, currency)}`}
+          sub={`Avg risk ${cash(summary.avg_risk)}`}
           className="col-span-2 xl:col-span-1"
         />
       </div>
@@ -234,11 +260,17 @@ export function DashboardPage() {
             hint="Net P&L accumulated day by day across the selected period."
             action={
               <span className={`tabular text-sm font-semibold ${pnlClass(summary.net_pnl)}`}>
-                {money(summary.net_pnl, currency, { sign: true })}
+                {cash(summary.net_pnl, { sign: true })}
               </span>
             }
           />
-          <CumulativeChart data={cumulative} currency={currency} height={200} />
+          <CumulativeChart
+            data={cumulative}
+            currency={currency}
+            height={200}
+            formatAxis={axis}
+            formatValue={(value) => cash(value, { sign: true })}
+          />
 
           <div className="mt-5 border-t border-[var(--tz-border)] pt-4">
             <CardHeader
@@ -246,7 +278,13 @@ export function DashboardPage() {
               hint="Each bar is one trading day. Bars grow up for green days and down for red days."
               className="mb-3"
             />
-            <SignedBarChart data={dailyBars} currency={currency} height={150} />
+            <SignedBarChart
+              data={dailyBars}
+              currency={currency}
+              height={150}
+              formatAxis={axis}
+              formatValue={(value) => cash(value, { sign: true })}
+            />
           </div>
         </Card>
       </div>
@@ -264,7 +302,7 @@ export function DashboardPage() {
                   <PerAccountOnly />
                 ) : (
                   <span className="text-[var(--tz-loss-text)]">
-                    {money(-summary.max_drawdown, currency)}
+                    {cash(-summary.max_drawdown)}
                     {summary.max_drawdown_pct !== null && (
                       <span className="ml-1 text-[var(--tz-text-muted)]">
                         ({percent(summary.max_drawdown_pct)})
@@ -345,10 +383,10 @@ export function DashboardPage() {
             />
             <Row
               label="Breakeven P&L"
-              value={money(summary.breakeven_pnl, currency, { sign: true })}
+              value={cash(summary.breakeven_pnl, { sign: true })}
             />
-            <Row label="Largest win" value={money(summary.largest_win, currency, { sign: true })} />
-            <Row label="Largest loss" value={money(summary.largest_loss, currency)} />
+            <Row label="Largest win" value={cash(summary.largest_win, { sign: true })} />
+            <Row label="Largest loss" value={cash(summary.largest_loss)} />
             <Row
               label="Best streak"
               value={`${summary.streaks.max_win_streak}W / ${summary.streaks.max_loss_streak}L`}
@@ -403,7 +441,7 @@ export function DashboardPage() {
           </Link>
         </div>
         {recentQuery.data?.items.length ? (
-          <RecentTradeList trades={recentQuery.data.items} currency={currency} />
+          <RecentTradeList trades={recentQuery.data.items} cash={cash} />
         ) : (
           <EmptyState icon={<TrendingUp size={30} strokeWidth={1.4} />} title="Nothing yet" />
         )}
@@ -443,7 +481,13 @@ function Row({
   )
 }
 
-function RecentTradeList({ trades, currency }: { trades: Trade[]; currency: string }) {
+function RecentTradeList({
+  trades,
+  cash,
+}: {
+  trades: Trade[]
+  cash: (value: number | null | undefined, options?: { sign?: boolean }) => string
+}) {
   return (
     <div className="divide-y divide-[var(--tz-border)] border-t border-[var(--tz-border)]">
       {trades.map((trade) => (
@@ -464,7 +508,7 @@ function RecentTradeList({ trades, currency }: { trades: Trade[]; currency: stri
           </div>
           <div className="text-right">
             <p className={`tabular font-semibold ${pnlClass(trade.net_pnl)}`}>
-              {money(trade.net_pnl, currency, { sign: true })}
+              {cash(trade.net_pnl, { sign: true })}
             </p>
             <p className="tabular text-xs text-[var(--tz-text-muted)]">
               {rMultiple(trade.realized_r)}

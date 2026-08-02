@@ -281,6 +281,12 @@ function GeneralSection() {
 
       <div className="mt-4 border-t border-[var(--tz-border)] pt-2">
         <Toggle
+          label="Show currency amounts"
+          description="Off by default, so the dashboard can be screenshotted and shared without showing what the account is worth. Figures appear as a percentage of the balance the period opened with instead."
+          checked={general.show_amounts}
+          onChange={(value) => void apply({ general: { show_amounts: value } })}
+        />
+        <Toggle
           label="Colour-blind friendly results"
           description="Uses blue for profit and amber for loss instead of green and red. Both pairs stay distinguishable with any form of colour blindness."
           checked={general.colorblind_mode}
