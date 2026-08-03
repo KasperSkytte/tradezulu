@@ -70,10 +70,16 @@ jobs:
       - name: Test the provisioner
         run: pytest agent/tests -q
 
+      # Every script in the repo, at a version that does not move. Two of these
+      # were never linted at all, and the two that were had been checked by
+      # whatever shellcheck the runner image happened to ship -- so an install
+      # script that passed locally failed here on an "info" the newer release
+      # no longer reports. A lint that changes with the runner is a lint that
+      # fails on a day nothing changed.
       - name: Lint the shell scripts
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-          shellcheck install.sh uninstall.sh
+          docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.10.0 \
+            $(git ls-files '*.sh')
 
   frontend:
     name: Frontend

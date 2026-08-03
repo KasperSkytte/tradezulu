@@ -44,7 +44,7 @@ if [ -e "${PREFIX}/.tz-template-ready" ]; then
   exit 0
 fi
 
-RUNNER="$(ls -d "${BOTTLES}"/runners/soda-* 2>/dev/null | tail -1 || true)"
+RUNNER="$(find "${BOTTLES}/runners" -maxdepth 1 -name 'soda-*' -type d 2>/dev/null | sort | tail -1)"
 [ -n "${RUNNER}" ] || die "no Soda runner under ${BOTTLES}/runners -- run install.sh first"
 
 # MetaTrader will not install without a screen, but it must not be given the
@@ -100,7 +100,7 @@ flatpak run --command=sh com.usebottles.bottles -c "
 TERMINAL="$(find "${PREFIX}/drive_c" -name terminal64.exe -print -quit 2>/dev/null || true)"
 [ -n "${TERMINAL}" ] || die "installer did not produce terminal64.exe -- see ${PREFIX}"
 
-say "installed: ${TERMINAL#${PREFIX}/}"
+say "installed: ${TERMINAL#"${PREFIX}"/}"
 
 # The installer starts the terminal; a template must not have one running or
 # the copy would capture its lock files and half-written config.
@@ -118,7 +118,9 @@ kill_terminals() {
   done
   [ -n "${found}" ]
 }
-kill_terminals -TERM && sleep 5 || true
+if kill_terminals -TERM; then
+  sleep 5
+fi
 kill_terminals -KILL || true
 
 rm -f "${SETUP}"

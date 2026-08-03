@@ -211,8 +211,9 @@ else
   run_as tar -C "${BOTTLES}/runners" -xf "${TMP}/soda.tar.xz"
   rm -rf "${TMP}"
   SODA_DIR="$(soda_dir)"
-  [ -n "${SODA_DIR}" ] && [ -x "${SODA_DIR}/bin/wine" ] \
-    || die "Soda did not unpack into ${BOTTLES}/runners"
+  if [ -z "${SODA_DIR}" ] || [ ! -x "${SODA_DIR}/bin/wine" ]; then
+    die "Soda did not unpack into ${BOTTLES}/runners"
+  fi
   say "installed as $(basename "${SODA_DIR}")"
 fi
 

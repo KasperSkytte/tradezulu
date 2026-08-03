@@ -85,7 +85,9 @@ if [ -z "${DISPLAY_NUM}" ]; then
   command -v openbox >/dev/null 2>&1 && DISPLAY="${DISPLAY_NUM}" openbox >/dev/null 2>&1 &
   sleep 2
   cleanup() {
-    [ "${OWN_DISPLAY}" -eq 1 ] && kill "${XVFB_PID}" 2>/dev/null || true
+    if [ "${OWN_DISPLAY}" -eq 1 ]; then
+      kill "${XVFB_PID}" 2>/dev/null || true
+    fi
   }
   trap cleanup EXIT
 else
@@ -117,7 +119,9 @@ viewable_windows() {
     x="$(echo "${info}" | awk '/Absolute upper-left X:/ {print $4}')"
     y="$(echo "${info}" | awk '/Absolute upper-left Y:/ {print $4}')"
     # Ignore the one-pixel helper windows Wine litters the display with.
-    [ "${w:-0}" -gt 200 ] && [ "${h:-0}" -gt 150 ] || continue
+    if [ "${w:-0}" -le 200 ] || [ "${h:-0}" -le 150 ]; then
+      continue
+    fi
     printf '%s %s %s %s %s\n' "$((id))" "${w}" "${h}" "${x}" "${y}"
   done
 }
