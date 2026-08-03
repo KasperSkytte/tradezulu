@@ -1,9 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   AlertTriangle,
   Check,
-
   Database,
   Download,
   Gauge,
@@ -14,7 +13,6 @@ import {
   SlidersHorizontal,
   Tags as TagsIcon,
   Trash2,
-  Upload,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { ApiError, api } from '../lib/api'
@@ -603,28 +601,6 @@ function ScoreSection() {
 
 function DataSection() {
   const queryClient = useQueryClient()
-  const fileInput = useRef<HTMLInputElement>(null)
-  const [importResult, setImportResult] = useState<string | null>(null)
-  const [importError, setImportError] = useState<string | null>(null)
-
-  const upload = useMutation({
-    mutationFn: (file: File) => {
-      const form = new FormData()
-      form.append('file', file)
-      return api.upload<{ created: number; updated: number; kind: string }>('/import/file', form)
-    },
-    onSuccess: (result) => {
-      setImportError(null)
-      setImportResult(
-        `Imported ${result.created} new and updated ${result.updated} existing trades from the ${result.kind === 'mt5_html' ? 'MetaTrader report' : 'CSV'}.`,
-      )
-      void queryClient.invalidateQueries()
-    },
-    onError: (error) => {
-      setImportResult(null)
-      setImportError(error instanceof ApiError ? error.message : 'Import failed')
-    },
-  })
 
   const rebuild = useMutation({
     mutationFn: () => api.post<{ trades: number }>('/mt5/rebuild'),
@@ -639,43 +615,6 @@ function DataSection() {
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader
-          title="Import a file"
-          hint="For history the Expert Advisor cannot see, or if you would rather not run one at all."
-        />
-        <p className="mb-3 text-sm text-[var(--tz-text-muted)]">
-          In MetaTrader 5: <strong>Toolbox → History</strong>, right-click → <strong>Report</strong>,
-          and save as HTML or XLSX — either works. Plain CSV exports are read too, as long as they
-          have symbol, open time and price columns.
-        </p>
-        <input
-          ref={fileInput}
-          type="file"
-          accept=".html,.htm,.xlsx,.xlsm,.csv,.txt"
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0]
-            if (file) upload.mutate(file)
-            event.target.value = ''
-          }}
-        />
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="primary"
-            icon={<Upload size={15} />}
-            loading={upload.isPending}
-            onClick={() => fileInput.current?.click()}
-          >
-            Choose a file
-          </Button>
-        </div>
-        {importResult && (
-          <p className="mt-3 text-sm text-[var(--tz-gain-text)]">{importResult}</p>
-        )}
-        {importError && <p className="mt-3 text-sm text-[var(--tz-loss-text)]">{importError}</p>}
-      </Card>
-
       <ExportCard />
 
       <Card>

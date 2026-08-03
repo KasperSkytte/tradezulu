@@ -65,7 +65,7 @@ export function MT5Connection() {
 
       <Field
         label="How the master's deals reach TradeZulu"
-        hint="A terminal is started for your account automatically and its Expert Advisor reports in. Manual import is there for history from anywhere else."
+        hint="A terminal is started for your account automatically and its Expert Advisor reports in. Manual import runs no terminal at all — drop a statement in further down the page instead."
       >
         <SegmentedControl
           value={settings.mt5.sync_mode}

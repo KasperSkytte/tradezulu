@@ -28,6 +28,7 @@ import type { Account, CopyEvent, SlaveAccount } from '../lib/types'
 import { Button, Card, CardHeader, EmptyState, ErrorState, Field, Skeleton } from '../components/ui'
 import { SlaveForm } from '../components/SlaveForm'
 import { CopyActivity } from '../components/CopyActivity'
+import { ImportCard } from '../components/ImportCard'
 import { MT5Connection } from '../components/MT5Connection'
 
 export function AccountsPage() {
@@ -132,6 +133,8 @@ export function AccountsPage() {
           </div>
         </Card>
       )}
+
+      <ImportCard />
 
       <Card>
         <CardHeader

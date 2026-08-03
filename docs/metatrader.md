@@ -208,9 +208,14 @@ breakeven rather than a win, and stays out of the win rate in both directions.
 
 ## File import
 
-**Settings → Import a file**. In MetaTrader: **Toolbox → History**, right-click →
-**Report** → save as HTML, then drop the file in. Plain CSV works too, as long as
-it has open and close times and prices.
+**Accounts → Manual import**. In MetaTrader: **Toolbox → History**, right-click →
+**Report** → save as HTML or XLSX, then drop the file in. Plain CSV works too, as
+long as it has open and close times and prices.
+
+It sits with the accounts because that is what it is: the other way an
+account's trades get here. The account number in the file decides which account
+they land under, and one that is not here yet is added — as an ordinary journal
+account, never as the master.
 
 Imports are matched on the deal ticket, so importing the same statement twice
 changes nothing.
