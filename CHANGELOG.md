@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.14.1](https://github.com/KasperSkytte/tradezulu/compare/v1.14.0...v1.14.1) (2026-08-03)
+
+
+### Bug fixes
+
+* **accounts:** stop creating second masters, and let one be removed ([e56a056](https://github.com/KasperSkytte/tradezulu/commit/e56a056da63a36d84439279b39477f2cc5ad5436))
+* **agent:** never run two terminals for one account, and say what is running ([9c3ffa4](https://github.com/KasperSkytte/tradezulu/commit/9c3ffa4930fdc27fbe06cd8ced5060303e764797))
+* **ci:** lint every shell script, at a version that does not move ([a2623f9](https://github.com/KasperSkytte/tradezulu/commit/a2623f9afd9f7bfd91d9a41e40ba05a36c71437e))
+* **reports:** honour the amounts setting here too ([cf2e3e1](https://github.com/KasperSkytte/tradezulu/commit/cf2e3e1f2d64d00323c7f0b64707dce3bfed41ad))
+
+
+### Refactoring
+
+* **ui:** put forgetting and terminal status on the account they describe ([5dace4d](https://github.com/KasperSkytte/tradezulu/commit/5dace4d0c0722e0f0b7333813d3bb6da25bbd2a6))
+
 ## [1.14.0](https://github.com/KasperSkytte/tradezulu/compare/v1.13.1...v1.14.0) (2026-08-03)
 
 
