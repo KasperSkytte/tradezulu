@@ -134,3 +134,78 @@ class TestCandles:
         )
         # That bar is already stored, so re-sending it changes nothing.
         assert after == before
+
+
+class TestDerivedTimeframes:
+    """One timeframe is collected; the rest are arithmetic on it."""
+
+    def test_an_hour_is_built_from_the_stored_quarter_hours(self, trade_with_candles):
+        auth_client, trade_id = trade_with_candles
+
+        body = auth_client.get(
+            "/api/mt5/candles", params={"trade_id": trade_id, "timeframe": "H1"}
+        ).json()
+
+        assert body["candles"], "an empty chart is what this exists to stop"
+        assert body["source"] == "M15", "and it says where the bars came from"
+        # Four M15 bars to the hour, and every bar starts on one.
+        assert all(bar["time"][14:19] == "00:00" for bar in body["candles"])
+
+    def test_the_folded_bars_are_the_stored_ones(self, trade_with_candles):
+        """Exactness matters: somebody reads their entry off these."""
+        auth_client, trade_id = trade_with_candles
+
+        quarters = auth_client.get(
+            "/api/mt5/candles", params={"trade_id": trade_id, "timeframe": "M15"}
+        ).json()["candles"]
+        hours = auth_client.get(
+            "/api/mt5/candles", params={"trade_id": trade_id, "timeframe": "H1"}
+        ).json()["candles"]
+
+        first = hours[0]
+        inside = [c for c in quarters if c["time"][:13] == first["time"][:13]]
+        assert first["open"] == inside[0]["open"]
+        assert first["close"] == inside[-1]["close"]
+        assert first["high"] == max(c["high"] for c in inside)
+        assert first["low"] == min(c["low"] for c in inside)
+
+    def test_the_collected_timeframe_is_preferred_over_folding(self, trade_with_candles):
+        auth_client, trade_id = trade_with_candles
+
+        body = auth_client.get(
+            "/api/mt5/candles", params={"trade_id": trade_id, "timeframe": "M15"}
+        ).json()
+
+        assert body["source"] == "local"
+
+    def test_a_shorter_timeframe_is_not_invented(self, trade_with_candles):
+        """M1 cannot be recovered from M15, so it is refused rather than faked."""
+        auth_client, trade_id = trade_with_candles
+
+        body = auth_client.get(
+            "/api/mt5/candles", params={"trade_id": trade_id, "timeframe": "M1"}
+        ).json()
+
+        assert body["candles"] == []
+        assert body["source"] == "none"
+
+    def test_it_says_which_timeframes_can_be_drawn(self, trade_with_candles):
+        """So the chart offers buttons that work, rather than empty ones."""
+        auth_client, trade_id = trade_with_candles
+
+        body = auth_client.get(
+            "/api/mt5/candles", params={"trade_id": trade_id, "timeframe": "M15"}
+        ).json()
+
+        assert body["available"] == ["M15", "M30", "H1", "H4", "D1", "W1"]
+        assert "M1" not in body["available"]
+
+    def test_a_longer_timeframe_asks_for_a_longer_window(self, trade_with_candles):
+        """Otherwise zooming out shows the same two hours as two candles."""
+        auth_client, trade_id = trade_with_candles
+
+        daily = auth_client.get(
+            "/api/mt5/candles", params={"trade_id": trade_id, "timeframe": "D1"}
+        ).json()
+
+        assert daily["candles"], "the window has to widen with the timeframe"

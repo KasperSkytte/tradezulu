@@ -47,7 +47,17 @@ The chart's symbol and timeframe do not matter; it is not reading the chart.
 | `HistorySeconds` | 60 | How often to look for new ones |
 | `FirstSyncDays` | 730 | How far back the first pass reaches |
 | `DealsPerRequest` | 200 | Deals per HTTP request |
+| `UploadCandles` | true | Send bars around each trade, so charts have something to draw |
+| `CandleTimeframe` | M5 | The one timeframe collected; longer ones are built from it |
+| `CandlesBefore` / `CandlesAfter` | 288 | Bars either side of the trade — a full day at M5 |
+| `CandleBackfillDays` | 60 | How far back to fetch charts for trades already journalled |
 | `Verbose` | true | Log every command to the Experts tab |
+
+Only one timeframe is sent, because the rest are arithmetic on it: the server
+folds M15, M30, H1, H4 and D1 out of the M5 bars as they are asked for. Nothing
+is folded downwards — M1 cannot be recovered from M5 — so the collected
+timeframe is the shortest chart anyone will see, and the journal offers only
+the timeframes it can actually draw rather than buttons that come up empty.
 
 Deals are sent from a cursor the server hands out, so a restart re-sends
 nothing and a terminal that was off for a week catches up by itself. They are

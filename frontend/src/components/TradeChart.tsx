@@ -52,6 +52,28 @@ export function TradeChart({ trade }: { trade: TradeDetail }) {
   const [provider, setProvider] = useState<'local' | 'tradingview'>(settings.charts.provider)
   const [timeframe, setTimeframe] = useState(settings.charts.default_timeframe || 'M15')
 
+  // Which timeframes the replay can actually draw. The terminal collects one
+  // and the server folds the longer ones out of it, so the answer depends on
+  // the symbol -- and a button that can only ever be empty is worse than no
+  // button. TradingView brings its own data, so it keeps the full list.
+  //
+  // Same query key as the chart below, so this shares its request rather than
+  // making a second one.
+  const { data } = useQuery({
+    queryKey: ['candles', trade.id, timeframe],
+    queryFn: () =>
+      api.get<CandleResponse>('/mt5/candles', { trade_id: trade.id, timeframe }),
+    enabled: provider === 'local',
+  })
+  const offered =
+    provider === 'tradingview' || !data?.available?.length ? TIMEFRAMES : data.available
+
+  // Landing on a timeframe this symbol has no bars for shows an empty chart
+  // that looks broken. Move to the closest one that works instead.
+  useEffect(() => {
+    if (offered.length && !offered.includes(timeframe)) setTimeframe(offered[0])
+  }, [offered, timeframe])
+
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -68,7 +90,7 @@ export function TradeChart({ trade }: { trade: TradeDetail }) {
           size="sm"
           value={timeframe}
           onChange={setTimeframe}
-          options={TIMEFRAMES.map((value) => ({ value, label: value }))}
+          options={offered.map((value) => ({ value, label: value }))}
         />
       </div>
 
@@ -232,6 +254,9 @@ function LocalReplay({ trade, timeframe }: { trade: TradeDetail; timeframe: stri
   }, [data, trade])
 
   const hasCandles = Boolean(data?.candles.length)
+  // Asked for something shorter than what was collected, which is the one
+  // gap that cannot be filled by folding bars together.
+  const tooShort = data?.source === 'none' && Boolean(data?.available?.length)
 
   return (
     <div>
@@ -246,15 +271,27 @@ function LocalReplay({ trade, timeframe }: { trade: TradeDetail; timeframe: stri
           <div className="absolute inset-0 flex items-center justify-center rounded-lg border border-dashed border-[var(--tz-border-strong)] bg-[var(--tz-surface)]">
             <EmptyState
               icon={<CandlestickChart size={32} strokeWidth={1.4} />}
-              title="No candles stored for this window"
+              title={
+                tooShort
+                  ? `${timeframe} is shorter than the bars collected`
+                  : 'No candles stored for this window'
+              }
               description={
-                <>
-                  The TradeZulu Expert Advisor uploads candles around each closed trade — set
-                  <code className="mx-1 rounded bg-[var(--tz-surface-2)] px-1 py-0.5 text-xs">
-                    UploadCandles = true
-                  </code>
-                  on it, or switch to the TradingView tab above.
-                </>
+                tooShort ? (
+                  <>
+                    Longer timeframes are built from the {data?.available?.[0]} bars the terminal
+                    sends; a shorter one cannot be, so it is left out rather than invented. Pick{' '}
+                    {data?.available?.[0]} or longer.
+                  </>
+                ) : (
+                  <>
+                    The TradeZulu Expert Advisor uploads candles around each closed trade — set
+                    <code className="mx-1 rounded bg-[var(--tz-surface-2)] px-1 py-0.5 text-xs">
+                      UploadCandles = true
+                    </code>
+                    on it, or switch to the TradingView tab above.
+                  </>
+                )
               }
             />
           </div>
@@ -280,7 +317,10 @@ function LocalReplay({ trade, timeframe }: { trade: TradeDetail; timeframe: stri
         )}
         {hasCandles && (
           <span className="ml-auto">
-            {data?.candles.length} candles · source: {data?.source}
+            {data?.candles.length} candles ·{' '}
+            {data?.source === 'local'
+              ? 'as recorded'
+              : `built from ${data?.source}`}
           </span>
         )}
       </div>

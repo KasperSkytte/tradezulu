@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import distinct, func, select
 from sqlalchemy.orm import Session
 
 from ..deps import AppConfig, CurrentUser, DbSession, get_default_account, require_ingest_auth
@@ -34,6 +34,7 @@ from ..schemas import (
     MT5IngestResponse,
     SyncStatus,
 )
+from ..services import candles as timeframes
 from ..services.accounts import purge_account
 from ..services.aggregation import (
     _parse_time,
@@ -450,17 +451,25 @@ def get_candles(
 
     Either ``trade_id`` (which picks the symbol and the window from the trade)
     or an explicit ``symbol`` is required.
+
+    A terminal sends one timeframe, because the rest are arithmetic on it: ask
+    for H1 and it is folded out of the M5 bars that are here. Ask for one below
+    what was collected and there is nothing to answer with -- M1 cannot be
+    recovered from M5 -- so the response says which timeframes this symbol can
+    be drawn at rather than leaving the buttons to be discovered as empty.
     """
     if trade_id:
         trade = db.get(Trade, trade_id)
         if trade is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Trade not found")
         symbol = trade.symbol
-        span = _timeframe_seconds(timeframe)
-        before = int(config["charts"].get("candles_before", 120))
-        after = int(config["charts"].get("candles_after", 60))
-        start = trade.opened_at - timedelta(seconds=span * before)
-        end = (trade.closed_at or trade.opened_at) + timedelta(seconds=span * after)
+        before, after = timeframes.window_padding(
+            timeframe,
+            int(config["charts"].get("candles_before", 120)),
+            int(config["charts"].get("candles_after", 60)),
+        )
+        start = trade.opened_at - before
+        end = (trade.closed_at or trade.opened_at) + after
 
     if not symbol:
         raise HTTPException(
@@ -474,37 +483,72 @@ def get_candles(
     start = start.replace(tzinfo=None) if start.tzinfo else start
     end = end.replace(tzinfo=None) if end.tzinfo else end
 
+    stored = [
+        row
+        for row in db.scalars(
+            select(distinct(Candle.timeframe)).where(Candle.symbol == symbol)
+        )
+        if row
+    ]
+    # The collected timeframe wins over a derived one wherever both exist: it
+    # came from the broker's own bars, including its idea of where a day
+    # starts, which epoch-aligned buckets can only approximate.
+    read = timeframe if timeframe in stored else timeframes.source_for(timeframe, stored)
+    if read is None:
+        return CandleResponse(
+            symbol=symbol,
+            timeframe=timeframe,
+            source="none",
+            available=timeframes.available(stored),
+            candles=[],
+        )
+
     rows = list(
         db.scalars(
             select(Candle)
             .where(
                 Candle.symbol == symbol,
-                Candle.timeframe == timeframe,
+                Candle.timeframe == read,
                 Candle.time >= start,
                 Candle.time <= end,
             )
             .order_by(Candle.time)
         ).all()
     )
-    # Only what a terminal has already sent. There is nobody to ask for the
-    # rest: charts are drawn from the candles the Expert Advisor stores as it
-    # goes, so a period nothing was running for simply has none.
-    source = "local"
+
+    bars = [
+        timeframes.Bar(
+            time=row.time.replace(tzinfo=timezone.utc),
+            open=row.open,
+            high=row.high,
+            low=row.low,
+            close=row.close,
+            volume=row.volume,
+        )
+        for row in rows
+    ]
+    if read != timeframe:
+        bars = timeframes.aggregate(bars, timeframe)
 
     return CandleResponse(
         symbol=symbol,
         timeframe=timeframe,
-        source=source,
+        # Named after where the bars came from, so a chart built out of M5 can
+        # say so. Only what a terminal has sent is ever drawn: charts come from
+        # the candles the Expert Advisor stores as it goes, and a period
+        # nothing was running for simply has none.
+        source="local" if read == timeframe else read,
+        available=timeframes.available(stored),
         candles=[
             {
-                "time": c.time.replace(tzinfo=timezone.utc),
-                "open": c.open,
-                "high": c.high,
-                "low": c.low,
-                "close": c.close,
-                "volume": c.volume,
+                "time": bar.time,
+                "open": bar.open,
+                "high": bar.high,
+                "low": bar.low,
+                "close": bar.close,
+                "volume": bar.volume,
             }
-            for c in rows
+            for bar in bars
         ],
     )
 

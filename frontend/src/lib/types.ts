@@ -397,7 +397,12 @@ export interface CandleResponse {
   symbol: string
   timeframe: string
   candles: Candle[]
+  /** "local" for bars recorded at this timeframe, the timeframe they were
+   *  folded out of, or "none" when neither is possible. */
   source: string
+  /** Timeframes this symbol can be drawn at. Everything longer than the one
+   *  the terminal collects is arithmetic; nothing shorter exists. */
+  available?: string[]
 }
 
 export interface User {

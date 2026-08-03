@@ -39,9 +39,16 @@ input int    HistorySeconds   = 60;    // How often to look for new ones
 input int    FirstSyncDays    = 730;   // How far back to go the first time
 input int    DealsPerRequest  = 200;   // Batch size; a long history is sent in pieces
 input bool   UploadCandles    = true;  // Send bars around each trade, so charts have something to draw
-input ENUM_TIMEFRAMES CandleTimeframe = PERIOD_M15;  // Which timeframe to send
-input int    CandlesBefore    = 150;   // Bars before the entry
-input int    CandlesAfter     = 80;    // Bars after the exit
+// M5 rather than M15: everything above it is arithmetic -- the server builds
+// M15, M30, H1, H4 and D1 out of these -- while nothing can build M5 out of
+// M15. The base timeframe is the only one that has to be collected, so it is
+// the smallest one worth storing.
+input ENUM_TIMEFRAMES CandleTimeframe = PERIOD_M5;   // Which timeframe to send (others are derived from it)
+// A full trading day either side, so a chart can be zoomed out to the session
+// the trade happened in rather than to the twenty bars around the entry. 288
+// M5 bars is 24 hours.
+input int    CandlesBefore    = 288;   // Bars before the entry
+input int    CandlesAfter     = 288;   // Bars after the exit
 input int    CandleBackfillDays = 60;  // How far back to fetch charts for trades already journalled
 
 //--- state ----------------------------------------------------------

@@ -343,7 +343,15 @@ class CandleResponse(BaseModel):
     symbol: str
     timeframe: str
     candles: list[CandleOut]
+    #: "local" for bars a terminal actually sent at this timeframe, or the
+    #: timeframe they were built from -- so the chart can say so rather than
+    #: implying the broker drew it that way.
     source: str = "local"
+    #: Timeframes this symbol can be drawn at, given what has been collected.
+    #: Everything above the collected one is arithmetic; nothing below it
+    #: exists, and offering a button that can only ever be empty is worse than
+    #: not offering it.
+    available: list[str] = []
 
 
 # --- copier -----------------------------------------------------------------

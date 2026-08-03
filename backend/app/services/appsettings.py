@@ -123,9 +123,14 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         # local -> replay from candles stored by the Expert Advisor
         # tradingview -> free TradingView Advanced Chart widget
         "provider": "local",
-        "default_timeframe": "M15",
-        "candles_before": 120,
-        "candles_after": 60,
+        "default_timeframe": "M5",
+        # Counted in bars of whichever timeframe is being shown, so zooming out
+        # widens the window rather than drawing the same afternoon as four
+        # candles. Half a day either side at the collected timeframe, so the
+        # chart opens on the session the trade happened in rather than on the
+        # twenty bars around the entry.
+        "candles_before": 144,
+        "candles_after": 144,
         # Maps broker symbols to TradingView tickers, e.g. {"EURUSD": "OANDA:EURUSD"}
         "tradingview_prefix": "",
         "symbol_map": {},

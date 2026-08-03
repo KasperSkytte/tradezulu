@@ -26,8 +26,11 @@ either distorts the win rate.
 ## A trade in detail
 
 The chart around the entry, with the real entry, exit, stop and target drawn on
-it. The bars come from the terminal along with the trade, so a chart is
-available even for a symbol the account no longer trades.
+it and an arrow for every fill, so scale-ins and partial exits are visible. The
+bars come from the terminal along with the trade, so a chart is available even
+for a symbol the account no longer trades. The terminal collects one timeframe
+and the longer ones are folded out of it, which is why the timeframe buttons
+only offer what can actually be drawn.
 
 ![Trade detail](screenshots/trade-detail.png)
 
