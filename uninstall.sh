@@ -142,31 +142,40 @@ fi
 # --- terminals ---------------------------------------------------------------
 
 step "Stopping terminals"
-# Wine reports every terminal under the same Windows path, so the command line
-# cannot say which prefix a process belongs to. WINEPREFIX in its environment
-# can, and it is the only thing that reliably distinguishes ours from yours.
-stop_prefix() {
-  local prefix="$1" pid found=0
-  for pid in $(pgrep -f 'terminal64\.exe' 2>/dev/null || true); do
+# Everything attached to a prefix, not only the terminal itself. Each launch
+# goes through a chain of flatpak sandboxes wrapping a shell, plus a wineserver,
+# and killing only terminal64.exe left that chain running -- which is why
+# processes belonging to a removed prefix were still there after an uninstall
+# said it was finished.
+#
+# The terminal and wineserver carry WINEPREFIX in their environment; the
+# sandbox wrappers do not, because the script they run is what exports it, so
+# for those it is in the command line instead. Both are matched, quoted exactly
+# so that tz-1 never catches tz-11.
+prefix_pids() {
+  local prefix="$1" pid entry
+  for entry in /proc/[0-9]*; do
+    pid="${entry#/proc/}"
     [ -r "/proc/${pid}/environ" ] || continue
     if tr '\0' '\n' < "/proc/${pid}/environ" 2>/dev/null | grep -qx "WINEPREFIX=${prefix}"; then
-      found=1
-      run kill -TERM "${pid}" 2>/dev/null || true
+      echo "${pid}"
+    elif tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null | grep -qF "WINEPREFIX=\"${prefix}\""; then
+      echo "${pid}"
     fi
   done
-  [ "${found}" -eq 1 ] && say "  stopped terminals in $(basename "${prefix}")"
+}
+signal_prefix() {
+  local prefix="$1" sig="$2" pid found=0
+  for pid in $(prefix_pids "${prefix}"); do
+    found=$((found + 1))
+    run kill "-${sig}" "${pid}" 2>/dev/null || true
+  done
+  [ "${found}" -gt 0 ] && say "  ${sig} to ${found} process(es) in $(basename "${prefix}")"
   return 0
 }
-for p in "${TZ_PREFIXES[@]:-}"; do [ -n "${p}" ] && stop_prefix "${p}"; done
+for p in "${TZ_PREFIXES[@]:-}"; do [ -n "${p}" ] && signal_prefix "${p}" TERM; done
 [ "${DRY_RUN}" -eq 0 ] && sleep 5
-for p in "${TZ_PREFIXES[@]:-}"; do
-  [ -n "${p}" ] || continue
-  for pid in $(pgrep -f 'terminal64\.exe' 2>/dev/null || true); do
-    [ -r "/proc/${pid}/environ" ] || continue
-    tr '\0' '\n' < "/proc/${pid}/environ" 2>/dev/null | grep -qx "WINEPREFIX=${p}" \
-      && run kill -KILL "${pid}" 2>/dev/null || true
-  done
-done
+for p in "${TZ_PREFIXES[@]:-}"; do [ -n "${p}" ] && signal_prefix "${p}" KILL; done
 
 step "Removing TradeZulu's MetaTrader prefixes"
 if [ "${#TZ_PREFIXES[@]}" -eq 0 ] || [ -z "${TZ_PREFIXES[0]:-}" ]; then
@@ -178,6 +187,10 @@ else
   done
 fi
 run rm -f "${BOTTLES}/.tz-last-maintenance"
+# What the provisioner remembers about each terminal: which account it was for,
+# when it was started, how many times it had to be restarted. Useless without
+# the prefixes it describes.
+run rm -rf "${BOTTLES}/.tz-state"
 
 # The display the terminals drew on. Only ours -- :77 by default, and only if
 # nothing else is using it.
@@ -278,12 +291,25 @@ if [ "${PURGE_WINE}" -eq 1 ]; then
   if [ "${#OTHER_PREFIXES[@]}" -gt 0 ] && [ -n "${OTHER_PREFIXES[0]:-}" ]; then
     say "NOT removing: ${#OTHER_PREFIXES[@]} other bottle(s) are still installed here"
     say "removing the runtime would break them. Delete them first if you mean it."
+    say "left in place: ${BOTTLES}"
   else
     run rm -rf "${SODA_DIR}"
     say "removed the Soda Wine build"
     if command -v flatpak >/dev/null 2>&1; then
-      run ${SUDO} flatpak uninstall -y --noninteractive com.usebottles.bottles || true
+      # --delete-data, or the flatpak goes and its ~/.var/app tree stays: a
+      # near-empty directory nobody can account for afterwards, which is what
+      # "uninstalled" is not supposed to leave behind. Only reached when no
+      # bottle but ours was found, so there is nothing in it to lose.
+      run ${SUDO} flatpak uninstall -y --noninteractive --delete-data \
+        com.usebottles.bottles || true
       say "removed the Bottles runtime"
+    fi
+    # Whatever the flatpak did not take with it. The runners are large and are
+    # ours by construction: nothing else put a Wine build in this tree.
+    APPDATA="${RUN_HOME}/.var/app/com.usebottles.bottles"
+    if [ -d "${APPDATA}" ]; then
+      run rm -rf "${APPDATA}"
+      say "removed ${APPDATA}"
     fi
   fi
 fi
@@ -301,6 +327,14 @@ if [ "${PURGE_PACKAGES}" -eq 1 ]; then
 fi
 
 step "Done"
+# Said plainly rather than left to be discovered: without --purge-wine the
+# Bottles tree stays, and finding it afterwards reads like the uninstall did
+# not finish. It is the Wine runtime, it is expensive to rebuild, and it may
+# not be ours alone.
+if [ "${DRY_RUN}" -eq 0 ] && [ "${PURGE_WINE}" -eq 0 ] && [ -d "${BOTTLES}" ]; then
+  say "kept: ${BOTTLES}"
+  say "      the Wine runtime, minus TradeZulu's prefixes. --all removes it too."
+fi
 if [ "${DRY_RUN}" -eq 1 ]; then
   say "This was a dry run. Nothing changed."
 elif [ "${PURGE_DATA}" -eq 1 ]; then
