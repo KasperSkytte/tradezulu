@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.13.1](https://github.com/KasperSkytte/tradezulu/compare/v1.13.0...v1.13.1) (2026-08-03)
+
+
+### Bug fixes
+
+* **agent:** recover a terminal that starts but never works ([4a4d264](https://github.com/KasperSkytte/tradezulu/commit/4a4d2643751a05a7bfff66829f371ee3757046c4))
+* **agent:** say which accounts still exist, not just which want a terminal ([e5a4d95](https://github.com/KasperSkytte/tradezulu/commit/e5a4d95e851e5887e44452d0aac186626113186c))
+* **install:** check for the commands the terminals need, not dpkg's word ([426a14a](https://github.com/KasperSkytte/tradezulu/commit/426a14a9d8106732c0ee9d9d15962be6dd7c3ccd))
+* **uninstall:** remove what was actually left behind ([f51826b](https://github.com/KasperSkytte/tradezulu/commit/f51826b8cbbb6991a8dd0c7fd64a858ecdc53783))
+
+
+### Performance
+
+* **agent:** compile the Expert Advisor once, not once per account ([a307387](https://github.com/KasperSkytte/tradezulu/commit/a307387b1ed342d2eb1baf45952a5a4fc03a667a))
+
+
+### Refactoring
+
+* **ui:** give the economic calendar its own page ([04d7a78](https://github.com/KasperSkytte/tradezulu/commit/04d7a784d78d6ad311980ce68a7063e50763cd5e))
+
 ## [1.13.0](https://github.com/KasperSkytte/tradezulu/compare/v1.12.0...v1.13.0) (2026-08-02)
 
 
