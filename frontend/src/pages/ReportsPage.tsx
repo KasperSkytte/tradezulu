@@ -105,6 +105,15 @@ export function ReportsPage() {
     return cash(value, { sign: true })
   }
 
+  // Gridlines give the scale away on their own, so the axis has to speak the
+  // same units as the bars above it. Unsigned and coarser than the values:
+  // this is a ruler, not a reading.
+  const formatAxis = (value: number) => {
+    if (metric === 'total_r') return `${num(value, 1)}R`
+    if (hideMoney) return `${num((value / accountSize) * 100, 1)}%`
+    return money(value, currency, { decimals: 0, compact: true })
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -185,6 +194,7 @@ export function ReportsPage() {
                   accountSize={accountSize}
                   hideMoney={hideMoney}
                   formatMetric={formatMetric}
+                  formatAxis={formatAxis}
                   cash={cash}
                 />
               ))}
@@ -205,6 +215,7 @@ function BreakdownCard({
   accountSize,
   hideMoney,
   formatMetric,
+  formatAxis,
   cash,
 }: {
   title: string
@@ -215,6 +226,7 @@ function BreakdownCard({
   accountSize: number
   hideMoney: boolean
   formatMetric: (value: number) => string
+  formatAxis: (value: number) => string
   cash: (value: number | null | undefined, options?: { sign?: boolean; decimals?: number }) => string
 }) {
   const [view, setView] = useState<'chart' | 'table'>('chart')
@@ -271,6 +283,7 @@ function BreakdownCard({
           metric === 'net_pnl' ? 'Net P&L' : metric === 'total_r' ? 'Total R' : 'Return'
         }
           formatValue={formatMetric}
+          formatAxis={formatAxis}
         />
       ) : (
         <div className="-mx-1 overflow-x-auto">
