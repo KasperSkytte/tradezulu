@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import logging
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 from sqlalchemy import func, select
 
 from .db import SessionLocal
-from .models import Account, Tag, Trade
+from .models import Account, Candle, DayNote, EquityPoint, Tag, Trade
 from .services.aggregation import compute_derived, resolve_account_size
 from .services.appsettings import get_app_settings
 
@@ -44,6 +44,13 @@ def seed_demo_data(days: int = 120, seed: int = 7) -> int:
             account = Account(login="5000123", name="Demo account", is_default=True)
             db.add(account)
             db.flush()
+        # The placeholder account created on first boot is adopted, and it is
+        # called "Default account" with a login of 0 -- which reads as a bug in
+        # every screenshot taken of it.
+        if account.login in ("", "0"):
+            account.login = "5000123"
+            account.name = "Demo account"
+            account.server = account.server or "DemoBroker-Live"
         account.name = account.name or "Demo account"
         account.broker = account.broker or "Demo Broker"
         account.currency = "USD"
@@ -160,9 +167,165 @@ def seed_demo_data(days: int = 120, seed: int = 7) -> int:
                 )
                 created += 1
 
+        db.flush()
+
+        # Everything an account collects for itself, so the demo exercises the
+        # same paths a real one does rather than only the trade table: a
+        # balance that agrees with the trades, a sample of it per day, candles
+        # to draw a chart from, and a couple of days somebody wrote about.
+        trades = list(db.scalars(select(Trade).where(Trade.account_id == account.id)))
+        _settle_balance(db, account, trades)
+        _seed_equity(db, account, trades)
+        _seed_candles(db, rng, trades)
+        _seed_notes(db, rng, trades)
+
         db.commit()
         log.info("Seeded %d demo trades", created)
         return created
+
+
+def _settle_balance(db, account: Account, trades: list[Trade]) -> None:
+    """Make the account worth what its trades say it is worth.
+
+    Every percentage in the journal is reconstructed backwards from the
+    recorded balance, so a demo whose balance was a round number unrelated to
+    its own history would report returns that are wrong in exactly the way
+    this is meant to demonstrate is impossible.
+    """
+    account.balance = round(
+        account.initial_balance + sum(t.net_pnl or 0.0 for t in trades), 2
+    )
+    account.equity = account.balance
+
+
+def _seed_equity(db, account: Account, trades: list[Trade]) -> None:
+    """One balance sample per trading day, as a terminal would report."""
+    running = account.initial_balance
+    by_day: dict[date, float] = {}
+    for trade in sorted(trades, key=lambda t: t.closed_at or t.opened_at):
+        running += trade.net_pnl or 0.0
+        by_day[(trade.closed_at or trade.opened_at).date()] = running
+
+    for day, balance in by_day.items():
+        db.add(
+            EquityPoint(
+                account_id=account.id,
+                time=datetime.combine(day, time(23, 59)),
+                balance=round(balance, 2),
+                equity=round(balance, 2),
+                open_positions=0,
+            )
+        )
+
+
+#: How many of the most recent trades get candles. Every one of them would be
+#: a quarter of a million bars for a chart nobody opens; the newest are the
+#: ones anybody clicks into.
+CANDLE_TRADES = 12
+CANDLE_PADDING = timedelta(hours=12)
+
+
+def _seed_candles(db, rng: random.Random, trades: list[Trade]) -> None:
+    """M5 bars around the newest trades, so the replay has something to draw.
+
+    One walk per symbol rather than one per trade. Two trades hours apart share
+    the hours between them, and giving each its own walk left the price jumping
+    between them -- a chart with a hole in it, which is exactly what somebody
+    reading these screenshots would spot first.
+
+    The walk drifts on its own and is pulled towards the trade's own prices
+    while a position is open, so the candles actually go where the trade says
+    they went. It is fabricated and says so; the trade's prices are the only
+    fixed points, and they are where the chart's markers land.
+    """
+    recent = sorted(trades, key=lambda t: t.closed_at or t.opened_at)[-CANDLE_TRADES:]
+    by_symbol: dict[str, list[Trade]] = {}
+    for trade in recent:
+        if trade.closed_at is not None:
+            by_symbol.setdefault(trade.symbol, []).append(trade)
+
+    span = timedelta(minutes=5)
+    for symbol, group in by_symbol.items():
+        group.sort(key=lambda t: t.opened_at)
+        start = _floor_5m(group[0].opened_at - CANDLE_PADDING)
+        end = group[-1].closed_at + CANDLE_PADDING
+        digits = group[0].digits
+
+        # A bar of this instrument moves about an eighth of the stop distance,
+        # which keeps the noise in proportion to what the trades risked.
+        stops = [
+            abs(t.entry_price - t.initial_stop)
+            for t in group
+            if t.initial_stop
+        ]
+        step = (sum(stops) / len(stops) / 8) if stops else group[0].entry_price * 0.0002
+
+        when = start
+        price = group[0].entry_price * (1 + rng.gauss(0, 0.002))
+        while when <= end:
+            live = next(
+                (t for t in group if t.opened_at <= when <= t.closed_at), None
+            )
+            if live is not None:
+                held = max((live.closed_at - live.opened_at).total_seconds(), 1.0)
+                progress = (when - live.opened_at).total_seconds() / held
+                target = live.entry_price + (
+                    (live.exit_price or live.entry_price) - live.entry_price
+                ) * progress
+                price += (target - price) * 0.35
+            else:
+                # Between trades, drift back towards the next entry so the
+                # price arrives where the next one begins.
+                ahead = next((t for t in group if t.opened_at > when), None)
+                if ahead is not None:
+                    gap = max((ahead.opened_at - when).total_seconds(), 1.0)
+                    pull = min(0.05, span.total_seconds() / gap)
+                    price += (ahead.entry_price - price) * pull
+            price += rng.gauss(0, step)
+
+            close = price + rng.gauss(0, step / 2)
+            high = max(price, close) + abs(rng.gauss(0, step / 2))
+            low = min(price, close) - abs(rng.gauss(0, step / 2))
+            db.add(
+                Candle(
+                    symbol=symbol,
+                    timeframe="M5",
+                    time=when,
+                    open=round(price, digits),
+                    high=round(high, digits),
+                    low=round(low, digits),
+                    close=round(close, digits),
+                    volume=float(rng.randint(40, 900)),
+                )
+            )
+            price = close
+            when += span
+
+
+def _floor_5m(when: datetime) -> datetime:
+    """Bars sit on the clock, so overlapping windows produce the same ones."""
+    return when.replace(minute=when.minute - when.minute % 5, second=0, microsecond=0)
+
+
+NOTES = [
+    ("Two clean setups, both taken. Left the third alone because it was late in the session.",
+     "good"),
+    ("Chased an entry after missing the first one. That is the whole day's loss right there.",
+     "frustrated"),
+    ("Stuck to size on a day that wanted more. Fine.", "calm"),
+]
+
+
+def _seed_notes(db, rng: random.Random, trades: list[Trade]) -> None:
+    """A few days somebody wrote about, so the calendar shows its markers."""
+    days = sorted({(t.closed_at or t.opened_at).date() for t in trades})
+    if not days:
+        return
+    for content, mood in NOTES:
+        day = rng.choice(days[-40:])
+        if db.scalar(select(DayNote).where(DayNote.day == day)):
+            continue
+        db.add(DayNote(day=day, content=content, mood=mood))
 
 
 if __name__ == "__main__":  # pragma: no cover
