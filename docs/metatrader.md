@@ -81,11 +81,20 @@ Per account, automatically:
 
 - The template is copied. A copy is the same installation byte for byte, so it
   inherits those permissions and no dialog is ever driven again.
-- The Expert Advisor is compiled and installed, with the callback URL and token
-  written into its preset. Both come from the server the provisioner is already
-  authenticated to, which is why nobody is ever asked for them — and why the URL
-  is this server's internal address, so putting a domain in front of the site
-  later changes nothing about how its terminals reach it.
+- The Expert Advisor is installed, with the callback URL and token written into
+  its preset. Both come from the server the provisioner is already authenticated
+  to, which is why nobody is ever asked for them — and why the URL is this
+  server's internal address, so putting a domain in front of the site later
+  changes nothing about how its terminals reach it.
+
+  It is compiled once, not once per account. The compiled `.ex5` is kept under
+  `.tz-state/builds` and copied to every terminal that wants the same one.
+  Broker branding does not affect this — a branded terminal is the same
+  MetaQuotes engine with a different logo — but the terminal's *build* does:
+  MetaTrader refuses bytecode produced by a newer MetaEditor than itself, and
+  brokers do not all ship the same build at once. So the cache is keyed by the
+  source and the build, and a terminal that has updated past its expert simply
+  builds a new one.
 - The terminal starts, logs in, and reports.
 
 Which template an account gets is decided by its **server name**, not its broker

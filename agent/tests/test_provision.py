@@ -29,6 +29,7 @@ def bottles(tmp_path, monkeypatch):
     """Point every path at a temporary tree, so nothing real is touched."""
     monkeypatch.setattr(tz, "BOTTLES", tmp_path)
     monkeypatch.setattr(tz, "STATE_DIR", tmp_path / ".tz-state")
+    monkeypatch.setattr(tz, "BUILDS", tmp_path / ".tz-state/builds")
     (tmp_path / "bottles").mkdir()
     return tmp_path
 
@@ -377,3 +378,52 @@ class TestResolveTargets:
 class TestPlan:
     def test_an_older_server_is_understood(self):
         assert tz.Plan("u", "k", [], {}).known_accounts is None
+
+
+# --- reusing a compiled expert ------------------------------------------------
+
+
+class TestBuildKey:
+    def _terminal(self, tmp_path, source: bytes, exe_size: int) -> tuple[Path, Path]:
+        terminal = tmp_path / "terminal"
+        terminal.mkdir(parents=True, exist_ok=True)
+        (terminal / "terminal64.exe").write_bytes(b"x" * exe_size)
+        mq5 = terminal / "TradeZuluCopier.mq5"
+        mq5.write_bytes(source)
+        return terminal, mq5
+
+    def test_the_same_source_and_build_share_a_binary(self, tmp_path):
+        first, mq5 = self._terminal(tmp_path / "a", b"source", 1000)
+        second, other = self._terminal(tmp_path / "b", b"source", 1000)
+        assert tz.build_key(mq5, first) == tz.build_key(other, second)
+
+    def test_a_changed_source_does_not(self, tmp_path):
+        first, mq5 = self._terminal(tmp_path / "a", b"source", 1000)
+        second, other = self._terminal(tmp_path / "b", b"source v2", 1000)
+        assert tz.build_key(mq5, first) != tz.build_key(other, second)
+
+    def test_a_different_terminal_build_does_not(self, tmp_path):
+        """MetaTrader refuses bytecode from a newer MetaEditor than itself."""
+        first, mq5 = self._terminal(tmp_path / "a", b"source", 1000)
+        second, other = self._terminal(tmp_path / "b", b"source", 2000)
+        assert tz.build_key(mq5, first) != tz.build_key(other, second)
+
+    def test_a_built_expert_is_used_instead_of_building_again(self, tmp_path, monkeypatch):
+        terminal, mq5 = self._terminal(tmp_path / "a", b"source", 1000)
+        tz.BUILDS.mkdir(parents=True)
+        (tz.BUILDS / f"TradeZuluCopier-{tz.build_key(mq5, terminal)}.ex5").write_bytes(b"built")
+        monkeypatch.setattr(tz, "compile_expert", lambda *a: pytest.fail("compiled again"))
+
+        tz.provide_binary(terminal, mq5)
+
+        assert mq5.with_suffix(".ex5").read_bytes() == b"built"
+
+    def test_the_first_build_is_kept_for_the_next_terminal(self, tmp_path, monkeypatch):
+        terminal, mq5 = self._terminal(tmp_path / "a", b"source", 1000)
+        monkeypatch.setattr(
+            tz, "compile_expert", lambda t, m: m.with_suffix(".ex5").write_bytes(b"fresh")
+        )
+
+        tz.provide_binary(terminal, mq5)
+
+        assert (tz.BUILDS / f"TradeZuluCopier-{tz.build_key(mq5, terminal)}.ex5").exists()

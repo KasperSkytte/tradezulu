@@ -21,6 +21,7 @@ safe to restart at any point and picks up where it left off after a reboot.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -430,7 +431,7 @@ def install_expert(terminal: Path, source: Path, callback_url: str, api_key: str
         if candidate.exists():
             shutil.copy2(candidate, experts / candidate.name)
 
-    compile_expert(terminal, experts / f"{source.stem}.mq5")
+    provide_binary(terminal, experts / f"{source.stem}.mq5")
     set_expert_flags(terminal)
 
     presets = terminal / "MQL5/Presets"
@@ -443,6 +444,60 @@ def install_expert(terminal: Path, source: Path, callback_url: str, api_key: str
     # Starting the expert from the terminal's own startup file means it is
     # attached before the first tick, so no chart has to be set up by hand.
     write_startup(terminal)
+
+
+#: Compiled experts, kept between terminals so the same source is only ever
+#: built once.
+BUILDS = STATE_DIR / "builds"
+
+
+def build_key(mq5: Path, terminal: Path) -> str | None:
+    """What a compiled expert is only reusable within.
+
+    Two things decide, and broker branding is not one of them -- a branded
+    terminal is the same MetaQuotes engine with a different logo, and runs the
+    same bytecode. What does decide is the source, obviously, and the
+    terminal's own build: MetaTrader refuses an ``.ex5`` produced by a newer
+    MetaEditor than itself, and brokers do not all ship the same build at the
+    same time. The size of terminal64.exe stands in for the build number,
+    which is not otherwise readable from out here.
+    """
+    exe = terminal / "terminal64.exe"
+    try:
+        digest = hashlib.sha1(mq5.read_bytes()).hexdigest()[:12]
+        return f"{digest}-{exe.stat().st_size}"
+    except OSError:
+        return None
+
+
+def provide_binary(terminal: Path, mq5: Path) -> None:
+    """Give this terminal a compiled expert, building one only if nobody has.
+
+    Compiling takes a MetaEditor run under Wine -- tens of seconds, and one
+    more thing that can fail -- and it was being done again for every account,
+    producing an identical file each time. It happens once per version now and
+    every terminal after the first gets a copy.
+
+    Not done in install.sh instead, tempting as that is: a terminal that has
+    updated itself past the build the file was compiled for has to be able to
+    rebuild it, and only this side knows when that has happened.
+    """
+    ex5 = mq5.with_suffix(".ex5")
+    key = build_key(mq5, terminal)
+    cached = BUILDS / f"{mq5.stem}-{key}.ex5" if key else None
+
+    if cached is not None and cached.exists():
+        if not ex5.exists() or ex5.read_bytes() != cached.read_bytes():
+            shutil.copy2(cached, ex5)
+            log.info("installed %s from the last build of it", ex5.name)
+        return
+
+    compile_expert(terminal, mq5)
+
+    if cached is not None and ex5.exists():
+        with suppress(OSError):
+            BUILDS.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ex5, cached)
 
 
 def compile_expert(terminal: Path, mq5: Path) -> None:
