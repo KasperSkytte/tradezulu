@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.14.2](https://github.com/KasperSkytte/tradezulu/compare/v1.14.1...v1.14.2) (2026-08-03)
+
+
+### Bug fixes
+
+* **ui:** make archived accounts removable ([8f98efe](https://github.com/KasperSkytte/tradezulu/commit/8f98efeff83c822ad85b0868c81be3318108ec04))
+
+
+### Refactoring
+
+* **ui:** move manual import to the accounts page ([8412537](https://github.com/KasperSkytte/tradezulu/commit/8412537c58a9f6b144310f53cc16fc3a7414c3d1))
+
 ## [1.14.1](https://github.com/KasperSkytte/tradezulu/compare/v1.14.0...v1.14.1) (2026-08-03)
 
 
