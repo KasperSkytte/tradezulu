@@ -51,51 +51,43 @@ docker compose run --rm --service-ports -e TZ_DEMO=1 tradezulu demo
 
 ## Features
 
+**Journal** — what actually happened, and what it cost you.
+
+- Every percentage comes from the account itself: a trade against the balance
+  just before it closed, a day against the previous day's close. Never against
+  a figure typed in once and left to go stale.
+- Thinks in R, taken from the broker's recorded stop. A trade opened without
+  one has no R rather than an invented denominator — and the count of those is
+  on the dashboard, because it is worth knowing.
+- Breakevens counted as breakevens, and kept out of the win rate.
+- Zulu Score: one 0–100 number from the components you switch on, each scored
+  against your own target.
+- Calendar, reports by symbol, tag, setup, weekday, hour, hold time and R
+  multiple. Notes, ratings and tags per trade, so "FOMO trade" becomes a
+  figure. Chart replay with your real entry, exit, stop and target on it.
+- Money is hidden by default, so a screenshot shows how you traded without
+  showing what you are worth. Installs on a phone as a PWA.
+
 **Copier** — one master account, any number of slaves, any broker.
 
 - Sizing that fits each account: fixed lots, a multiplier, the balance or
-  equity ratio, or a fixed percentage of the slave's equity risked against the
-  master's stop. Lots round *down* to the broker's step, and a size under the
-  minimum is refused rather than rounded up into more risk than you allowed.
-- Per-account limits: max risk per trade, max lot, max open positions, max in
-  one direction, max per symbol, max total lots.
-- Account guards: equity stop by amount or percentage below peak, daily
-  drawdown from the day's opening equity, daily profit target. When one trips,
-  the account flattens and stops copying.
-- Prop-firm rules: bank a winner at a money amount or an R multiple, and cap
-  how much of total profit a single day may be.
-- Stop and target moves follow through to every slave; a close is a close
-  everywhere. Broker symbol differences (`EURUSD`, `EURUSD.r`, `FX_EURUSD`)
-  are resolved per account, never guessed.
+  equity ratio, or a percentage of the slave's equity risked against the
+  master's stop. Lots round *down*, and a size under the broker's minimum is
+  refused rather than rounded up into more risk than you allowed.
+- Per-account limits on risk, lot size, open positions, direction, symbol and
+  total exposure.
+- Guards that flatten the account and stop copying: equity stop below peak,
+  daily drawdown, daily profit target, and prop-firm rules for banking a
+  winner and capping one day's share of the profit.
+- Stop and target moves follow through; a close is a close everywhere. Symbol
+  differences (`EURUSD`, `EURUSD.r`, `FX_EURUSD`) are resolved per account,
+  never guessed.
 - Every slave starts disabled and in dry-run, recording what it *would* have
   done. You arm them one at a time.
 
-**Journal** — what actually happened, and what it cost you.
-
-- Thinks in R. Risk comes from the broker's recorded stop, so planned R,
-  realised R and expectancy are real numbers.
-- Percentages come from the account, never a figure you type in. A day is
-  measured against the balance that morning, a trade against the balance just
-  before it closed, and a period against what it opened with — so an account
-  that grows reports honestly instead of flattering itself against last year's
-  deposit.
-- Breakevens counted honestly — a trade that closed at your entry was wasted
-  effort, not a win, and stays out of the win rate.
-- Zulu Score: one 0–100 number from six weighted components you control.
-- Full statistics, a P&L calendar, and reports by symbol, tag, setup, weekday,
-  hour, hold time and R multiple.
-- Notes, ratings and tags per trade, so "FOMO trade" becomes a currency figure.
-- Chart replay with your real entry, exit, stop and target drawn on it.
-- Stats per account or all of them together, with equity curves each.
-- Installable on a phone as a PWA.
-
-It is a PWA, so it installs on a phone and is laid out for one — the calendar
-drops to the figures that matter, and the trade list becomes cards rather than
-a table you have to pan across.
-
 ## Connect MetaTrader 5
 
-**Settings → MetaTrader 5**, three fields:
+**Accounts → Master account credentials**, three fields:
 
 | Field | Example |
 |---|---|
@@ -112,9 +104,10 @@ cannot trade your account even by accident. Copying to a slave account does
 need that account's full password, which is why slaves stay in dry-run until
 you arm them.
 
-Terminals are restarted every Sunday so MetaTrader's updates install during a
-quiet hour, rather than a broker's new build stopping a terminal mid-week with
-a dialog nobody is there to answer. So if you trade crypto during weekend where the market is still open ensure the time suits you.
+Terminals are restarted weekly so MetaTrader's updates install during a quiet
+hour, rather than a broker's new build stopping a terminal mid-week behind a
+dialog nobody is there to answer. Sunday at 3am by default, and adjustable on
+the same page — worth changing if you trade crypto through the weekend.
 
 Note that MetaTrader runs on the host rather than in a container, which is not for want
 of trying — [docs/metatrader.md](docs/metatrader.md) covers how it is put
