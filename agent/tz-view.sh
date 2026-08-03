@@ -52,34 +52,89 @@ windows() {
   DISPLAY="${DISPLAY_ID}" xdotool search --name '.' 2>/dev/null || true
 }
 
+# Wine gives every process an input-method window or two of its own. They are
+# invisible, they are not terminals, and listing them made a display with one
+# account on it look like a display with eight things on it.
+is_noise() {
+  case "$1" in
+    ''|'openbox'|'Desktop'|'Default IME'|'Input'|'MSCTFIME UI'|'winex11'*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# The terminal itself, not the stub that starts it. Wine launches MetaTrader
+# through `start.exe /exec terminal64.exe`, which names the terminal in its own
+# command line and can outlive a launch that failed.
+is_terminal_pid() {
+  local argv0
+  argv0="$(tr '\0' '\n' < "/proc/$1/cmdline" 2>/dev/null | head -1)"
+  case "${argv0##*[\\/]}" in
+    terminal64.exe|Terminal64.exe) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 cmd_list() {
   check_display
   say "display ${DISPLAY_ID} ($(DISPLAY="${DISPLAY_ID}" xdotool getdisplaygeometry | tr ' ' 'x'))"
   say ""
 
   local found=0 id name
+  local -a titles=()
   for id in $(windows); do
     name="$(DISPLAY="${DISPLAY_ID}" xdotool getwindowname "$id" 2>/dev/null || true)"
-    # Only real terminal windows: the root and various helpers have no title.
-    case "${name}" in
-      ''|'openbox'|'Desktop') continue ;;
-    esac
+    is_noise "${name}" && continue
     found=1
+    # MetaTrader titles its main window "<login> - <server>: ...". Only those
+    # say which account a window belongs to; everything else it opens -- the
+    # updater, a message box -- is one per terminal and would otherwise look
+    # like two terminals on one account.
+    case "${name}" in
+      [0-9]*\ -\ *) titles+=("${name%% *}") ;;
+    esac
     printf '  %-12s %s\n' "$id" "$name"
   done
   [ "${found}" -eq 1 ] || say "  no terminal windows yet."
 
+  # Two windows for one login are two terminals logged into the same account.
+  # That is worth shouting about rather than leaving to be counted: both run
+  # the Expert Advisor, so both act on every command the copier sends, and an
+  # order gets placed twice.
+  local dupes
+  dupes="$(printf '%s\n' "${titles[@]:-}" | sort | uniq -d)"
+  if [ -n "${dupes}" ]; then
+    say ""
+    say "WARNING: more than one terminal is logged into the same account:"
+    printf '  account %s\n' "${dupes}"
+    say "  Each of them runs the Expert Advisor, so a copied order is placed twice."
+    say "  Clear it up with:  agent/tz_provision.py --reset all"
+  fi
+
   say ""
   say "terminals running, by prefix:"
-  local pid prefix any=0
+  local pid prefix any=0 hidden=0
   for pid in $(pgrep -f 'terminal64\.exe' 2>/dev/null || true); do
-    [ -r "/proc/${pid}/environ" ] || continue
+    is_terminal_pid "${pid}" || continue
+    if [ ! -r "/proc/${pid}/environ" ]; then
+      hidden=$((hidden + 1))
+      continue
+    fi
     prefix="$(tr '\0' '\n' < "/proc/${pid}/environ" 2>/dev/null | sed -n 's/^WINEPREFIX=//p')"
     [ -n "${prefix}" ] || continue
     any=1
     printf '  pid %-8s %s\n' "$pid" "$(basename "${prefix}")"
   done
-  [ "${any}" -eq 1 ] || say "  none."
+
+  # Which account a terminal belongs to is only readable from its environment,
+  # and only by the user running it. Saying "none" when the answer is really
+  # "not yours to read" sent this looking for a problem that was not there.
+  if [ "${hidden}" -gt 0 ]; then
+    say "  ${hidden} terminal(s) belong to another user and cannot be inspected from here."
+    say "  Run this as the user the provisioner runs as:"
+    say "    sudo -u \$(sed -n 's/^User=//p' /etc/systemd/system/tradezulu-agent.service) $0 list"
+  elif [ "${any}" -eq 0 ]; then
+    say "  none."
+  fi
 }
 
 cmd_shot() {

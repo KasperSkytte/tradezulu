@@ -848,9 +848,30 @@ def reconcile(plan: Plan, template: Path, expert: Path, settled: bool = True) ->
     would turn a minute of site downtime into a fleet-wide outage, so silence
     is only acted on once we have been watching continuously.
     """
+    #: login -> the account already given a terminal for it this cycle.
+    claimed: dict[str, int] = {}
+
     for spec in plan.terminals:
         if not spec.get("enabled"):
             continue
+
+        # One terminal per broker account, whatever the server says. Two rows
+        # for the same login is a fault upstream -- it used to happen when an
+        # imported statement created a second "master" -- but the consequence
+        # is here: two terminals log into the same account, both run the
+        # Expert Advisor, and both act on every command the copier sends, so
+        # the order is placed twice.
+        login = str(spec.get("login") or "").strip()
+        if login in claimed:
+            log.error(
+                "accounts %s and %s are both %s. Only one terminal is started for "
+                "it; remove the duplicate account in TradeZulu (Accounts -> "
+                "Forget) and its terminal is cleared up on the next cycle.",
+                claimed[login], spec.get("account_id"), login,
+            )
+            continue
+        claimed[login] = int(spec["account_id"])
+
         try:
             ensure_terminal(spec, plan, template, expert, settled)
         except Exception:  # noqa: BLE001 - one bad account must not stop the rest
@@ -894,6 +915,24 @@ def ensure_terminal(
 
     if state.get("gave_up"):
         return
+
+    # A launch already under way. MetaTrader takes a while to get from "the
+    # sandbox is up" to "terminal64.exe exists" -- longer on the first start of
+    # a prefix, longer still if it decides to install an update on the way --
+    # and for that stretch there is no terminal process to find. Launching
+    # again because of it would put two terminals on one account, which is the
+    # one outcome worth going out of the way to avoid.
+    launched = _parse_time(state.get("launched"))
+    if launched is not None and stray_pids(bottle):
+        waiting = (datetime.now(timezone.utc) - launched).total_seconds()
+        if waiting < STARTUP_GRACE:
+            log.info("%s is still starting (%ds); not launching another", spec["login"], waiting)
+            return
+        log.warning(
+            "%s has been starting for %ds with no terminal to show for it; "
+            "clearing it up and trying again",
+            spec["login"], waiting,
+        )
 
     # Whatever a previous attempt left holding this prefix goes first. A stale
     # wineserver among it will happily accept the new terminal and then serve

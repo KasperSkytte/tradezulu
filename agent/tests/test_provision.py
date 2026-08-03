@@ -349,6 +349,100 @@ class TestReap:
         assert prefix.exists()
 
 
+class TestOneTerminalPerAccount:
+    """Two terminals on one account is the failure that costs money."""
+
+    def _plan(self, *logins):
+        return tz.Plan(
+            "u",
+            "k",
+            [
+                {"account_id": index + 1, "login": login, "server": "S",
+                 "password": "p", "enabled": True}
+                for index, login in enumerate(logins)
+            ],
+            {},
+        )
+
+    def test_the_same_login_twice_gets_one_terminal(self, bottles, monkeypatch, caplog):
+        """It happened: an imported statement created a second master row.
+
+        Both rows are the same broker account, so both terminals log into it
+        and both run the Expert Advisor -- and every copied order is placed
+        twice.
+        """
+        started = []
+        monkeypatch.setattr(tz, "ensure_terminal", lambda spec, *a, **k: started.append(spec["account_id"]))
+        monkeypatch.setattr(tz, "reap", lambda plan: None)
+
+        tz.reconcile(self._plan("22609000", "22609000"), Path("/template"), Path("/expert"))
+
+        assert started == [1]
+        assert "both 22609000" in caplog.text
+
+    def test_different_accounts_each_get_one(self, bottles, monkeypatch):
+        started = []
+        monkeypatch.setattr(tz, "ensure_terminal", lambda spec, *a, **k: started.append(spec["account_id"]))
+        monkeypatch.setattr(tz, "reap", lambda plan: None)
+
+        tz.reconcile(self._plan("111", "222"), Path("/template"), Path("/expert"))
+
+        assert started == [1, 2]
+
+    def test_a_launch_in_flight_is_not_launched_again(self, bottles, monkeypatch):
+        """There is no terminal process yet while MetaTrader is starting.
+
+        The sandbox is up and the terminal is not, which is indistinguishable
+        from "nothing is running" unless the launch is remembered -- and the
+        next cycle would start a second one.
+        """
+        prefix = tz.bottle_for(1)
+        prefix.mkdir()
+        (prefix / "drive_c").mkdir()
+        (prefix / "drive_c/terminal64.exe").write_bytes(b"")
+        monkeypatch.setattr(tz, "is_running", lambda bottle: False)
+        monkeypatch.setattr(tz, "stray_pids", lambda bottle: [4242])
+        monkeypatch.setattr(tz, "launch", lambda *a: pytest.fail("started a second terminal"))
+        monkeypatch.setattr(tz, "install_expert", lambda *a: None)
+
+        tz.save_state(1, {"login": "9", "launched": _minutes_ago(1)})
+        tz.ensure_terminal(
+            {"account_id": 1, "login": "9", "server": "S", "password": "p"},
+            tz.Plan("u", "k", [], {}),
+            Path("/template"),
+            Path("/expert"),
+        )
+
+    def test_a_launch_that_never_arrived_is_cleared_and_retried(self, bottles, monkeypatch):
+        prefix = tz.bottle_for(1)
+        prefix.mkdir()
+        (prefix / "drive_c").mkdir()
+        (prefix / "drive_c/terminal64.exe").write_bytes(b"")
+        cleared, launched = [], []
+        monkeypatch.setattr(tz, "is_running", lambda bottle: False)
+        monkeypatch.setattr(tz, "stray_pids", lambda bottle: [4242])
+        monkeypatch.setattr(tz, "clear_strays", lambda bottle, **k: cleared.append(bottle))
+        monkeypatch.setattr(tz, "install_expert", lambda *a: None)
+        monkeypatch.setattr(tz, "launch", lambda *a: launched.append(a))
+        monkeypatch.setattr(tz, "write_startup", lambda *a, **k: None)
+        monkeypatch.setattr(tz.time, "sleep", lambda seconds: None)
+
+        tz.save_state(1, {"login": "9", "launched": _minutes_ago(30)})
+        tz.ensure_terminal(
+            {"account_id": 1, "login": "9", "server": "S", "password": "p"},
+            tz.Plan("u", "k", [], {}),
+            Path("/template"),
+            Path("/expert"),
+        )
+
+        assert cleared, "the stuck launch has to be cleared before another is started"
+        assert launched
+
+
+def _minutes_ago(minutes: int) -> str:
+    return (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
+
+
 class TestResolveTargets:
     """What someone typed, turned into prefixes on disk."""
 
