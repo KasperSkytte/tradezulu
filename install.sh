@@ -159,8 +159,15 @@ fi
 step "Installing what the terminals need"
 need_root
 MISSING=()
-for pkg in flatpak xvfb xdotool x11-utils openbox curl; do
-  dpkg -s "$pkg" >/dev/null 2>&1 || MISSING+=("$pkg")
+# Checked by the command each one provides, not by asking dpkg whether the
+# package is installed. `dpkg -s` succeeds for a package that has been removed
+# but not purged -- Status "deinstall ok config-files" -- which is exactly the
+# state uninstall.sh leaves behind. Re-installing after an uninstall therefore
+# skipped all four X packages and only said so much later, when building a
+# template failed on a missing xwininfo.
+for entry in flatpak:flatpak xvfb:Xvfb xdotool:xdotool x11-utils:xwininfo \
+             openbox:openbox curl:curl; do
+  command -v "${entry#*:}" >/dev/null 2>&1 || MISSING+=("${entry%%:*}")
 done
 if [ ${#MISSING[@]} -gt 0 ]; then
   say "installing: ${MISSING[*]}"
