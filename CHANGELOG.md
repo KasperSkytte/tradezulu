@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.15.0](https://github.com/KasperSkytte/tradezulu/compare/v1.14.2...v1.15.0) (2026-08-03)
+
+
+### Features
+
+* **charts:** collect M5 and build every longer timeframe from it ([494fe80](https://github.com/KasperSkytte/tradezulu/commit/494fe808f09413e819ebb41d30000737c921bef0))
+
+
+### Documentation
+
+* features ([576c2a1](https://github.com/KasperSkytte/tradezulu/commit/576c2a1478cff58b3a5a3d81696a1e3cb88130e1))
+* say plainly that attaching an account is GUI automation ([3405a1d](https://github.com/KasperSkytte/tradezulu/commit/3405a1d9c35e7ed1cd4fca19ecf548730ab5911d))
+* shorten the feature list, journal first ([6513e7a](https://github.com/KasperSkytte/tradezulu/commit/6513e7ad4ccb84735ab7218332fba79490262693))
+
 ## [1.14.2](https://github.com/KasperSkytte/tradezulu/compare/v1.14.1...v1.14.2) (2026-08-03)
 
 
