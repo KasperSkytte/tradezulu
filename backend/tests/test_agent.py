@@ -297,6 +297,35 @@ class TestAuth:
         assert response.status_code == 200
 
 
+class TestTheProvisioningPlan:
+    """What the machine running MetaTrader is told to have."""
+
+    def _plan(self, client):
+        return client.get(
+            "/api/agent/terminals", headers={"X-API-Key": "test-ingest-token"}
+        ).json()
+
+    def test_an_account_with_no_password_gets_no_terminal(self, client, db, master):
+        """A terminal that cannot log in sits at a prompt looking like it works."""
+        assert self._plan(client)["terminals"] == []
+
+    def test_every_account_is_named_whether_or_not_it_has_one(self, client, db, master, slave):
+        """The list that says what has been forgotten and what merely has no password.
+
+        Without it the provisioner cannot tell the two apart, and the only safe
+        reading of "no terminal asked for" is to leave the MetaTrader install
+        alone — which is how a forgotten account's terminal kept running for
+        good, polling an account this server no longer had.
+        """
+        plan = self._plan(client)
+        assert plan["known_accounts"] == [master.id, slave.id]
+        assert [t["account_id"] for t in plan["terminals"]] == [slave.id]
+
+    def test_a_forgotten_account_leaves_the_list(self, auth_client, client, db, master, slave):
+        auth_client.delete(f"/api/accounts/{slave.id}")
+        assert self._plan(client)["known_accounts"] == [master.id]
+
+
 class TestEquityPoints:
     """Balance and equity are only knowable as they happen."""
 

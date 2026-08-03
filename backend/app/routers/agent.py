@@ -243,8 +243,10 @@ def terminals(db: Session = Depends(get_db)) -> dict[str, Any]:
     """
     stored = get_credentials(db)
     wanted: list[dict[str, Any]] = []
+    known: list[int] = []
 
     for account in db.scalars(select(Account).order_by(Account.id)):
+        known.append(account.id)
         if account.role == "master":
             login = str(stored.get("login") or account.login or "").strip()
             server = str(stored.get("server") or account.server or "").strip()
@@ -291,6 +293,13 @@ def terminals(db: Session = Depends(get_db)) -> dict[str, Any]:
     return {
         "callback_url": settings.internal_url.rstrip("/") + "/api",
         "api_key": settings.ingest_token or "",
+        # Every account, including ones with no credentials, which is not the
+        # same list as the terminals above. It is what lets the provisioner
+        # tell "this account has no password yet" from "this account was
+        # forgotten" -- and only the second means delete its MetaTrader
+        # install. Without it a forgotten account's terminal ran on here for
+        # ever, polling an account the server no longer had.
+        "known_accounts": known,
         "maintenance": {
             "weekday": int(config["mt5"].get("restart_weekday", 6)),
             "hour": int(config["mt5"].get("restart_hour", 3)),
