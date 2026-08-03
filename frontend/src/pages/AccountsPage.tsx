@@ -58,6 +58,13 @@ export function AccountsPage() {
   const all = accounts.data ?? []
   const masters = all.filter((account) => account.role === 'master')
   const slaves = all.filter((account) => account.role === 'slave')
+  // Accounts that used to be the master, or that arrived with an imported
+  // statement. They are kept for their history and nothing is copied from
+  // them -- but they have to be removable, or they are just clutter nobody
+  // can get rid of.
+  const archived = all.filter(
+    (account) => account.role !== 'master' && account.role !== 'slave',
+  )
 
   return (
     <div className="space-y-5">
@@ -111,6 +118,20 @@ export function AccountsPage() {
           </div>
         )}
       </Card>
+
+      {archived.length > 0 && (
+        <Card>
+          <CardHeader
+            title={`Archived accounts (${archived.length})`}
+            hint="No longer the master and not copied to. Their trades still count in the journal when you pick them above, and Forget removes them for good."
+          />
+          <div className="divide-y divide-[var(--tz-border)]">
+            {archived.map((account) => (
+              <AccountRow key={account.id} account={account} onChanged={refresh} />
+            ))}
+          </div>
+        </Card>
+      )}
 
       <Card>
         <CardHeader
@@ -270,11 +291,12 @@ function AccountRow({
             icon={<Trash2 size={15} />}
             loading={remove.isPending}
             onClick={() => {
-              const what = isSlave
-                ? `Remove ${account.name}?`
-                : `Forget ${account.name} (${account.login})?\n\n` +
-                  'Its stored credentials go too, so no terminal is started for it ' +
-                  'again.'
+              const what =
+                account.role === 'master'
+                  ? `Forget ${account.name} (${account.login})?\n\n` +
+                    'Its stored credentials go too, so no terminal is started for it ' +
+                    'again.'
+                  : `Remove ${account.name} (${account.login})?`
               if (
                 window.confirm(
                   `${what}\n\nIts whole history goes with it: trades, equity samples ` +
@@ -283,9 +305,9 @@ function AccountRow({
               )
                 remove.mutate()
             }}
-            title={isSlave ? 'Remove this account' : 'Forget this account'}
+            title={account.role === 'master' ? 'Forget this account' : 'Remove this account'}
           >
-            {isSlave ? <span className="sr-only">Remove</span> : 'Forget'}
+            {account.role === 'master' ? 'Forget' : <span className="sr-only">Remove</span>}
           </Button>
         </div>
       </div>
