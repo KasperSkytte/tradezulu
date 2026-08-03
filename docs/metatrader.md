@@ -18,10 +18,45 @@ no public API that takes a server name, a login and a password and hands back
 your trade history — the only software that can speak to a broker's MT5 server
 is MetaTrader itself.
 
+The APIs that do exist are not for you. MetaQuotes licenses server-side access
+— the Manager and Web APIs — to the *brokers* who run an MT5 server, as part of
+running one, at prices set for a business. Nobody sells a trader an API to
+their own account, at any price. What every trader is given instead is the
+terminal, and inside it MQL5, which can make an HTTP request.
+
 So "just use my account details" means *something* has to run a terminal.
 TradeZulu runs one for you, out of sight, on the same machine as the site. It
 is a normal MetaTrader install rather than a container, which is deliberate and
 is the subject of the [last section](#why-not-a-container).
+
+### Yes, this is a hack
+
+It is worth being plain about it. Attaching an account means starting a real
+MetaTrader on a virtual display nobody looks at, letting it log itself in, and
+— once per terminal — driving its Options dialog by clicking coordinates,
+because the WebRequest allowlist the Expert Advisor depends on is kept
+encrypted in the terminal's own config and there is no other way in.
+
+That is GUI automation against a program that never agreed to be automated,
+and it can break: a MetaTrader update could move the dialog, a broker's build
+could name things differently. What makes it liveable is that none of it is
+trusted:
+
+- The dialog is *measured* every time rather than clicked at from memory, so a
+  window that opens somewhere else is still found. It used to use fixed screen
+  coordinates, and when they went stale one click landed on Cancel — and the
+  provisioner logged success.
+- Nothing counts as done because a click appeared to work. The permission is
+  granted only when that account's Expert Advisor actually reaches the server.
+  Until then it retries, then rebuilds the terminal, then stops and says what
+  to check by hand.
+- You can look at exactly what the terminals are showing, at any time, with
+  [`agent/tz-view.sh`](#looking-at-a-terminal) — it only reads the display, so
+  it is safe against a terminal that is trading.
+
+The alternative was asking every user to install MetaTrader themselves, attach
+an Expert Advisor to a chart, and paste a URL and a token into its inputs. That
+is not a hack, and it is a great deal worse.
 
 ---
 

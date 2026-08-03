@@ -109,9 +109,32 @@ hour, rather than a broker's new build stopping a terminal mid-week behind a
 dialog nobody is there to answer. Sunday at 3am by default, and adjustable on
 the same page — worth changing if you trade crypto through the weekend.
 
-Note that MetaTrader runs on the host rather than in a container, which is not for want
-of trying — [docs/metatrader.md](docs/metatrader.md) covers how it is put
-together and what was ruled out.
+### How that actually works, and why it is a bit of a hack
+
+Worth knowing before you trust it with an account.
+
+There is no API for this. MetaQuotes' server-side APIs are licensed to brokers
+running their own MT5 server rather than to the people trading on it, and
+priced accordingly — for a business, not for one trader with one account. The
+only software that can speak to a broker's MT5 server is MetaTrader itself.
+
+So TradeZulu runs MetaTrader. Each account gets a real terminal on a virtual
+display nobody ever looks at, logged in automatically, with an Expert Advisor
+inside it reporting every deal back over plain HTTP. One setting cannot be
+reached any other way — the terminal keeps its WebRequest allowlist encrypted
+in its own config — so the provisioner opens the Options dialog on that
+display, measures where it is, and clicks through it.
+
+Clicking buttons on a screen nobody is watching is not elegant. It is made as
+honest as it can be: nothing counts as done because a click seemed to land,
+only because that account's Expert Advisor actually reached the server; a
+terminal that starts but never reports is restarted, then rebuilt, then given
+up on loudly rather than left looking healthy. You can watch the display
+yourself with `agent/tz-view.sh watch`.
+
+MetaTrader runs on the host rather than in a container, which is also not for
+want of trying — [docs/metatrader.md](docs/metatrader.md) covers how the whole
+thing is put together and what was ruled out.
 
 ## Uninstalling
 
