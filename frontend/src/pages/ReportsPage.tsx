@@ -42,7 +42,7 @@ const SECTIONS: { key: BreakdownKey; title: string; hint: string }[] = [
 
 export function ReportsPage() {
   const { params } = useFilters()
-  const { currency } = useSettings()
+  const { currency, showAmounts } = useSettings()
   const [metric, setMetric] = useState<Metric>('net_pnl')
 
   const summaryQuery = useQuery({
@@ -79,15 +79,30 @@ export function ReportsPage() {
   const summary = summaryQuery.data
   const breakdowns = breakdownQuery.data
 
-  // Percent is derived from money rather than carried separately: the server
-  // sends the account size, and a share of it is exactly what this is.
-  const accountSize = breakdowns?.account_size ?? 0
+  // Percent is derived from money rather than carried separately: a share of
+  // what the account was worth when the period opened is exactly what this is.
+  // The account size is the fallback for a journal with no recorded balance.
+  const accountSize = summary?.opening_balance || breakdowns?.account_size || 0
+
+  // The same rule as the dashboard, and for the same reason: with amounts
+  // switched off this page can be screenshotted and shared without showing
+  // what the account is worth. Every figure here becomes a share of it --
+  // charts, axes, tooltips and tables alike, or the ones left in money would
+  // give the size away on their own.
+  const hideMoney = !showAmounts && accountSize > 0
+  const cash = (value: number | null | undefined, options?: { sign?: boolean; decimals?: number }) => {
+    if (value == null) return '—'
+    if (!hideMoney) return money(value, currency, options)
+    const pct = (value / accountSize) * 100
+    return `${pct > 0 ? '+' : ''}${num(pct, 2)}%`
+  }
+
   const formatMetric = (value: number) => {
     if (metric === 'total_r') return `${num(value, 2)}R`
     if (metric === 'percent') {
       return accountSize > 0 ? `${value > 0 ? '+' : ''}${num(value, 2)}%` : '—'
     }
-    return money(value, currency, { sign: true })
+    return cash(value, { sign: true })
   }
 
   return (
@@ -100,7 +115,9 @@ export function ReportsPage() {
             value={metric}
             onChange={setMetric}
             options={[
-              { value: 'net_pnl', label: 'Money' },
+              // Named after what it actually shows, which depends on whether
+              // money is being hidden.
+              { value: 'net_pnl', label: hideMoney ? 'Percent' : 'Money' },
               { value: 'total_r', label: 'R multiple' },
             ]}
           />
@@ -148,6 +165,7 @@ export function ReportsPage() {
                   drawdown: point.drawdown,
                 }))}
                 currency={currency}
+                format={hideMoney ? (value) => `${num((value / accountSize) * 100, 1)}%` : undefined}
               />
             </Card>
           </div>
@@ -165,7 +183,9 @@ export function ReportsPage() {
                   metric={metric}
                   currency={currency}
                   accountSize={accountSize}
+                  hideMoney={hideMoney}
                   formatMetric={formatMetric}
+                  cash={cash}
                 />
               ))}
             </div>
@@ -183,7 +203,9 @@ function BreakdownCard({
   metric,
   currency,
   accountSize,
+  hideMoney,
   formatMetric,
+  cash,
 }: {
   title: string
   hint: string
@@ -191,7 +213,9 @@ function BreakdownCard({
   metric: Metric
   currency: string
   accountSize: number
+  hideMoney: boolean
   formatMetric: (value: number) => string
+  cash: (value: number | null | undefined, options?: { sign?: boolean; decimals?: number }) => string
 }) {
   const [view, setView] = useState<'chart' | 'table'>('chart')
 
@@ -259,7 +283,8 @@ function BreakdownCard({
                 <th className="px-2 py-1.5 text-right font-medium">PF</th>
                 <th className="px-2 py-1.5 text-right font-medium">Net</th>
                 <th className="px-2 py-1.5 text-right font-medium">R</th>
-                {accountSize > 0 && (
+                {/* Redundant once Net is itself a percentage. */}
+                {accountSize > 0 && !hideMoney && (
                   <th className="px-2 py-1.5 text-right font-medium">% of acct</th>
                 )}
               </tr>
@@ -274,12 +299,12 @@ function BreakdownCard({
                     {profitFactor(row.profit_factor)}
                   </td>
                   <td className={clsx('tabular px-2 py-1.5 text-right', pnlClass(row.net_pnl))}>
-                    {money(row.net_pnl, currency, { sign: true, decimals: 0 })}
+                    {cash(row.net_pnl, { sign: true, decimals: 0 })}
                   </td>
                   <td className={clsx('tabular px-2 py-1.5 text-right', pnlClass(row.total_r))}>
                     {row.total_r === null ? '—' : `${num(row.total_r, 1)}R`}
                   </td>
-                  {accountSize > 0 && (
+                  {accountSize > 0 && !hideMoney && (
                     <td className={clsx('tabular px-2 py-1.5 text-right', pnlClass(row.net_pnl))}>
                       {row.net_pnl === null
                         ? '—'

@@ -426,11 +426,15 @@ export function DrawdownChart({
   data,
   currency,
   height = 180,
+  /** How to write a drawdown. Given when the page is hiding money amounts. */
+  format,
 }: {
   data: { label: string; drawdown: number }[]
   currency: string
   height?: number
+  format?: (value: number) => string
 }) {
+  const write = format ?? ((value: number) => money(value, currency))
   return (
     <ResponsiveContainer width="100%" height={height}>
       <AreaChart data={data} margin={{ top: 6, right: 8, bottom: 0, left: -12 }}>
@@ -445,7 +449,9 @@ export function DrawdownChart({
         <YAxis
           {...AXIS}
           width={62}
-          tickFormatter={(value) => compactMoney(-Math.abs(value), currency)}
+          tickFormatter={(value) =>
+            format ? format(-Math.abs(value)) : compactMoney(-Math.abs(value), currency)
+          }
         />
         <Tooltip
           cursor={{ stroke: 'var(--tz-border-strong)', strokeWidth: 1 }}
@@ -456,7 +462,7 @@ export function DrawdownChart({
                 rows={[
                   {
                     label: 'Drawdown from peak',
-                    value: money(-Math.abs(Number(payload[0].value)), currency),
+                    value: write(-Math.abs(Number(payload[0].value))),
                     color: 'var(--tz-loss)',
                   },
                 ]}
