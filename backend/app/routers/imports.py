@@ -144,6 +144,11 @@ def _target_account(
             server=str(account_info.get("server") or ""),
             currency=str(account_info.get("currency") or "USD"),
             is_default=db.scalar(select(func.count()).select_from(Account)) == 0,
+            # A statement dropped on the import page is history to read, not
+            # the account everything else copies from. Left to the column's
+            # default it became a second master -- which nothing in the
+            # interface can then remove.
+            role="slave",
         )
         db.add(account)
         db.flush()

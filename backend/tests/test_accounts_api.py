@@ -205,10 +205,79 @@ class TestRemoving:
                 select(func.count()).select_from(model).where(column == account_id)
             ) == 0, f"{model.__tablename__} rows outlived the account"
 
-    def test_the_master_cannot_be_removed(self, auth_client, db):
+    def test_the_master_can_be_removed_too(self, auth_client, db):
+        """It could not be, and that left accounts nobody could get rid of.
+
+        Removing it was only possible from the credentials card, which deleted
+        whichever account the query returned first -- so an install that had
+        somehow grown a second master had one it could never remove.
+        """
+        master_id = db.scalar(select(Account.id).where(Account.role == "master"))
+        assert auth_client.delete(f"/api/accounts/{master_id}").status_code == 200
+        db.expire_all()
+        assert db.get(Account, master_id) is None
+
+    def test_removing_the_master_forgets_its_credentials(self, auth_client, db):
+        """Or the terminal it was provisioned from brings it straight back.
+
+        The provisioner starts a terminal for the stored credentials, that
+        terminal reports in, and the account is adopted again -- the one just
+        deleted, returning by itself a minute later.
+        """
+        auth_client.put(
+            "/api/mt5/credentials",
+            json={"login": "5000123", "server": "Test-Server", "password": "investor"},
+        )
         master = db.scalar(select(Account).where(Account.role == "master"))
-        response = auth_client.delete(f"/api/accounts/{master.id}")
-        assert response.status_code == 400
+
+        auth_client.delete(f"/api/accounts/{master.id}")
+
+        assert auth_client.get("/api/mt5/credentials").json()["configured"] is False
+
+
+class TestOnlyOneMaster:
+    """Exactly one account is the one everything else copies from."""
+
+    def _second_master(self, db):
+        account = Account(login="9100", server="Other-Server", name="Imported", role="master")
+        db.add(account)
+        db.commit()
+        return account
+
+    def test_a_second_master_is_archived_on_sight(self, auth_client, db):
+        """Two paths created accounts without saying what role they had.
+
+        The column defaults to "master", so a terminal reporting an unknown
+        login and a statement dropped on the import page each produced another
+        one. Two masters is not cosmetic: the copier reads "the" master, and
+        Forget removed whichever came back first.
+        """
+        second = self._second_master(db)
+
+        listed = auth_client.get("/api/accounts").json()
+
+        masters = [a for a in listed if a["role"] == "master"]
+        assert len(masters) == 1
+        db.expire_all()
+        assert db.get(Account, second.id).role == "archived"
+
+    def test_the_credentialed_account_is_the_one_kept(self, auth_client, db):
+        """Not whichever was created first: a terminal is started for that one."""
+        auth_client.put(
+            "/api/mt5/credentials",
+            json={"login": "9100", "server": "Other-Server", "password": "investor"},
+        )
+        second = self._second_master(db)
+
+        auth_client.get("/api/accounts")
+
+        db.expire_all()
+        assert db.get(Account, second.id).role == "master"
+
+    def test_an_archived_account_keeps_its_history_and_can_be_removed(self, auth_client, db):
+        second = self._second_master(db)
+        auth_client.get("/api/accounts")
+        assert auth_client.delete(f"/api/accounts/{second.id}").status_code == 200
 
 
 class TestAuth:

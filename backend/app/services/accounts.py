@@ -16,6 +16,43 @@ from sqlalchemy.orm import Session
 from ..models import Account, CopyEvent, CopyLink, Deal, EquityPoint, Trade
 
 
+def single_master(db: Session) -> Account | None:
+    """Leave exactly one account holding the master role, and return it.
+
+    There is only ever one account trades are copied *from*, and until now
+    nothing enforced that. The role column defaults to "master", and two paths
+    created accounts without saying otherwise -- a terminal reporting a login
+    nobody had configured, and a statement dropped on the import page -- so an
+    install could end up with several. That is not a cosmetic problem: Forget
+    removes whichever one the query returns first, and the rest were refused
+    by the accounts endpoint for being masters, so they could not be removed
+    at all.
+
+    Which one keeps the role is not arbitrary. The master is the account whose
+    credentials are stored, because that is the account a terminal is started
+    for; failing that, the default account, and failing that the oldest. The
+    others become archived: they keep every trade, they are still in the
+    journal, and they can be deleted like anything else.
+    """
+    from .credentials import credentials_status
+
+    masters = list(db.scalars(select(Account).where(Account.role == "master")))
+    if len(masters) <= 1:
+        return masters[0] if masters else None
+
+    wanted = str(credentials_status(db).get("login") or "").strip()
+    keep = next((a for a in masters if a.login.strip() == wanted and wanted), None)
+    keep = keep or next((a for a in masters if a.is_default), None) or masters[0]
+
+    for account in masters:
+        if account is keep:
+            continue
+        account.role = "archived"
+        account.copy_enabled = False
+    db.flush()
+    return keep
+
+
 def account_contents(db: Session, account: Account) -> dict[str, int]:
     """How much is filed under this account, for a confirmation that means something.
 

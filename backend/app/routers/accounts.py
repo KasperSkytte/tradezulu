@@ -33,8 +33,9 @@ from ..schemas import (
     SlaveAccountOut,
     SlaveArmIn,
 )
-from ..services.accounts import purge_account
+from ..services.accounts import purge_account, single_master
 from ..services.copier.config import defaults as copy_defaults
+from ..services.credentials import clear_credentials, credentials_status
 from ..services.crypto import decrypt, encrypt
 
 router = APIRouter(prefix="/accounts", tags=["accounts"], dependencies=[Depends(get_current_user)])
@@ -82,6 +83,11 @@ def _get(db: Session, account_id: int) -> Account:
 
 @router.get("", response_model=list[SlaveAccountOut])
 def list_accounts(db: Session = Depends(get_db)) -> list[SlaveAccountOut]:
+    # Repaired here rather than by a migration anyone has to run: an install
+    # that grew a second master fixes itself the moment the page is opened,
+    # which is also the moment somebody noticed.
+    single_master(db)
+    db.commit()
     accounts = db.scalars(select(Account).order_by(Account.role.desc(), Account.id)).all()
     return [_as_out(account, db) for account in accounts]
 
@@ -255,12 +261,15 @@ def remove_account(account_id: int, db: Session = Depends(get_db)) -> dict[str, 
     number.
     """
     account = _get(db, account_id)
-    if account.role == "master":
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            "The master account is removed from Settings -> MetaTrader 5, with "
-            "the credentials that created it.",
-        )
+
+    # Removing the master takes its credentials with it. Leaving them behind
+    # would have the provisioner start a terminal for an account that is no
+    # longer here, which reports in, is adopted, and comes back -- the account
+    # you just deleted, returning by itself.
+    stored = str(credentials_status(db).get("login") or "").strip()
+    if account.role == "master" or (stored and account.login.strip() == stored):
+        clear_credentials(db)
+
     removed = purge_account(db, account)
     db.commit()
     return removed

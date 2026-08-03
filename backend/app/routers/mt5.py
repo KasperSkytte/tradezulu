@@ -69,7 +69,13 @@ def _resolve_account(db: Session, info: dict[str, Any]) -> Account:
             account.server = server
 
     if account is None:
-        account = Account(login=login, server=server, is_default=False)
+        # Not a master. The role column defaults to "master", so every account
+        # that arrived this way -- a terminal reporting a login nobody had
+        # configured -- became a second one, and a second master is not a
+        # thing: "Forget" removes whichever the query happens to return, and
+        # the other cannot be removed at all. Promotion is _adopt_master's job
+        # and happens only for the account whose credentials are stored.
+        account = Account(login=login, server=server, is_default=False, role="slave")
         db.add(account)
         db.flush()
         if db.scalar(select(func.count()).select_from(Account)) == 1:

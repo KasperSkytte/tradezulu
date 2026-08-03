@@ -120,6 +120,10 @@ def init_db() -> None:
                     server="",
                     currency="USD",
                     is_default=True,
+                    # Explicit, because everywhere else that creates an account
+                    # now says "slave" and this is the one that really is the
+                    # master-to-be: the first credentials entered adopt it.
+                    role="master",
                 )
             )
             log.info("Created placeholder default account")

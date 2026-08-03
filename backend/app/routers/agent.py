@@ -32,6 +32,7 @@ from ..db import get_db
 from ..deps import require_ingest_auth
 from ..models import Account, CopyEvent
 from ..schemas import AgentCommandResult, AgentPollIn, AgentPollOut
+from ..services.accounts import single_master
 from ..services.appsettings import get_app_settings
 from ..services.copier.agent import (
     commands_for,
@@ -241,6 +242,13 @@ def terminals(db: Session = Depends(get_db)) -> dict[str, Any]:
     TradeZulu later changes how people reach the site and nothing about how
     its terminals reach it.
     """
+    # Repaired before anything is planned, not only when somebody opens the
+    # Accounts page. This is the endpoint that decides how many terminals run,
+    # and two masters here means two terminals logged into one broker account,
+    # both running the Expert Advisor, both acting on every copied order.
+    single_master(db)
+    db.commit()
+
     stored = get_credentials(db)
     wanted: list[dict[str, Any]] = []
     known: list[int] = []
