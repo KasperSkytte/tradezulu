@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.14.0](https://github.com/KasperSkytte/tradezulu/compare/v1.13.1...v1.14.0) (2026-08-03)
+
+
+### Features
+
+* **score:** put drawdown back, and let every component be switched off ([735db68](https://github.com/KasperSkytte/tradezulu/commit/735db68ddc9bb6053c7ada9f584daa73c39b9418))
+
+
+### Bug fixes
+
+* **stats:** work out balances backwards from what the account is worth ([47a1294](https://github.com/KasperSkytte/tradezulu/commit/47a12949bc55f77215d835e0bdedf0ee2611e936))
+
+
+### Refactoring
+
+* **settings:** name the amounts toggle after what it does ([65c4268](https://github.com/KasperSkytte/tradezulu/commit/65c42684fc0aa982559fbb01c3cf0fa79261f364))
+
 ## [1.13.1](https://github.com/KasperSkytte/tradezulu/compare/v1.13.0...v1.13.1) (2026-08-03)
 
 
