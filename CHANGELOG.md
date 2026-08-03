@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.1](https://github.com/KasperSkytte/tradezulu/compare/v1.15.0...v1.15.1) (2026-08-03)
+
+
+### Documentation
+
+* retake the screenshots on an account that is going somewhere ([45f20c9](https://github.com/KasperSkytte/tradezulu/commit/45f20c9a7cb722fce890038cabfc96beb9f88314))
+
 ## [1.15.0](https://github.com/KasperSkytte/tradezulu/compare/v1.14.2...v1.15.0) (2026-08-03)
 
 
