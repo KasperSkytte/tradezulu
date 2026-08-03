@@ -284,23 +284,34 @@ def consistency_score(daily: Sequence[dict[str, Any]]) -> float:
     return max(0.0, min(100.0, (1.0 - largest / total) * 100.0))
 
 
+#: Every component the score can be built from, in the order they are shown.
+#: Which of them actually count is a matter of weights: a weight of 0 drops
+#: one, and all of them can be dropped.
+SCORE_COMPONENTS = (
+    "win_rate",
+    "profit_factor",
+    "avg_win_loss",
+    "max_drawdown",
+    "loss_consistency",
+    "recovery_factor",
+    "consistency",
+)
+
+
 def zulu_score(
     summary: dict[str, Any],
     config: dict[str, Any],
     sample_size: int | None = None,
     min_trades: int = 0,
 ) -> dict[str, Any]:
-    """A single 0-100 read on the account, built from six weighted components."""
+    """A single 0-100 read on the account, from whichever components are on."""
     targets = config.get("targets", {})
     weights = config.get("weights", {})
 
     if sample_size == 0:
         return {
             "score": 0.0,
-            "components": dict.fromkeys(
-                ("win_rate", "profit_factor", "avg_win_loss", "loss_consistency",
-                 "recovery_factor", "consistency")
-            ),
+            "components": dict.fromkeys(SCORE_COMPONENTS),
             "targets": targets,
             "weights": weights,
             "sample_size": 0,
@@ -332,12 +343,23 @@ def zulu_score(
         over = max(0.0, worst - 1.0) / (overshoot_target - 1.0)
         loss_component = max(0.0, min(100.0, (1.0 - over) * 100.0))
 
+    # How deep the worst run below the high-water mark went, as a share of the
+    # peak. Nothing is inverted here for effect: a drawdown at or past the
+    # target scores 0, no drawdown at all scores 100.
+    drawdown_pct = summary.get("max_drawdown_pct")
+    drawdown_target = float(targets.get("max_drawdown_pct", 20.0))
+    if drawdown_pct is None or drawdown_target <= 0:
+        drawdown_component = None
+    else:
+        drawdown_component = max(0.0, min(100.0, (1.0 - drawdown_pct / drawdown_target) * 100.0))
+
     components = {
         "win_rate": ratio_component(summary.get("win_rate"), float(targets.get("win_rate", 55.0))),
         "profit_factor": pf_component,
         "avg_win_loss": ratio_component(
             summary.get("payoff_ratio"), float(targets.get("avg_win_loss", 2.0))
         ),
+        "max_drawdown": drawdown_component,
         "loss_consistency": loss_component,
         "recovery_factor": ratio_component(
             summary.get("recovery_factor"), float(targets.get("recovery_factor", 3.0))
@@ -349,18 +371,39 @@ def zulu_score(
 
     total_weight = 0.0
     weighted = 0.0
-    for key, value in components.items():
-        if value is None:
-            continue
+    for key, value in list(components.items()):
         weight = float(weights.get(key, 1.0) or 0.0)
         if weight <= 0:
+            # Switched off, so it is not a component with no value -- it is not
+            # a component. Blanked so nothing downstream draws an axis for a
+            # measure that was deliberately excluded.
+            components[key] = None
+            continue
+        if value is None:
             continue
         weighted += value * weight
         total_weight += weight
 
-    score = weighted / total_weight if total_weight else 0.0
+    if not total_weight:
+        # Either everything is switched off or nothing could be measured.
+        # A score of 0 would read as a verdict; there isn't one.
+        return {
+            "score": None,
+            "components": {k: (None if v is None else round(v, 1)) for k, v in components.items()},
+            "targets": targets,
+            "weights": weights,
+            "sample_size": sample_size,
+            "min_trades": min_trades,
+            "sufficient": False,
+            "unavailable_reason": (
+                "no components are switched on"
+                if not any(float(weights.get(k, 1.0) or 0.0) > 0 for k in components)
+                else "nothing measurable yet"
+            ),
+        }
+
     return {
-        "score": round(score, 1),
+        "score": round(weighted / total_weight, 1),
         "components": {k: (None if v is None else round(v, 1)) for k, v in components.items()},
         "targets": targets,
         "weights": weights,
@@ -595,10 +638,7 @@ def _withhold_cross_account(summary: dict[str, Any]) -> None:
     # comparable with any per-account score.
     summary["zulu_score"] = {
         "score": None,
-        "components": dict.fromkeys(
-            ("win_rate", "profit_factor", "avg_win_loss", "loss_consistency",
-             "recovery_factor", "consistency")
-        ),
+        "components": dict.fromkeys(SCORE_COMPONENTS),
         "targets": {},
         "weights": {},
         "sample_size": None,

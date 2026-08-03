@@ -484,18 +484,31 @@ function RiskSection() {
 
 /* --------------------------------------------------------------------- */
 
+// The weight and the target are different keys for two of these: a component
+// is named for what it measures, its target for the number it is measured
+// against. Sharing one key meant the "Even losses" weight was written to
+// weights.worst_loss_multiple, which nothing reads and the settings document
+// drops on save — so that control appeared to work and changed nothing.
 const SCORE_COMPONENTS = [
-  { key: 'win_rate', label: 'Win rate', unit: '%', hint: 'Win rate that scores 100.' },
-  { key: 'profit_factor', label: 'Profit factor', unit: '', hint: 'Profit factor that scores 100.' },
-  { key: 'avg_win_loss', label: 'Avg win / loss', unit: '', hint: 'Payoff ratio that scores 100.' },
+  { key: 'win_rate', target: 'win_rate', label: 'Win rate', unit: '%', hint: 'Win rate that scores 100.' },
+  { key: 'profit_factor', target: 'profit_factor', label: 'Profit factor', unit: '', hint: 'Profit factor that scores 100.' },
+  { key: 'avg_win_loss', target: 'avg_win_loss', label: 'Avg win / loss', unit: '', hint: 'Payoff ratio that scores 100.' },
   {
-    key: 'worst_loss_multiple',
+    key: 'max_drawdown',
+    target: 'max_drawdown_pct',
+    label: 'Drawdown',
+    unit: '%',
+    hint: 'How far below its high-water mark the account may fall before this scores 0. Measured from the peak, like the drawdown on the reports page.',
+  },
+  {
+    key: 'loss_consistency',
+    target: 'worst_loss_multiple',
     label: 'Even losses',
     unit: '×',
-    hint: 'How many times a typical loss the worst one may be before this scores 0. 1 would demand every loss be identical; 3 is a fair ceiling.',
+    hint: 'How many times a typical loss the worst one may be before this scores 0. Off by default: it is a real thing to want, but it is not what most people mean by risk.',
   },
-  { key: 'recovery_factor', label: 'Recovery factor', unit: '', hint: 'Recovery factor that scores 100.' },
-  { key: 'consistency', label: 'Consistency', unit: '%', hint: 'Consistency that scores 100.' },
+  { key: 'recovery_factor', target: 'recovery_factor', label: 'Recovery factor', unit: '', hint: 'Recovery factor that scores 100.' },
+  { key: 'consistency', target: 'consistency', label: 'Consistency', unit: '%', hint: 'Consistency that scores 100.' },
 ] as const
 
 function ScoreSection() {
@@ -507,52 +520,78 @@ function ScoreSection() {
     <Card>
       <CardHeader
         title="Zulu Score"
-        hint="Each component is scored 0-100 against its target, then averaged using the weights. Set a weight to 0 to drop a component entirely."
+        hint="Each component you switch on is scored 0-100 against its target, then averaged using the weights. Switch them all off and there is no score, rather than a score of zero."
         action={<SavedFlag saved={saved} />}
       />
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-[var(--tz-border)] text-left text-xs text-[var(--tz-text-muted)]">
+              <th className="py-2 font-medium">Use</th>
               <th className="py-2 font-medium">Component</th>
               <th className="py-2 font-medium">Target</th>
               <th className="py-2 font-medium">Weight</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--tz-border)]">
-            {SCORE_COMPONENTS.map((component) => (
-              <tr key={component.key}>
-                <td className="py-2 pr-3">
-                  <span className="font-medium">{component.label}</span>
-                  <span className="mt-0.5 block text-xs text-[var(--tz-text-muted)]">
-                    {component.hint}
-                  </span>
-                </td>
-                <td className="w-28 py-2 pr-3">
-                  <div className="flex items-center gap-1">
-                    <NumberField
-                      value={score.targets[component.key] ?? 0}
-                      step={component.unit === '%' ? 1 : 0.1}
-                      onCommit={(value) =>
-                        void apply({ zulu_score: { targets: { [component.key]: value } } })
+            {SCORE_COMPONENTS.map((component) => {
+              const weight = score.weights[component.key] ?? 0
+              const on = weight > 0
+              return (
+                <tr key={component.key} className={on ? undefined : 'opacity-60'}>
+                  <td className="w-10 py-2 align-top">
+                    <input
+                      type="checkbox"
+                      className="mt-1 size-4 accent-[var(--tz-accent)]"
+                      checked={on}
+                      aria-label={`Use ${component.label}`}
+                      onChange={(event) =>
+                        void apply({
+                          zulu_score: {
+                            // Back to an equal say, not to whatever it was:
+                            // a weight that was tuned and then switched off is
+                            // a decision the number no longer records.
+                            weights: { [component.key]: event.target.checked ? 1 : 0 },
+                          },
+                        })
                       }
                     />
-                    {component.unit && (
-                      <span className="text-xs text-[var(--tz-text-muted)]">{component.unit}</span>
-                    )}
-                  </div>
-                </td>
-                <td className="w-24 py-2">
-                  <NumberField
-                    value={score.weights[component.key] ?? 0}
-                    step={0.5}
-                    onCommit={(value) =>
-                      void apply({ zulu_score: { weights: { [component.key]: value } } })
-                    }
-                  />
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td className="py-2 pr-3">
+                    <span className="font-medium">{component.label}</span>
+                    <span className="mt-0.5 block text-xs text-[var(--tz-text-muted)]">
+                      {component.hint}
+                    </span>
+                  </td>
+                  <td className="w-28 py-2 pr-3 align-top">
+                    <div className="flex items-center gap-1">
+                      <NumberField
+                        value={score.targets[component.target] ?? 0}
+                        step={component.unit === '%' ? 1 : 0.1}
+                        onCommit={(value) =>
+                          void apply({ zulu_score: { targets: { [component.target]: value } } })
+                        }
+                      />
+                      {component.unit && (
+                        <span className="text-xs text-[var(--tz-text-muted)]">
+                          {component.unit}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="w-24 py-2 align-top">
+                    <NumberField
+                      value={weight}
+                      step={0.5}
+                      disabled={!on}
+                      onCommit={(value) =>
+                        void apply({ zulu_score: { weights: { [component.key]: value } } })
+                      }
+                    />
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>

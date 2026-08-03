@@ -63,11 +63,19 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "min_trades_for_score": 10,
     },
     "zulu_score": {
+        # A weight of 0 switches a component off, and every one of them can be
+        # off: the score is then withheld rather than reported as zero, because
+        # "nothing was measured" and "everything measured badly" are not the
+        # same statement.
         "weights": {
             "win_rate": 1.0,
             "profit_factor": 1.0,
             "avg_win_loss": 1.0,
-            "loss_consistency": 1.0,
+            "max_drawdown": 1.0,
+            # Off by default, but kept: how even the losses were is a real
+            # thing to want, and it is the honest measure when trades are all
+            # you have. It is not what most people mean by risk.
+            "loss_consistency": 0.0,
             "recovery_factor": 1.0,
             "consistency": 1.0,
         },
@@ -76,6 +84,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
             "win_rate": 55.0,  # percent
             "profit_factor": 2.0,
             "avg_win_loss": 2.0,
+            "max_drawdown_pct": 20.0,  # a drawdown this deep scores 0
             "worst_loss_multiple": 3.0,  # the worst loss may be 3x a typical one
             "recovery_factor": 3.0,
             "consistency": 100.0,  # percent
@@ -176,7 +185,26 @@ def get_app_settings(db: Session) -> dict[str, Any]:
     mode = merged.get("mt5", {}).get("sync_mode")
     if mode in RETIRED_SYNC_MODES:
         merged["mt5"]["sync_mode"] = RETIRED_SYNC_MODES[mode]
+    _migrate_score_weights(stored, merged)
     return merged
+
+
+def _migrate_score_weights(stored: dict[str, Any], merged: dict[str, Any]) -> None:
+    """Give drawdown its place back on an install that predates it.
+
+    Anyone who has opened the score settings has the whole weight table saved,
+    so the new component would merge in at the default weight while the one it
+    replaces kept the weight it was given when it was the only choice --
+    leaving both counted, which is neither what the defaults say nor what
+    anyone chose. Only an untouched weight is moved; a deliberate one is left
+    exactly as it is.
+    """
+    weights = stored.get("zulu_score", {}).get("weights") or {}
+    if "max_drawdown" in weights:
+        return
+    merged["zulu_score"]["weights"]["max_drawdown"] = 1.0
+    if weights.get("loss_consistency") == 1.0:
+        merged["zulu_score"]["weights"]["loss_consistency"] = 0.0
 
 
 def save_app_settings(db: Session, patch: dict[str, Any]) -> dict[str, Any]:
