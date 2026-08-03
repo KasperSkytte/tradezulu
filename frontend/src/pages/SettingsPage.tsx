@@ -316,7 +316,7 @@ function GeneralSection() {
 
       <div className="mt-4 border-t border-[var(--tz-border)] pt-2">
         <Toggle
-          label="Show currency amounts"
+          label="Show money, not percentages"
           description="Off by default, so the dashboard can be screenshotted and shared without showing what the account is worth. Figures appear as a percentage of the balance the period opened with instead."
           checked={general.show_amounts}
           onChange={(value) => void apply({ general: { show_amounts: value } })}
