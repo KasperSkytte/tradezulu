@@ -51,39 +51,31 @@ docker compose run --rm --service-ports -e TZ_DEMO=1 tradezulu demo
 
 ## Features
 
-**Journal** — what actually happened, and what it cost you.
-
-- Every percentage comes from the account itself: a trade against the balance
-  just before it closed, a day against the previous day's close. Never against
-  a figure typed in once and left to go stale.
-- Thinks in R, taken from the broker's recorded stop. A trade opened without
-  one has no R rather than an invented denominator — and the count of those is
-  on the dashboard, because it is worth knowing.
-- Breakevens counted as breakevens, and kept out of the win rate.
-- Zulu Score: one 0–100 number from the components you switch on, each scored
-  against your own target.
-- Calendar, reports by symbol, tag, setup, weekday, hour, hold time and R
-  multiple. Notes, ratings and tags per trade, so "FOMO trade" becomes a
-  figure. Chart replay with your real entry, exit, stop and target on it.
-- Money is hidden by default, so a screenshot shows how you traded without
-  showing what you are worth. Installs on a phone as a PWA.
+**Journal** — Track and improve your performance
+ - Synchronize trades from any MetaTrader5 account through a virtual terminal
+ - See key statistics for a chosen time period, like win rate, profit factor, average R etc
+ - Track your overall performance by a combined "Zulu score" that includes key metrics
+ - Understand your mistakes, behavior, and setups by adding tags to individual trades alongside notes
+ - See detailed reports about which times of day, setups, tags, etc, that work the best for you
+ - Did you follow your plan? See planned vs realised stats in R-multiples
 
 **Copier** — one master account, any number of slaves, any broker.
 
-- Sizing that fits each account: fixed lots, a multiplier, the balance or
+ - Copy between Metatrader5 accounts, ideal for copying trades across multiple prop-firm funded accounts
+ - Sizing that fits each account: fixed lots, a multiplier, the balance or
   equity ratio, or a percentage of the slave's equity risked against the
   master's stop. Lots round *down*, and a size under the broker's minimum is
   refused rather than rounded up into more risk than you allowed.
-- Per-account limits on risk, lot size, open positions, direction, symbol and
+ - Per-account limits on risk, lot size, open positions, direction, symbol and
   total exposure.
-- Guards that flatten the account and stop copying: equity stop below peak,
+ - Guards that flatten the account and stop copying: equity stop below peak,
   daily drawdown, daily profit target, and prop-firm rules for banking a
   winner and capping one day's share of the profit.
-- Stop and target moves follow through; a close is a close everywhere. Symbol
+ - Stop and target moves follow through; a close is a close everywhere. Symbol
   differences (`EURUSD`, `EURUSD.r`, `FX_EURUSD`) are resolved per account,
   never guessed.
-- Every slave starts disabled and in dry-run, recording what it *would* have
-  done. You arm them one at a time.
+ - Every slave starts disabled and in dry-run, recording what it *would* have
+  done. You arm them one at a time to start copying trades.
 
 ## Connect MetaTrader 5
 
