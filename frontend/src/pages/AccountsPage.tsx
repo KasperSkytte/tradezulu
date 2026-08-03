@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
+  Check,
   CircleDot,
   Copy,
   KeyRound,
@@ -21,7 +22,7 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import { api, ApiError } from '../lib/api'
-import { money, num } from '../lib/format'
+import { money, num, relative } from '../lib/format'
 import { useSettings } from '../lib/settings'
 import type { Account, CopyEvent, SlaveAccount } from '../lib/types'
 import { Button, Card, CardHeader, EmptyState, ErrorState, Field, Skeleton } from '../components/ui'
@@ -55,7 +56,7 @@ export function AccountsPage() {
   if (accounts.isError) return <ErrorState error={accounts.error} retry={() => accounts.refetch()} />
 
   const all = accounts.data ?? []
-  const master = all.find((account) => account.role === 'master')
+  const masters = all.filter((account) => account.role === 'master')
   const slaves = all.filter((account) => account.role === 'slave')
 
   return (
@@ -67,8 +68,12 @@ export function AccountsPage() {
           title="Master account"
           hint="The account whose trades are copied. Its own history is what the journal reports on."
         />
-        {master ? (
-          <AccountRow account={master} onChanged={refresh} />
+        {masters.length ? (
+          <div className="divide-y divide-[var(--tz-border)]">
+            {masters.map((account) => (
+              <AccountRow key={account.id} account={account} onChanged={refresh} />
+            ))}
+          </div>
         ) : (
           <EmptyState
             title="No master account yet"
@@ -175,6 +180,7 @@ function AccountRow({
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{account.name}</span>
             <StatusPill account={account} />
+            <TerminalPill account={account} />
             {isSlave && !account.has_password && (
               <span
                 className="inline-flex items-center gap-1 rounded-full border border-[var(--tz-border)] px-2 py-0.5 text-xs text-[var(--tz-text-muted)]"
@@ -256,22 +262,68 @@ function AccountRow({
                   Settings
                 </Button>
               )}
-              <Button
-                variant="ghost"
-                icon={<Trash2 size={15} />}
-                onClick={() => {
-                  if (window.confirm(`Remove ${account.name}?\n\nIts whole history goes with it: trades, equity samples and copy activity. This cannot be undone.`))
-                    remove.mutate()
-                }}
-                title="Remove this account"
-              >
-                <span className="sr-only">Remove</span>
-              </Button>
             </>
           )}
+
+          <Button
+            variant="ghost"
+            icon={<Trash2 size={15} />}
+            loading={remove.isPending}
+            onClick={() => {
+              const what = isSlave
+                ? `Remove ${account.name}?`
+                : `Forget ${account.name} (${account.login})?\n\n` +
+                  'Its stored credentials go too, so no terminal is started for it ' +
+                  'again.'
+              if (
+                window.confirm(
+                  `${what}\n\nIts whole history goes with it: trades, equity samples ` +
+                    'and copy activity. This cannot be undone.',
+                )
+              )
+                remove.mutate()
+            }}
+            title={isSlave ? 'Remove this account' : 'Forget this account'}
+          >
+            {isSlave ? <span className="sr-only">Remove</span> : 'Forget'}
+          </Button>
         </div>
       </div>
     </div>
+  )
+}
+
+/** Whether this account's terminal is up, on the account it belongs to.
+ *
+ *  It used to be stated twice on this page and tied to neither -- once under
+ *  the credentials form and once inside it -- which was readable enough with
+ *  one account and says nothing useful with three. A terminal reporting in is
+ *  the only evidence any of this works, so it belongs next to the account it
+ *  is evidence about.
+ */
+function TerminalPill({ account }: { account: SlaveAccount }) {
+  const seen = account.last_sync_at ? new Date(account.last_sync_at).getTime() : 0
+  if (!seen) {
+    return (
+      <Pill className="text-[var(--tz-text-muted)]" title="No terminal has reported for this account yet">
+        <CircleDot size={11} /> no terminal yet
+      </Pill>
+    )
+  }
+  // A master polls every ten seconds and a slave every two, so a minute of
+  // silence is already unusual and two is something to look at.
+  const quietFor = Date.now() - seen
+  if (quietFor < 2 * 60 * 1000) {
+    return (
+      <Pill className="border-gain-500/40 bg-gain-500/10 text-gain-400" title="Its Expert Advisor is reporting in">
+        <Check size={11} /> terminal up
+      </Pill>
+    )
+  }
+  return (
+    <Pill className="border-loss-500/40 bg-loss-500/10 text-loss-400" title="Its Expert Advisor has stopped reporting">
+      <AlertTriangle size={11} /> quiet {relative(account.last_sync_at)}
+    </Pill>
   )
 }
 
@@ -307,9 +359,18 @@ function StatusPill({ account }: { account: SlaveAccount }) {
   )
 }
 
-function Pill({ children, className }: { children: React.ReactNode; className?: string }) {
+function Pill({
+  children,
+  className,
+  title,
+}: {
+  children: React.ReactNode
+  className?: string
+  title?: string
+}) {
   return (
     <span
+      title={title}
       className={clsx(
         'inline-flex items-center gap-1 rounded-full border border-[var(--tz-border)] px-2 py-0.5 text-xs',
         className,

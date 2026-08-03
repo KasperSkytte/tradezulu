@@ -1,12 +1,18 @@
-/** The MetaTrader connection, on the Accounts page where the accounts are.
+/** The master account's credentials, on the Accounts page.
  *
  *  It used to be a section of its own in Settings, which meant an account was
  *  set up in one place and listed in another, and nothing explained why. The
  *  terminal, its credentials and the account it feeds are one subject.
+ *
+ *  It is only ever about the master. Slaves are added below with their own
+ *  credentials, and calling this "MetaTrader connection" implied it was where
+ *  every terminal came from -- so the natural reading of Forget, which used to
+ *  sit here, was "disconnect MetaTrader" rather than "delete this account and
+ *  its history". Forgetting now lives on the account card itself.
  */
 
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, Check } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
 import { api } from '../lib/api'
 import { money, relative } from '../lib/format'
 import { useSettings } from '../lib/settings'
@@ -41,8 +47,8 @@ export function MT5Connection() {
   return (
     <Card>
       <CardHeader
-        title="MetaTrader connection"
-        hint="The account TradeZulu journals from. A terminal is started for it and logged in automatically; its Expert Advisor reports every deal back."
+        title="Master account credentials"
+        hint="The one account TradeZulu trades from: its deals are the journal, and every slave copies them. A terminal is started for it and logged in automatically; its Expert Advisor reports each deal back. Slaves are added further down and keep their own credentials."
       />
 
       {status && (
@@ -58,7 +64,7 @@ export function MT5Connection() {
       )}
 
       <Field
-        label="How deals reach TradeZulu"
+        label="How the master's deals reach TradeZulu"
         hint="A terminal is started for your account automatically and its Expert Advisor reports in. Manual import is there for history from anywhere else."
       >
         <SegmentedControl
@@ -119,14 +125,6 @@ export function MT5Connection() {
               </select>
             </Field>
           </div>
-
-          {status?.connected ? (
-            <p className="flex items-center gap-1.5 text-sm text-[var(--tz-gain-text)]">
-              <Check size={14} /> Terminal is running and logged in.
-            </p>
-          ) : status?.message ? (
-            <p className="text-sm text-[var(--tz-text-muted)]">{status.message}</p>
-          ) : null}
 
           {system && !system.ingest_token_configured && (
             <p className="flex items-center gap-1.5 text-sm text-[var(--tz-loss-text)]">

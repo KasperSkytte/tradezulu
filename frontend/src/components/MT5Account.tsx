@@ -13,9 +13,9 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Loader2, Lock, Trash2 } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Loader2, Lock } from 'lucide-react'
 import { api } from '../lib/api'
-import type { BrokerList, MT5Credentials, SyncStatus, SystemInfo } from '../lib/types'
+import type { BrokerList, MT5Credentials, SyncStatus } from '../lib/types'
 import { Button, Field } from './ui'
 
 const OTHER = '__other__'
@@ -74,25 +74,6 @@ export function MT5Account({ status }: { status?: SyncStatus }) {
     },
   })
 
-  // Only to say how much is about to go. "Forget the stored account?" is not a
-  // decision anyone can make; "delete 2,085 trades" is.
-  const { data: system } = useQuery({
-    queryKey: ['system'],
-    queryFn: () => api.get<SystemInfo>('/settings/system'),
-  })
-
-  const forget = useMutation({
-    mutationFn: () => api.delete<MT5Credentials>('/mt5/credentials'),
-    onSuccess: () => {
-      setBroker('')
-      setServer('')
-      setLogin('')
-      setPassword('')
-      // The journal has just lost an account: every cached figure is stale.
-      void queryClient.invalidateQueries()
-    },
-  })
-
   const configured = credentials?.configured ?? false
   // A blank password means "keep the stored one", which is only sensible while
   // it is still the same account. Change the number and it is a different
@@ -111,7 +92,7 @@ export function MT5Account({ status }: { status?: SyncStatus }) {
     <div className="rounded-lg border border-[var(--tz-border)] bg-[var(--tz-surface-2)] p-4">
       <div className="mb-3 flex items-center gap-2">
         <Lock size={15} className="text-[var(--tz-text-muted)]" />
-        <p className="text-sm font-medium">Your MetaTrader account</p>
+        <p className="text-sm font-medium">Your master account</p>
         {configured && (
           <span className="tz-chip bg-gain-500/15 text-[var(--tz-gain-text)]">Stored</span>
         )}
@@ -226,25 +207,6 @@ export function MT5Account({ status }: { status?: SyncStatus }) {
         >
           {configured ? 'Update account' : 'Save account'}
         </Button>
-        {configured && (
-          <Button
-            variant="danger"
-            icon={<Trash2 size={15} />}
-            loading={forget.isPending}
-            onClick={() => {
-              const stored = system?.trades ?? 0
-              const warning = stored
-                ? `Forget account ${credentials?.login ?? ''} and delete its ` +
-                  `${stored.toLocaleString()} trades?\n\n` +
-                  'Its whole history goes: trades, deals, equity samples and copy ' +
-                  'activity. This cannot be undone.'
-                : `Forget account ${credentials?.login ?? ''}?`
-              if (confirm(warning)) forget.mutate()
-            }}
-          >
-            Forget
-          </Button>
-        )}
       </div>
 
       {/* There is nothing to "test": saving is what starts a terminal, and the
