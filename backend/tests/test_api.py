@@ -435,8 +435,11 @@ class TestAccountScope:
                 headers=INGEST_HEADERS,
             )
         first = db.scalar(select(Account).where(Account.role == "master"))
+        # Deposited 5,000 and up 90 on its one trade, so it is worth 5,090 now.
+        # The two have to agree: every balance in the journal is reconstructed
+        # backwards from what the account is worth today.
         other = Account(login="9999", server="Other-Server", name="Second", role="slave",
-                        initial_balance=5_000.0, balance=5_000.0)
+                        initial_balance=5_000.0, balance=5_090.0)
         db.add(other)
         db.flush()
         db.add(Trade(

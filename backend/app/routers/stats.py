@@ -12,6 +12,7 @@ from sqlalchemy import select
 from ..deps import AppConfig, CurrentUser, DateRangeDep, DbSession, get_default_account
 from ..models import DayNote, EquityPoint, Trade
 from ..services.aggregation import resolve_account_size
+from ..services.balances import attach_daily_returns, opening_balance
 from ..services.metrics import breakdowns, rolling_metrics, summarize
 from ..services.queries import TradeFilters, TradeFiltersDep, fetch_trades
 
@@ -23,6 +24,22 @@ def _account_size(db, config: dict[str, Any], account_id: int | None) -> float:
 
     account = db.get(Account, account_id) if account_id else get_default_account(db)
     return resolve_account_size(account, config["risk"])
+
+
+def _scoped_account(db, filters, trades: Sequence[Any]) -> int | None:
+    """Which account the figures are about, when there is only one.
+
+    Taken from the trades in scope before the filter, because an unfiltered
+    view of an installation with a single account is still about that account
+    -- and its balance is what every percentage on the page divides by.
+    """
+    if filters.account_id:
+        return int(filters.account_id)
+    ids = {t.account_id for t in trades}
+    if len(ids) == 1:
+        return int(next(iter(ids)))
+    account = get_default_account(db)
+    return account.id if account is not None else None
 
 
 def _one_account(trades: Sequence[Any]) -> bool:
@@ -56,7 +73,8 @@ def summary(
     # has been growing or shrinking all along, and judging this month against
     # January's balance describes a different month.
     single = _one_account(trades)
-    opening = _opening_balance(db, config, filters, range_.start) if single else 0.0
+    account_id = _scoped_account(db, filters, trades) if single else None
+    opening = opening_balance(db, account_id, range_.start) or 0.0
     out = summarize(
         trades,
         risk_cfg=config["risk"],
@@ -176,7 +194,8 @@ def calendar(
     # against a fixed number. Winning 50 on a 200 account is +25%, and saying
     # +0.2% of some configured size describes a different account.
     single = _one_account(trades)
-    opening = _opening_balance(db, config, filters, first) if single else 0.0
+    account_id = _scoped_account(db, filters, trades) if single else None
+    opening = opening_balance(db, account_id, first) or 0.0
 
     stats = summarize(
         trades,
@@ -242,8 +261,8 @@ def calendar(
         "account_size": _account_size(db, config, filters.account_id) if single else None,
         "opening_balance": round(opening, 2) if single else None,
         "single_account": single,
-        "days": _with_daily_return(
-            sorted(days.values(), key=lambda d: str(d["date"])), opening, single
+        "days": attach_daily_returns(
+            db, account_id, sorted(days.values(), key=lambda d: str(d["date"]))
         ),
         "weeks": sorted(weeks.values(), key=lambda w: w["week_start"]),
         "summary": {
@@ -253,52 +272,6 @@ def calendar(
             )
         },
     }
-
-
-def _opening_balance(db, config: dict[str, Any], filters, before: date) -> float:
-    """Account value on the morning of ``before``.
-
-    The configured account size is the starting point, and every trade closed
-    before that date is added to it. Anything else would measure a day in
-    October against the balance in January.
-    """
-    base = _account_size(db, config, filters.account_id)
-    earlier = TradeFilters(
-        account_id=filters.account_id,
-        start=None,
-        end=before - timedelta(days=1),
-        include_excluded=True,
-    )
-    return base + sum(t.net_pnl or 0.0 for t in fetch_trades(db, earlier))
-
-
-def _with_daily_return(
-    days: list[dict[str, Any]], opening: float, single_account: bool = True
-) -> list[dict[str, Any]]:
-    """Attach each day's result as a share of that morning's balance.
-
-    Compounding, so a good day early makes a later day of the same size a
-    smaller percentage. That is what actually happened to the account.
-
-    Nothing is attached when several accounts are in scope: there is no single
-    morning balance to divide by, and starting the running total from zero
-    would quietly produce a percentage from the second day onwards -- built on
-    a balance of nothing but the first day's profit.
-    """
-    if not single_account:
-        for day in days:
-            day["return_pct"] = None
-            day.pop("start_balance", None)
-        return days
-
-    running = opening
-    for day in days:
-        day["start_balance"] = round(running, 2)
-        day["return_pct"] = (
-            round(day["net_pnl"] / running * 100.0, 4) if running > 0 else None
-        )
-        running += day["net_pnl"]
-    return days
 
 
 @router.get("/day/{day}")
@@ -323,8 +296,17 @@ def day_detail(
         period_end=day,
     )
     note = db.scalar(select(DayNote).where(DayNote.day == day))
+    # The day against the balance it opened with, which is the previous day's
+    # close. The same figure the calendar cell shows, so opening a day does not
+    # quietly change what it is being measured against.
+    opening = opening_balance(db, _scoped_account(db, filters, trades), day) if _one_account(
+        trades
+    ) else None
+    net = stats.get("net_pnl") or 0.0
     return {
         "date": day,
+        "opening_balance": opening,
+        "return_pct": round(net / opening * 100.0, 4) if opening else None,
         "summary": {k: v for k, v in stats.items() if k not in ("equity_curve", "daily")},
         "equity_curve": stats["equity_curve"],
         "trade_ids": [t.id for t in trades],

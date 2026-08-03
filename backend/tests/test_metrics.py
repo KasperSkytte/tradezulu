@@ -281,12 +281,14 @@ class TestZuluScore:
     def test_components_are_clamped(self):
         result = zulu_score(
             {"win_rate": 100.0, "profit_factor": 99.0, "payoff_ratio": 10.0,
-             "worst_loss_multiple": 12.0, "recovery_factor": 20.0, "consistency": 100.0},
-            SCORE,
+             "worst_loss_multiple": 12.0, "max_drawdown_pct": 90.0,
+             "recovery_factor": 20.0, "consistency": 100.0},
+            _with_weights(loss_consistency=1.0),
         )
         assert result["components"]["win_rate"] == 100.0
         # A worst loss twelve times a typical one is as bad as the scale goes.
         assert result["components"]["loss_consistency"] == 0.0
+        assert result["components"]["max_drawdown"] == 0.0
 
     def test_weights_are_respected(self):
         summary = {
@@ -304,9 +306,10 @@ class TestZuluScore:
         """Too few losses to have a typical one; the score uses the rest."""
         summary = {
             "win_rate": 55.0, "profit_factor": 2.0, "payoff_ratio": 2.0,
-            "worst_loss_multiple": None, "recovery_factor": 3.0, "consistency": 100.0,
+            "worst_loss_multiple": None, "max_drawdown_pct": 0.0,
+            "recovery_factor": 3.0, "consistency": 100.0,
         }
-        result = zulu_score(summary, SCORE)
+        result = zulu_score(summary, _with_weights(loss_consistency=1.0))
         assert result["components"]["loss_consistency"] is None
         assert result["score"] == 100.0
 
@@ -315,7 +318,56 @@ class TestZuluScore:
             "win_rate": 55.0, "profit_factor": 2.0, "payoff_ratio": 2.0,
             "worst_loss_multiple": 1.0, "recovery_factor": 3.0, "consistency": 100.0,
         }
-        assert zulu_score(summary, SCORE)["components"]["loss_consistency"] == 100.0
+        config = _with_weights(loss_consistency=1.0)
+        assert zulu_score(summary, config)["components"]["loss_consistency"] == 100.0
+
+
+class TestScoreComponentsAreOptional:
+    """Every component can be switched off, including all of them."""
+
+    SUMMARY = {
+        "win_rate": 55.0, "profit_factor": 2.0, "payoff_ratio": 2.0,
+        "max_drawdown_pct": 10.0, "worst_loss_multiple": 1.0,
+        "recovery_factor": 3.0, "consistency": 100.0,
+    }
+
+    def test_a_drawdown_half_the_target_scores_half(self):
+        """The measure people mean by risk, back where it was.
+
+        Ten percent below the high-water mark against a target of twenty is
+        half the allowance spent, so it is half marks -- no inversion tricks.
+        """
+        result = zulu_score(self.SUMMARY, SCORE)
+        assert result["components"]["max_drawdown"] == pytest.approx(50.0)
+
+    def test_even_losses_is_off_unless_asked_for(self):
+        """It measures something real, but it is not what risk usually means."""
+        assert SCORE["weights"]["loss_consistency"] == 0.0
+        assert zulu_score(self.SUMMARY, SCORE)["components"]["loss_consistency"] is None
+
+    def test_a_switched_off_component_is_not_drawn(self):
+        """Blanked rather than left at its value.
+
+        A component with no weight contributes nothing to the score, so
+        showing it on the radar would put a shape on the page that the number
+        beside it does not come from.
+        """
+        result = zulu_score(self.SUMMARY, _with_weights(win_rate=0.0))
+        assert result["components"]["win_rate"] is None
+        assert result["score"] is not None
+
+    def test_all_of_them_off_is_not_a_score_of_zero(self):
+        """Nothing measured is not the same statement as measured badly."""
+        config = {"targets": SCORE["targets"], "weights": dict.fromkeys(SCORE["weights"], 0.0)}
+        result = zulu_score(self.SUMMARY, config)
+        assert result["score"] is None
+        assert "no components" in result["unavailable_reason"]
+        assert all(value is None for value in result["components"].values())
+
+
+def _with_weights(**overrides: float) -> dict:
+    """The default score settings with some weights changed."""
+    return {"targets": SCORE["targets"], "weights": {**SCORE["weights"], **overrides}}
 
 
 class TestBreakdowns:
@@ -379,43 +431,6 @@ class TestPeriodBounds:
 
     def test_unknown_falls_back_to_30_days(self):
         assert period_bounds("nonsense", self.TODAY) == period_bounds("last_30_days", self.TODAY)
-
-
-class TestDailyReturn:
-    """A day is measured against what the account was worth that morning."""
-
-    def test_fifty_on_two_hundred_is_twenty_five_percent(self):
-        from app.routers.stats import _with_daily_return
-
-        days = _with_daily_return([{"date": "2026-01-02", "net_pnl": 50.0}], 200.0)
-        assert days[0]["start_balance"] == 200.0
-        assert days[0]["return_pct"] == pytest.approx(25.0)
-
-    def test_it_compounds(self):
-        """The second day is measured against the balance the first day left.
-
-        Judging both against the opening figure would call two equal days
-        equal, when the second was a smaller share of a bigger account.
-        """
-        from app.routers.stats import _with_daily_return
-
-        days = _with_daily_return(
-            [
-                {"date": "2026-01-02", "net_pnl": 100.0},
-                {"date": "2026-01-03", "net_pnl": 100.0},
-            ],
-            1000.0,
-        )
-        assert days[0]["return_pct"] == pytest.approx(10.0)
-        assert days[1]["start_balance"] == 1100.0
-        assert days[1]["return_pct"] == pytest.approx(9.0909, rel=1e-3)
-
-    def test_no_percentage_without_a_balance(self):
-        """Dividing by zero would make every day look infinite."""
-        from app.routers.stats import _with_daily_return
-
-        days = _with_daily_return([{"date": "2026-01-02", "net_pnl": 50.0}], 0.0)
-        assert days[0]["return_pct"] is None
 
 
 class TestCrossAccountFigures:

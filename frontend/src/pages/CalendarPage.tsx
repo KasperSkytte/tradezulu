@@ -193,17 +193,19 @@ export function CalendarPage() {
                                 compact: true,
                               })}
                             </p>
-                            {/* The day as a share of what the account was worth
-                                that morning: win 50 on a 200 account and that
-                                is +25%. It reads directly under the money and
-                                at the same weight, because it is the figure
-                                most people actually judge a day by -- squeezed
-                                onto one line beside the R it was easy to miss
-                                entirely.
+                            {/* The day against what the account closed at the
+                                day before: win 20 on a 200 account and that is
+                                +10%. It reads directly under the money and at
+                                the same weight, because it is the figure most
+                                people actually judge a day by.
 
-                                No win rate here. A day's win rate is a ratio of
-                                a handful of trades, and next to a real return it
-                                reads as noise. */}
+                                Three things and no more: money, percent, and
+                                how many trades it took. R is not one of them --
+                                a day's R is a sum of denominators that were
+                                each a different size, and beside a real return
+                                it reads as a second opinion nobody asked for.
+                                No win rate either: a ratio of four trades is
+                                noise wearing a percentage sign. */}
                             <p
                               className={clsx(
                                 'tabular text-xs font-semibold leading-tight',
@@ -220,11 +222,7 @@ export function CalendarPage() {
                               )}
                             </p>
                             <p className="mt-0.5 text-[0.65rem] text-[var(--tz-text-muted)]">
-                              {entry.trades}t
-                              <span className="ml-1 hidden text-[var(--tz-text-faint)] sm:inline">
-                                · {entry.r > 0 ? '+' : ''}
-                                {num(entry.r, 1)}R
-                              </span>
+                              {entry.trades} trade{entry.trades === 1 ? '' : 's'}
                             </p>
                           </div>
                         )}
@@ -355,12 +353,19 @@ function DayDialog({
                 value={money(summary.net_pnl, currency, { sign: true })}
                 className={pnlClass(summary.net_pnl)}
               />
+              {/* Against the balance the day opened with -- the same figure
+                  as the cell that was clicked to get here. */}
+              <MiniStat
+                label="Net ROI"
+                value={
+                  query.data?.return_pct == null
+                    ? '—'
+                    : `${query.data.return_pct > 0 ? '+' : ''}${num(query.data.return_pct, 2)}%`
+                }
+                className={pnlClass(summary.net_pnl)}
+              />
               <MiniStat label="Trades" value={String(summary.counts.total)} />
               <MiniStat label="Win rate" value={percent(summary.win_rate)} />
-              <MiniStat
-                label="Total R"
-                value={summary.total_r === null ? '—' : `${num(summary.total_r, 2)}R`}
-              />
             </div>
           ) : (
             <p className="mb-4 text-sm text-[var(--tz-text-muted)]">No trades on this day.</p>

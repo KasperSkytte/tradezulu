@@ -87,22 +87,18 @@ export interface TradePage {
 }
 
 export interface ZuluScore {
-  /** Null when several accounts are in scope: a single read on "the account"
-   *  means nothing when the trades came from more than one. */
+  /** Null when there is no score to give: several accounts are in scope, or
+   *  every component is switched off. `unavailable_reason` says which. */
   score: number | null
-  components: {
-    win_rate: number | null
-    profit_factor: number | null
-    avg_win_loss: number | null
-    loss_consistency: number | null
-    recovery_factor: number | null
-    consistency: number | null
-  }
+  /** Null for a component that could not be measured *or* was switched off;
+   *  the weights say which, and a weight of 0 means it is not on the page. */
+  components: Record<string, number | null>
   targets: Record<string, number>
   weights: Record<string, number>
   sample_size: number | null
   min_trades: number
   sufficient: boolean
+  unavailable_reason?: string
 }
 
 export interface EquityPoint {
@@ -267,6 +263,9 @@ export interface CalendarResponse {
 
 export interface DayDetail {
   date: string
+  /** What the account opened the day with, and the day as a share of it. */
+  opening_balance: number | null
+  return_pct: number | null
   summary: Omit<Summary, 'equity_curve' | 'daily'>
   equity_curve: EquityPoint[]
   trade_ids: number[]

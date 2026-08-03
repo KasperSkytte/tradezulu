@@ -52,10 +52,10 @@ const COLUMNS: { key: SortKey | null; label: string; align?: 'right'; hideBelow?
   { key: 'planned_r', label: 'Plan', align: 'right', hideBelow: 'lg' },
   { key: 'realized_r', label: 'R', align: 'right' },
   { key: 'net_pnl', label: 'Net P&L', align: 'right' },
-  // What the trade did to the account it was taken on, at the moment it
-  // closed. 50 on a 200 account is a quarter of everything; the same 50 on
+  // What the trade did to the account it was taken on, measured against the
+  // balance just before it closed. 20 on a 200 account is +10%; the same 20 on
   // 20,000 is noise, and the money column alone cannot tell them apart.
-  { key: null, label: '% of bal', align: 'right', hideBelow: 'lg' },
+  { key: null, label: 'Net ROI', align: 'right', hideBelow: 'lg' },
   { key: 'duration', label: 'Held', align: 'right', hideBelow: 'xl' },
   { key: null, label: 'Tags', hideBelow: 'lg' },
 ]

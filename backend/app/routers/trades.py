@@ -22,6 +22,7 @@ from ..schemas import (
     TradeUpdate,
 )
 from ..services.aggregation import compute_derived, resolve_account_size
+from ..services.balances import balance_before_trades
 from ..services.queries import TradeFiltersDep, build_query, fetch_trades
 
 router = APIRouter(prefix="/trades", tags=["trades"])
@@ -37,38 +38,6 @@ SORTABLE = {
     "duration": Trade.duration_seconds,
     "risk": Trade.risk_amount,
 }
-
-
-def _balance_before(db: Session, trades: list[Trade]) -> dict[int, float]:
-    """What the account was worth just before each of these trades closed.
-
-    A trade's result only means something against the money that was actually
-    at risk of it -- 50 on a 200 account is a quarter of everything, and the
-    same 50 on 20,000 is noise. Measuring both against one number describes
-    neither.
-
-    Built by walking the account's whole history once rather than querying per
-    trade: a page of fifty would otherwise be fifty aggregate queries, and the
-    walk is a single ordered read.
-    """
-    wanted = {t.id for t in trades}
-    if not wanted:
-        return {}
-
-    out: dict[int, float] = {}
-    for account_id in {t.account_id for t in trades}:
-        account = db.get(Account, account_id)
-        running = float(account.initial_balance or account.balance or 0.0) if account else 0.0
-        history = db.scalars(
-            select(Trade)
-            .where(Trade.account_id == account_id, Trade.closed_at.is_not(None))
-            .order_by(Trade.closed_at, Trade.id)
-        ).unique()
-        for trade in history:
-            if trade.id in wanted:
-                out[trade.id] = round(running, 2)
-            running += trade.net_pnl or 0.0
-    return out
 
 
 @router.get("", response_model=TradePage)
@@ -105,7 +74,7 @@ def list_trades(
     # closed. Attached here rather than stored: it depends on everything that
     # closed before it, so it would go stale the moment a trade was edited or
     # a missing one imported.
-    before = _balance_before(db, items)
+    before = balance_before_trades(db, {t.account_id for t in items})
     out = []
     for trade in items:
         row = TradeOut.model_validate(trade)
