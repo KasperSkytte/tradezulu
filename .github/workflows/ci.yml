@@ -52,8 +52,8 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install ruff
-        run: pip install ruff
+      - name: Install ruff and pytest
+        run: pip install ruff pytest
 
       # The backend's configuration, so both halves are held to one standard.
       # F821 is the rule that matters most here: this code has no test suite to
@@ -63,6 +63,12 @@ jobs:
 
       - name: Check it parses and imports
         run: python -c "import ast, pathlib; [ast.parse(p.read_text()) for p in pathlib.Path('agent').rglob('*.py')]"
+
+      # What the provisioner decides -- when a terminal counts as working, what
+      # to do with one that does not, whose prefix is whose. None of it needs
+      # Wine, so none of it goes untested.
+      - name: Test the provisioner
+        run: pytest agent/tests -q
 
       - name: Lint the shell scripts
         run: |

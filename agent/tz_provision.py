@@ -34,7 +34,7 @@ import urllib.error
 import urllib.request
 from contextlib import suppress
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 log = logging.getLogger("tz-provision")
@@ -62,6 +62,11 @@ class Plan:
     #: the plan so the window can be changed in the web interface rather than
     #: by editing a unit file on the machine.
     maintenance: dict
+    #: Every account the server has, including ones with no credentials yet.
+    #: Anything on this machine that is not in here belongs to an account that
+    #: has been forgotten, and is cleared up. None means the server did not say
+    #: -- an older one -- and then nothing is ever removed on a guess.
+    known_accounts: set[int] | None = None
 
 
 def fetch_plan(base_url: str, token: str) -> Plan:
@@ -71,11 +76,13 @@ def fetch_plan(base_url: str, token: str) -> Plan:
     )
     with urllib.request.urlopen(request, timeout=20) as response:
         data = json.load(response)
+    known = data.get("known_accounts")
     return Plan(
         callback_url=data.get("callback_url", ""),
         api_key=data.get("api_key", ""),
         terminals=list(data.get("terminals", [])),
         maintenance=dict(data.get("maintenance") or {}),
+        known_accounts={int(value) for value in known} if known is not None else None,
     )
 
 
@@ -175,6 +182,48 @@ def bottle_for(account_id: int) -> Path:
     return BOTTLES / "bottles" / f"tz-{account_id}"
 
 
+def account_of(prefix: Path) -> int | None:
+    """The account a prefix belongs to, or None if it is not one of ours.
+
+    Templates are named ``tz-template-<broker>`` and are shared, so they are
+    never anybody's -- which is what keeps the reaping below from deleting the
+    thing every account is copied from.
+    """
+    match = re.fullmatch(r"tz-(\d+)", prefix.name)
+    return int(match.group(1)) if match else None
+
+
+# --- what we know about each account's terminal -------------------------------
+#
+# Kept beside the prefixes rather than inside them, because the most useful
+# thing to do with a terminal that will not work is to delete its prefix and
+# build a fresh one -- and bookkeeping that is deleted along with the thing it
+# is counting cannot count past one. Every retry ladder here used to live in
+# the prefix, so "rebuild and try again" would have looped for ever.
+
+STATE_DIR = BOTTLES / ".tz-state"
+
+
+def load_state(account_id: int) -> dict:
+    path = STATE_DIR / f"{account_id}.json"
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_state(account_id: int, state: dict) -> None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    with suppress(OSError):
+        (STATE_DIR / f"{account_id}.json").write_text(json.dumps(state, indent=1))
+
+
+def forget_state(account_id: int) -> None:
+    with suppress(OSError):
+        (STATE_DIR / f"{account_id}.json").unlink()
+
+
 def load_brokers() -> dict[str, dict]:
     path = Path(__file__).resolve().parent / "brokers.json"
     try:
@@ -225,36 +274,89 @@ def terminal_dir(bottle: Path) -> Path | None:
     return None
 
 
-def running_pids(bottle: Path) -> list[int]:
-    """The terminal processes belonging to one account's prefix.
-
-    Wine reports a terminal under its *Windows* path -- every account's shows
-    up as ``C:\\Program Files\\MetaTrader 5\\terminal64.exe`` -- so matching
-    the command line cannot tell two accounts apart, and matching the Linux
-    prefix path finds nothing at all.
-
-    The environment can. WINEPREFIX is set per process and says exactly which
-    account a terminal belongs to. Getting this wrong is not cosmetic: a check
-    that fails to see a running terminal starts a second one on the same
-    account, and two terminals copying the same master both place the order.
-    """
-    want = f"WINEPREFIX={bottle}".encode()
-    pids: list[int] = []
+def _procs() -> list[tuple[int, bytes, bytes]]:
+    """Every process we can read, as (pid, command line, environment)."""
+    found: list[tuple[int, bytes, bytes]] = []
     for entry in Path("/proc").iterdir():
         if not entry.name.isdigit():
             continue
         try:
-            environ = (entry / "environ").read_bytes()
             command = (entry / "cmdline").read_bytes()
+            environ = (entry / "environ").read_bytes()
         except OSError:
             continue  # the process ended, or is not ours to look at
-        if b"terminal64.exe" in command and want in environ.split(b"\0"):
-            pids.append(int(entry.name))
-    return pids
+        found.append((int(entry.name), command, environ))
+    return found
+
+
+def is_terminal(command: bytes, environ: bytes, bottle: Path) -> bool:
+    """Whether this process is *the* MetaTrader terminal for one prefix.
+
+    Wine reports a terminal under its *Windows* path -- every account's shows
+    up as ``C:\\Program Files\\MetaTrader 5\\terminal64.exe`` -- so matching
+    the command line cannot tell two accounts apart, and matching the Linux
+    prefix path finds nothing at all. WINEPREFIX in the environment can: it is
+    set per process and says exactly which account a terminal belongs to.
+
+    The first word has to be the terminal itself. Wine starts it through a stub
+    -- ``start.exe /exec terminal64.exe`` -- which names the terminal in its own
+    command line and shares its environment, and that stub can outlive a launch
+    that failed. Counting it meant a prefix with no terminal at all looked
+    occupied for as long as the stub sat there, so nothing was ever restarted:
+    exactly the terminal that is "stuck" and stays stuck.
+    """
+    if f"WINEPREFIX={bottle}".encode() not in environ.split(b"\0"):
+        return False
+    argv0 = command.split(b"\0")[0].lower().replace(b"\\", b"/")
+    return argv0.rsplit(b"/", 1)[-1] == b"terminal64.exe"
+
+
+def running_pids(bottle: Path) -> list[int]:
+    """The terminal processes belonging to one account's prefix.
+
+    Getting this wrong is not cosmetic in either direction: a check that fails
+    to see a running terminal starts a second one on the same account, and two
+    terminals copying the same master both place the order.
+    """
+    return [pid for pid, cmd, env in _procs() if is_terminal(cmd, env, bottle)]
 
 
 def is_running(bottle: Path) -> bool:
     return bool(running_pids(bottle))
+
+
+def stray_pids(bottle: Path) -> list[int]:
+    """Everything else still attached to a prefix: sandboxes, stubs, wineserver.
+
+    A launch goes through ``flatpak run``, which is a chain of bwrap sandboxes
+    wrapping a shell, and if the terminal inside never comes up that chain is
+    left behind holding the prefix. They accumulate one per attempt -- six of
+    them were sitting on this project's own machine, from starts that failed
+    days apart -- and a stale wineserver among them is enough to stop the next
+    launch dead, because Wine attaches to the one already serving that prefix
+    rather than starting the terminal.
+
+    The wrappers do not have WINEPREFIX in their environment; it is exported
+    by the script they are running, so it is in their command line instead.
+    Both shapes are matched, quoted exactly, so ``tz-1`` never catches
+    ``tz-11``.
+    """
+    want_env = f"WINEPREFIX={bottle}".encode()
+    want_arg = f'WINEPREFIX="{bottle}"'.encode()
+    mine = os.getpid()
+    pids: list[int] = []
+    for pid, command, environ in _procs():
+        if pid == mine or is_terminal(command, environ, bottle):
+            continue
+        if want_env in environ.split(b"\0") or want_arg in command:
+            pids.append(pid)
+    return pids
+
+
+def _signal(pids: list[int], sig: int) -> None:
+    for pid in pids:
+        with suppress(OSError):
+            os.kill(pid, sig)
 
 
 def stop_terminal(bottle: Path, timeout: float = 40.0) -> None:
@@ -265,21 +367,42 @@ def stop_terminal(bottle: Path, timeout: float = 40.0) -> None:
     Expert Advisor depends on, which then fails on the next start in a way
     that looks like a networking fault rather than a lost setting.
     """
-    pids = running_pids(bottle)
-    for pid in pids:
-        with suppress(OSError):
-            os.kill(pid, signal.SIGTERM)
+    _signal(running_pids(bottle), signal.SIGTERM)
 
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if not running_pids(bottle):
-            return
+            break
         time.sleep(2)
 
     for pid in running_pids(bottle):
         log.warning("terminal %s did not exit; killing it", pid)
         with suppress(OSError):
             os.kill(pid, signal.SIGKILL)
+
+    clear_strays(bottle)
+
+
+def clear_strays(bottle: Path, grace: float = 6.0) -> int:
+    """Clear whatever is left holding a prefix once no terminal is running.
+
+    Always before a launch, never while a terminal is up: wineserver is asked
+    first and given a moment, because it is the thing that writes the registry
+    back, and only what ignores that is killed outright.
+    """
+    if is_running(bottle):
+        return 0
+    pids = stray_pids(bottle)
+    if not pids:
+        return 0
+
+    log.info("clearing %d leftover process(es) holding %s", len(pids), bottle.name)
+    _signal(pids, signal.SIGTERM)
+    deadline = time.monotonic() + grace
+    while time.monotonic() < deadline and stray_pids(bottle):
+        time.sleep(1)
+    _signal(stray_pids(bottle), signal.SIGKILL)
+    return len(pids)
 
 
 def clone_template(template: Path, target: Path) -> None:
@@ -568,19 +691,6 @@ def allow_webrequest(login: str, url: str) -> bool:
 WEBREQUEST_ATTEMPTS = 3
 
 
-def _bump_attempts(bottle: Path) -> int:
-    """Count the tries, so failure escalates instead of repeating in silence."""
-    counter = bottle / ".tz-webrequest-attempts"
-    try:
-        attempts = int(counter.read_text().strip() or 0)
-    except (OSError, ValueError):
-        attempts = 0
-    attempts += 1
-    with suppress(OSError):
-        counter.write_text(str(attempts))
-    return attempts
-
-
 def _windows(env: dict[str, str]) -> set[str]:
     result = subprocess.run(
         ["xdotool", "search", "--name", "."], env=env, capture_output=True, text=True
@@ -630,85 +740,273 @@ def _geometry(env: dict[str, str], window: str) -> tuple[int, int, int, int] | N
 # --- reconcile ---------------------------------------------------------------
 
 
-def reconcile(plan: Plan, template: Path, expert: Path) -> None:
+#: How long a freshly started terminal has to log in and report in before
+#: something is taken to be wrong with it. A healthy one takes under a minute:
+#: MetaTrader logs in, the expert initialises, and it polls every few seconds.
+STARTUP_GRACE = 300.0
+
+#: How long a terminal that *was* reporting may go quiet before it is
+#: restarted. Generous, because restarting one that is merely between polls
+#: costs a minute of copying for nothing.
+SILENCE_LIMIT = 600.0
+
+#: Restarts before the prefix itself is suspected and rebuilt from the
+#: template, and rebuilds before this stops and asks for a person.
+RESTARTS_BEFORE_REBUILD = 2
+REBUILDS_BEFORE_GIVING_UP = 2
+
+
+def _parse_time(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def health(last_seen: datetime | None, launched: datetime | None, now: datetime) -> str:
+    """What to make of a terminal that is running.
+
+    "Running" is the weakest possible statement about a MetaTrader terminal.
+    It can be running and sitting on a login the broker refused, or on an
+    update dialog, or with an Expert Advisor that cannot reach TradeZulu --
+    all of which look identical from the outside and none of which copy a
+    trade. The only evidence that a terminal *works* is that its expert
+    reached the server, so that is what is measured.
+    """
+    if last_seen is not None and (now - last_seen).total_seconds() <= SILENCE_LIMIT:
+        return "reporting"
+    if launched is not None and (now - launched).total_seconds() < STARTUP_GRACE:
+        return "settling"
+    return "never-reported" if last_seen is None else "gone-quiet"
+
+
+def reconcile(plan: Plan, template: Path, expert: Path, settled: bool = True) -> None:
+    """Make the terminals on this machine match what the server asks for.
+
+    ``settled`` says whether the previous cycle also reached the server. When
+    it did not -- the site was restarted, or this process has just started --
+    every terminal looks like it has gone quiet, because nothing could record
+    a poll while the server was down. Restarting them all on that evidence
+    would turn a minute of site downtime into a fleet-wide outage, so silence
+    is only acted on once we have been watching continuously.
+    """
     for spec in plan.terminals:
         if not spec.get("enabled"):
             continue
+        try:
+            ensure_terminal(spec, plan, template, expert, settled)
+        except Exception:  # noqa: BLE001 - one bad account must not stop the rest
+            log.exception("could not reconcile account %s", spec.get("account_id"))
 
-        account_id = int(spec["account_id"])
-        bottle = bottle_for(account_id)
+    reap(plan)
 
-        if not bottle.exists():
-            clone_template(
-                template_for(spec.get("broker", ""), spec.get("server", ""), template), bottle
-            )
 
-        terminal = terminal_dir(bottle)
-        if terminal is None:
-            log.error("no terminal64.exe in %s -- is the template complete?", bottle)
-            continue
+def ensure_terminal(
+    spec: dict, plan: Plan, fallback: Path, expert: Path, settled: bool = True
+) -> None:
+    """Bring one account's terminal to where it should be."""
+    account_id = int(spec["account_id"])
+    bottle = bottle_for(account_id)
+    state = load_state(account_id)
 
-        if is_running(bottle):
-            continue
+    # A prefix is named after the account row, and a row's id can be handed out
+    # again after the account it belonged to was forgotten. Inheriting the last
+    # account's MetaTrader install -- its server list, its saved login, its
+    # charts -- is the "leftover from before that is in the way" that no amount
+    # of restarting clears, so identity is checked rather than assumed.
+    owner = str(state.get("login") or "")
+    if bottle.exists() and owner and owner != str(spec["login"]):
+        discard_prefix(bottle, f"it belongs to account {owner}, not {spec['login']}")
+        state = {}
 
-        install_expert(terminal, expert, plan.callback_url, plan.api_key)
-        launch(bottle, terminal, spec["login"], spec["server"], spec["password"])
-
-        # Give the terminal time to reach a login before touching its window.
-        time.sleep(45)
-
-        # The password has done its job. MetaTrader keeps its own encrypted
-        # copy from here on, so leaving this one on disk would buy nothing and
-        # risk everything.
-        write_startup(terminal)
-
-        # A template that was granted its permissions passes them on, because
-        # a clone is the same installation byte for byte. That is the whole
-        # reason this does not have to drive a dialog for every account -- and
-        # driving one here would mean finding the right window among every
-        # other account's terminal, which is a guess this has no business
-        # making. Only a template built without them falls through.
-        if (bottle / ".tz-permissions-set").exists():
-            continue
-
-        # The permission is confirmed by the Expert Advisor reaching the
-        # server, never by the clicks appearing to work. Driving a dialog by
-        # coordinates can miss and report success either way, which is the one
-        # failure worth designing against: a terminal that is up, logged in and
-        # silently unable to reach TradeZulu looks exactly like a healthy one.
-        marker = bottle / ".tz-webrequest-allowed"
-        if spec.get("last_seen"):
-            if not marker.exists():
-                log.info("%s is reporting in; WebRequest permission confirmed", spec["login"])
-                marker.touch()
-            continue
-
-        if marker.exists():
-            # It worked once and has stopped. Re-driving the dialog would add a
-            # duplicate entry and fix nothing, so say so instead.
-            log.warning(
-                "%s has not reported in since its WebRequest permission was "
-                "granted. Check the terminal is logged in: agent/tz-view.sh list",
-                spec["login"],
-            )
-            continue
-
-        attempts = _bump_attempts(bottle)
-        if attempts > WEBREQUEST_ATTEMPTS:
-            log.error(
-                "%s still cannot reach TradeZulu after %d attempts at its "
-                "WebRequest permission. Its Expert Advisor is running and "
-                "sending nothing. Add %s by hand in the terminal: Tools -> "
-                "Options -> Expert Advisors -> Allow WebRequest for listed URL.",
-                spec["login"], attempts - 1, plan.callback_url,
-            )
-            continue
-
-        log.info(
-            "%s has not reported in; granting WebRequest permission (attempt %d)",
-            spec["login"], attempts,
+    if not bottle.exists():
+        clone_template(
+            template_for(spec.get("broker", ""), spec.get("server", ""), fallback), bottle
         )
-        allow_webrequest(spec["login"], plan.callback_url)
+        state.pop("gave_up", None)
+
+    terminal = terminal_dir(bottle)
+    if terminal is None:
+        log.error("no terminal64.exe in %s -- is the template complete?", bottle)
+        return
+
+    if is_running(bottle):
+        supervise(spec, plan, bottle, state, settled)
+        return
+
+    if state.get("gave_up"):
+        return
+
+    # Whatever a previous attempt left holding this prefix goes first. A stale
+    # wineserver among it will happily accept the new terminal and then serve
+    # it nothing, which looks like MetaTrader hanging on startup.
+    clear_strays(bottle)
+
+    install_expert(terminal, expert, plan.callback_url, plan.api_key)
+    launch(bottle, terminal, spec["login"], spec["server"], spec["password"])
+
+    state.update(
+        login=str(spec["login"]),
+        server=str(spec.get("server") or ""),
+        launched=datetime.now(timezone.utc).isoformat(),
+    )
+    save_state(account_id, state)
+
+    # Give the terminal time to reach a login before touching its window.
+    time.sleep(45)
+
+    # The password has done its job. MetaTrader keeps its own encrypted copy
+    # from here on, so leaving this one on disk would buy nothing and risk
+    # everything.
+    write_startup(terminal)
+
+
+def supervise(
+    spec: dict, plan: Plan, bottle: Path, state: dict, settled: bool = True
+) -> None:
+    """Decide what a running terminal needs, if anything.
+
+    This runs every cycle rather than only in the one where a terminal was
+    started. It used to be reachable only immediately after a launch, so the
+    retry ladder below could never advance past its first rung: a terminal
+    that came up and stayed silent was tried once and then left alone for ever.
+    """
+    account_id = int(spec["account_id"])
+    login = str(spec["login"])
+    now = datetime.now(timezone.utc)
+    state.setdefault("login", login)
+    state.setdefault("server", str(spec.get("server") or ""))
+
+    verdict = health(_parse_time(spec.get("last_seen")), _parse_time(state.get("launched")), now)
+
+    if verdict == "reporting":
+        # Everything it was ever failing at, it is no longer failing at.
+        if any(state.get(key) for key in ("webrequest_attempts", "restarts", "rebuilds")):
+            log.info("%s is reporting in again", login)
+        for key in ("webrequest_attempts", "restarts", "rebuilds", "gave_up"):
+            state.pop(key, None)
+        state["webrequest_ok"] = True
+        save_state(account_id, state)
+        return
+
+    if verdict == "settling" or state.get("gave_up"):
+        return
+
+    if verdict == "never-reported":
+        # It has never worked, so the WebRequest permission is the first
+        # suspect: without it the expert runs, reports nothing, and the
+        # terminal looks perfectly healthy. Confirmation only ever comes from
+        # the expert reaching the server, never from the clicks appearing to
+        # land -- a dialog driven by coordinates can miss and still succeed.
+        attempts = int(state.get("webrequest_attempts") or 0)
+        if attempts < WEBREQUEST_ATTEMPTS and not state.get("webrequest_ok"):
+            state["webrequest_attempts"] = attempts + 1
+            save_state(account_id, state)
+            log.info(
+                "%s has not reported in; granting WebRequest permission (attempt %d)",
+                login, attempts + 1,
+            )
+            allow_webrequest(login, plan.callback_url)
+            return
+        recycle(spec, bottle, state, "it has never reported in", plan)
+        return
+
+    # gone-quiet: it worked and has stopped.
+    if not settled:
+        log.info("%s has gone quiet, but so has everything else; waiting a cycle", login)
+        return
+    recycle(spec, bottle, state, "it stopped reporting in", plan)
+
+
+def recycle(spec: dict, bottle: Path, state: dict, why: str, plan: Plan) -> None:
+    """Restart a terminal, then rebuild it, then stop and say so.
+
+    Each rung is tried because the one before it did not help, which is the
+    only honest reason to escalate. Nothing here loops for ever: the counts
+    live outside the prefix, so deleting the prefix does not reset them.
+    """
+    account_id = int(spec["account_id"])
+    login = str(spec["login"])
+    restarts = int(state.get("restarts") or 0)
+    rebuilds = int(state.get("rebuilds") or 0)
+
+    if restarts < RESTARTS_BEFORE_REBUILD:
+        state["restarts"] = restarts + 1
+        save_state(account_id, state)
+        log.warning("%s: %s; restarting its terminal (%d)", login, why, restarts + 1)
+        stop_terminal(bottle)
+        return  # the next cycle sees no terminal and starts a fresh one
+
+    if rebuilds < REBUILDS_BEFORE_GIVING_UP:
+        state.update(rebuilds=rebuilds + 1, restarts=0)
+        state.pop("webrequest_attempts", None)
+        state.pop("webrequest_ok", None)
+        save_state(account_id, state)
+        log.warning(
+            "%s: %s after %d restarts; rebuilding its MetaTrader install from "
+            "the template (%d)",
+            login, why, restarts, rebuilds + 1,
+        )
+        discard_prefix(bottle, f"account {login} could not be made to work")
+        return
+
+    state["gave_up"] = True
+    save_state(account_id, state)
+    log.error(
+        "%s: %s, and neither restarting nor rebuilding its terminal helped. "
+        "Nothing further will be tried automatically. Look at it with "
+        "agent/tz-view.sh watch, check the password and server are right, and "
+        "that %s is in Tools -> Options -> Expert Advisors -> Allow WebRequest. "
+        "Then: agent/tz_provision.py --reset %s",
+        login, why, plan.callback_url, login,
+    )
+
+
+def discard_prefix(bottle: Path, why: str) -> None:
+    """Delete one account's MetaTrader install, terminal and all."""
+    log.warning("removing %s: %s", bottle.name, why)
+    stop_terminal(bottle)
+    clear_strays(bottle)
+    shutil.rmtree(bottle, ignore_errors=True)
+
+
+def purge_terminal(account_id: int) -> None:
+    """Remove every trace of one account's terminal from this machine."""
+    discard_prefix(bottle_for(account_id), f"account {account_id} is being cleared")
+    forget_state(account_id)
+
+
+def reap(plan: Plan) -> None:
+    """Clear up terminals for accounts TradeZulu no longer has.
+
+    Forgetting an account in the web interface deleted its rows and left its
+    MetaTrader install running here for good -- logged in, polling, refused
+    with a 404 every two seconds, and holding the prefix name that the next
+    account added would be given. Tearing the whole machine down with
+    ``uninstall.sh --all`` was the only way to clear it, which is a heavy
+    answer to "I removed one account".
+
+    Only accounts the server *listed* are considered. An older server that
+    says nothing about what it knows gets nothing removed, because "not in the
+    plan" is also what an account with no password looks like, and deleting a
+    working install over a missing field is not a recoverable mistake.
+    """
+    if plan.known_accounts is None:
+        return
+    for prefix in sorted((BOTTLES / "bottles").glob("tz-*")):
+        account_id = account_of(prefix)
+        if account_id is None or account_id in plan.known_accounts:
+            continue
+        log.info("account %s is gone from TradeZulu; removing its terminal", account_id)
+        purge_terminal(account_id)
+
+    for leftover in sorted(STATE_DIR.glob("*.json")):
+        with suppress(ValueError):
+            if int(leftover.stem) not in plan.known_accounts:
+                leftover.unlink(missing_ok=True)
 
 
 # --- weekly restart -----------------------------------------------------------
@@ -796,6 +1094,74 @@ def run_maintenance(plan: Plan, fallback: Path) -> None:
     log.info("weekly maintenance done")
 
 
+# --- clearing up by hand ------------------------------------------------------
+
+
+def resolve_targets(targets: list[str], url: str, token: str) -> set[int]:
+    """Turn what someone typed into account ids.
+
+    An account number is what a person knows -- it is on their statements and
+    in the web interface -- while the prefix on disk is named after a database
+    row nobody has ever seen. Both are accepted, and so is ``all``.
+    """
+    if any(target.lower() == "all" for target in targets):
+        return {
+            account_id
+            for prefix in (BOTTLES / "bottles").glob("tz-*")
+            if (account_id := account_of(prefix)) is not None
+        }
+
+    #: login -> account id, from the server if it will talk to us and from what
+    #: was recorded here if it will not. Neither is required to reset by id.
+    by_login: dict[str, int] = {}
+    with suppress(Exception):
+        for spec in fetch_plan(url, token).terminals:
+            by_login[str(spec["login"]).strip()] = int(spec["account_id"])
+    for path in STATE_DIR.glob("*.json"):
+        with suppress(ValueError):
+            login = str(load_state(int(path.stem)).get("login") or "").strip()
+            by_login.setdefault(login, int(path.stem))
+
+    resolved: set[int] = set()
+    for target in targets:
+        target = target.strip()
+        if target in by_login:
+            resolved.add(by_login[target])
+        elif target.isdigit() and bottle_for(int(target)).exists():
+            resolved.add(int(target))
+        else:
+            log.error("no terminal here for %r", target)
+    return resolved
+
+
+def reset(targets: list[str], url: str, token: str) -> int:
+    """Stop and delete terminals so they are built again from scratch.
+
+    This is the "clear it up and start over" that does not involve
+    uninstalling anything. Nothing in TradeZulu itself is touched -- no
+    account, no trade, no password -- so the next provisioning cycle simply
+    finds no terminal for an account that should have one, and makes it.
+    """
+    logging.basicConfig(level=logging.INFO, format="%(levelname)-7s %(message)s")
+    ids = resolve_targets(targets, url, token)
+    if not ids:
+        log.error("nothing matched; there is no terminal here for %s", ", ".join(targets))
+        return 1
+
+    for account_id in sorted(ids):
+        bottle = bottle_for(account_id)
+        login = str(load_state(account_id).get("login") or account_id)
+        log.info("clearing %s (account %s)", login, bottle.name)
+        purge_terminal(account_id)
+
+    log.info(
+        "done. %d terminal(s) cleared; each account that still has credentials "
+        "gets a fresh one within a minute or two.",
+        len(ids),
+    )
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", default=os.getenv("TZ_URL", "http://127.0.0.1:8420"))
@@ -833,7 +1199,18 @@ def main() -> int:
         action="store_true",
         help="Run the weekly restart immediately, then carry on as normal.",
     )
+    parser.add_argument(
+        "--reset",
+        nargs="+",
+        metavar="ACCOUNT",
+        help="Stop and delete these terminals, then exit; they are rebuilt on "
+        "the next cycle. Takes account numbers, or 'all'. Nothing in the "
+        "journal is touched.",
+    )
     args = parser.parse_args()
+
+    if args.reset:
+        return reset(args.reset, args.url, args.token)
 
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)-7s %(message)s"
@@ -853,9 +1230,13 @@ def main() -> int:
     ensure_display()
 
     forced = args.maintenance_now
+    #: When the server was last reachable. A terminal that has gone quiet is
+    #: only evidence of anything if we were in a position to hear it.
+    last_ok: float | None = None
     while True:
         try:
             plan = fetch_plan(args.url, args.token)
+            settled = last_ok is not None and time.monotonic() - last_ok < args.interval * 3
             # Before reconciling, not after: maintenance only stops terminals,
             # and the reconcile that follows is what brings them back. Doing it
             # the other way round would leave everything down until the next
@@ -867,7 +1248,8 @@ def main() -> int:
             if forced or maintenance_due(weekday, hour):
                 forced = False
                 run_maintenance(plan, args.template)
-            reconcile(plan, args.template, args.expert)
+            reconcile(plan, args.template, args.expert, settled=settled)
+            last_ok = time.monotonic()
         except urllib.error.URLError as error:
             log.warning("TradeZulu not reachable at %s: %s", args.url, error)
         except Exception:  # noqa: BLE001 - a bad cycle must not kill the daemon

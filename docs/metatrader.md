@@ -113,6 +113,54 @@ one immediately:
 python3 agent/tz_provision.py --maintenance-now --once
 ```
 
+### When a terminal will not work
+
+Nothing here needs a person, and none of it involves uninstalling anything.
+
+"Running" is the weakest possible statement about a MetaTrader terminal. It can
+be running while sitting on a login the broker refused, or on an update dialog,
+or with an Expert Advisor whose WebRequest permission never took — all of which
+look identical from outside and none of which copy a trade. So the provisioner
+does not ask whether a terminal is running. It asks when that account's expert
+last reached TradeZulu, and works down a ladder when the answer is "never" or
+"not lately":
+
+| | |
+|---|---|
+| under 5 minutes since it started | left alone; it is still logging in |
+| never reported | grant the WebRequest permission, up to 3 times |
+| still nothing, or it went quiet for 10 minutes | restart the terminal, twice |
+| still nothing | delete the prefix and rebuild it from the template, twice |
+| still nothing | stop, and log what to check by hand |
+
+Each rung is tried only because the one before it did not help. The counts are
+kept in `~/.var/app/.../data/bottles/.tz-state/<account>.json`, outside the
+prefix — which matters, because a count kept inside the thing being rebuilt
+cannot survive the rebuild, and a ladder that resets itself is a loop.
+
+Silence is only acted on when the provisioner has been reaching TradeZulu
+continuously. Nothing can record a poll while the site is restarting, so after
+any outage every terminal looks like it has gone quiet at once, and restarting
+them all on that evidence would turn a minute of downtime into an outage.
+
+### Clearing one up by hand
+
+```bash
+python3 agent/tz_provision.py --reset 22609000    # this account's terminal
+python3 agent/tz_provision.py --reset all         # every terminal
+```
+
+This stops the terminal, clears whatever is left holding its prefix, and
+deletes the prefix. Nothing in TradeZulu is touched — no account, no trade, no
+password — so the next provisioning cycle finds an account with no terminal and
+builds a fresh one, a minute or two later. It takes account numbers, and it is
+the whole of "clear it up and start over": `uninstall.sh --all` is not the tool
+for a terminal that is stuck, and never was.
+
+Forgetting an account in the web interface does the same thing on its own. Its
+MetaTrader install is removed on the next cycle, because the account is no
+longer one the server lists.
+
 ### Troubleshooting
 
 ```bash
