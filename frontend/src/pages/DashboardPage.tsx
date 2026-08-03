@@ -18,7 +18,6 @@ import {
 import type { EquitySeries, Summary, Trade, TradePage } from '../lib/types'
 import { CumulativeChart, OutcomeSplit, SignedBarChart } from '../components/charts'
 import { Gauge, Sparkline, StatTile, WinLossBar } from '../components/StatTile'
-import { NewsCalendar } from '../components/NewsCalendar'
 import { ZuluScoreCard } from '../components/ZuluScoreCard'
 import { Card, CardHeader, DirectionBadge, EmptyState, ErrorState, Hint, Skeleton } from '../components/ui'
 
@@ -452,8 +451,6 @@ export function DashboardPage() {
           </dl>
         </Card>
       </div>
-
-      <NewsCalendar />
 
       {/* Recent trades ---------------------------------------------------- */}
       <Card padded={false}>

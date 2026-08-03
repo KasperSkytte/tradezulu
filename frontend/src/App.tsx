@@ -24,6 +24,9 @@ const CalendarPage = lazy(() =>
 const AccountsPage = lazy(() =>
   import('./pages/AccountsPage').then((m) => ({ default: m.AccountsPage })),
 )
+const NewsPage = lazy(() =>
+  import('./pages/NewsPage').then((module) => ({ default: module.NewsPage })),
+)
 const ReportsPage = lazy(() =>
   import('./pages/ReportsPage').then((module) => ({ default: module.ReportsPage })),
 )
@@ -97,6 +100,14 @@ export function App() {
               element={
                 <Suspense fallback={<Spinner />}>
                   <CalendarPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="news"
+              element={
+                <Suspense fallback={<Spinner />}>
+                  <NewsPage />
                 </Suspense>
               }
             />

@@ -10,7 +10,14 @@ import { useEffect, useRef } from 'react'
 import { useIsDark, useSettings } from '../lib/settings'
 import { Card, CardHeader } from './ui'
 
-export function NewsCalendar({ height = 420 }: { height?: number }) {
+export function NewsCalendar({
+  height = 420,
+  /** Null on a page that already says what this is, so it is not titled twice. */
+  title = 'Economic calendar',
+}: {
+  height?: number
+  title?: string | null
+}) {
   const container = useRef<HTMLDivElement>(null)
   const { settings } = useSettings()
   const dark = useIsDark()
@@ -55,10 +62,12 @@ export function NewsCalendar({ height = 420 }: { height?: number }) {
 
   return (
     <Card>
-      <CardHeader
-        title="Economic calendar"
-        hint="High-impact releases, which is when spreads widen and stops get run. Which countries and what impact level to show are under Settings → General."
-      />
+      {title && (
+        <CardHeader
+          title={title}
+          hint="High-impact releases, which is when spreads widen and stops get run. Which countries and what impact level to show are under Settings → General."
+        />
+      )}
       <div
         className="tradingview-widget-container"
         ref={container}
