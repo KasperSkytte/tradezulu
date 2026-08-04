@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.0](https://github.com/KasperSkytte/tradezulu/compare/v1.17.0...v1.18.0) (2026-08-04)
+
+
+### Features
+
+* **dashboard:** let a figure about one trade open that trade ([91e9958](https://github.com/KasperSkytte/tradezulu/commit/91e99589031214bf785c4221242dbf9cfef3aae1))
+
 ## [1.17.0](https://github.com/KasperSkytte/tradezulu/compare/v1.16.0...v1.17.0) (2026-08-04)
 
 
