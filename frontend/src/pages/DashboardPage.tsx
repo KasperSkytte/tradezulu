@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import clsx from 'clsx'
 import { Link } from 'react-router-dom'
 import { ArrowUpRight, Ban, Inbox, TrendingUp } from 'lucide-react'
 import { api } from '../lib/api'
@@ -22,8 +23,23 @@ import { ZuluScoreCard } from '../components/ZuluScoreCard'
 import { Card, CardHeader, DirectionBadge, EmptyState, ErrorState, Hint, Skeleton } from '../components/ui'
 
 export function DashboardPage() {
-  const { params, filters } = useFilters()
+  const { params, filters, accounts } = useFilters()
   const { currency, showAmounts } = useSettings()
+
+  // What the account is actually worth, which the rest of this page carefully
+  // never says: every other figure is about performance. Shown only when
+  // amounts are on, because it is the one number the percentages exist to
+  // keep out of a screenshot.
+  //
+  // Across several accounts it is a sum rather than a withheld figure. A
+  // return or a drawdown cannot be added up honestly; money in hand can.
+  const inScope =
+    typeof filters.accountId === 'number'
+      ? accounts.filter((account) => account.id === filters.accountId)
+      : accounts
+  const balance = inScope.reduce((total, account) => total + (account.balance || 0), 0)
+  const equity = inScope.reduce((total, account) => total + (account.equity || 0), 0)
+  const showBalance = showAmounts && balance > 0
 
   const summaryQuery = useQuery({
     queryKey: ['stats', 'summary', params],
@@ -157,7 +173,21 @@ export function DashboardPage() {
   return (
     <div className="space-y-4">
       {/* KPI row --------------------------------------------------------- */}
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+      <div className={clsx('grid grid-cols-2 gap-3', showBalance ? 'xl:grid-cols-6' : 'xl:grid-cols-5')}>
+        {showBalance && (
+          <StatTile
+            label="Balance"
+            hint="What the account is worth now, as the terminal last reported it. Equity is shown beside it when a position is still open."
+            value={money(balance, currency)}
+            sub={
+              inScope.length > 1
+                ? `${inScope.length} accounts`
+                : Math.abs(equity - balance) >= 0.01
+                  ? `equity ${money(equity, currency)}`
+                  : (inScope[0]?.name ?? inScope[0]?.login ?? '')
+            }
+          />
+        )}
         <StatTile
           label="Net P&L"
           hint="Sum of every closed trade in the period, including commission and swap."
