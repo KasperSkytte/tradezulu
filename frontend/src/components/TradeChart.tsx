@@ -37,6 +37,33 @@ import { EmptyState, SegmentedControl, Skeleton } from './ui'
 
 const TIMEFRAMES = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1']
 
+/** The widest window the free embed can be asked for, in days.
+ *
+ *  TradingView's embed takes a *relative* range and nothing else -- its whole
+ *  parameter list is symbol, interval, theme, studies and this. There is no
+ *  from/to and no way to scroll it to a date from outside the iframe, so a
+ *  chart of a trade from March cannot be centred on March. What it can do is
+ *  reach back far enough that March is still on screen, which is the
+ *  difference between "my trade is in here somewhere" and a chart of today.
+ */
+const TV_RANGES: [days: number, range: string][] = [
+  [1, '1D'],
+  [5, '5D'],
+  [30, '1M'],
+  [90, '3M'],
+  [180, '6M'],
+  [365, '12M'],
+]
+
+function rangeCovering(when: string | null): string {
+  if (!when) return '5D'
+  const days = (Date.now() - new Date(when).getTime()) / 86_400_000
+  // A little margin, so a trade from four days ago does not sit on the very
+  // left edge of a five-day chart.
+  const found = TV_RANGES.find(([limit]) => days * 1.25 + 1 < limit)
+  return found ? found[1] : 'ALL'
+}
+
 const TV_INTERVAL: Record<string, string> = {
   M1: '1',
   M5: '5',
@@ -396,6 +423,9 @@ function TradingViewChart({ trade, timeframe }: { trade: TradeDetail; timeframe:
       autosize: true,
       symbol,
       interval: TV_INTERVAL[timeframe] ?? '15',
+      // Wide enough to still contain the trade. It cannot be centred on it --
+      // see TV_RANGES.
+      range: rangeCovering(trade.closed_at ?? trade.opened_at),
       timezone: settings.general.timezone,
       theme: dark ? 'dark' : 'light',
       style: '1',
@@ -412,7 +442,7 @@ function TradingViewChart({ trade, timeframe }: { trade: TradeDetail; timeframe:
     return () => {
       element.innerHTML = ''
     }
-  }, [symbol, timeframe, settings.general.timezone, dark])
+  }, [symbol, timeframe, settings.general.timezone, dark, trade.closed_at, trade.opened_at])
 
   return (
     <div>
@@ -426,6 +456,12 @@ function TradingViewChart({ trade, timeframe }: { trade: TradeDetail; timeframe:
           ref={container}
         />
       </div>
+      <p className="mt-2 text-xs text-[var(--tz-text-faint)]">
+        TradingView's embed always ends at the current price and cannot be moved to a date from
+        outside it, so the window is widened until your trade falls inside it:{' '}
+        <strong>{new Date(trade.closed_at ?? trade.opened_at).toLocaleString()}</strong>. Replay
+        opens on the trade itself, with your fills marked.
+      </p>
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--tz-text-muted)]">
         <span>
           Entry {price(trade.entry_price, trade.digits)}
