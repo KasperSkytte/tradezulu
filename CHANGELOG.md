@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.17.0](https://github.com/KasperSkytte/tradezulu/compare/v1.16.0...v1.17.0) (2026-08-04)
+
+
+### Features
+
+* **news:** make ForexFactory the default, and give it a filter worth using ([36cfd6f](https://github.com/KasperSkytte/tradezulu/commit/36cfd6f8fab456297628c8be07ac2f64cba74fa6))
+
+
+### Bug fixes
+
+* **settings:** say that a breakeven threshold of 0 switches it off ([e60eda3](https://github.com/KasperSkytte/tradezulu/commit/e60eda3beeabfe9f271207d83f6e502d2b50f034))
+
+
+### Refactoring
+
+* **news:** controls first, the warning last ([53d0848](https://github.com/KasperSkytte/tradezulu/commit/53d08489382c4a513273111a1de5692ba2ff1638))
+
+
+### Documentation
+
+* **settings:** explain what "Even losses" actually measures ([4c0bfed](https://github.com/KasperSkytte/tradezulu/commit/4c0bfedcde01cdf3de689625799bc6c7f0f9dc01))
+
 ## [1.16.0](https://github.com/KasperSkytte/tradezulu/compare/v1.15.2...v1.16.0) (2026-08-04)
 
 
