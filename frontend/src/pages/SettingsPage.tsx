@@ -469,35 +469,49 @@ function RiskSection() {
           action={<SavedFlag saved={saved} />}
         />
 
+        {/* Said here rather than only in the tooltips: three boxes that look
+            like a form to fill in are really three spellings of one idea, and
+            nothing about them suggests that zero is a valid answer. */}
+        <p className="mb-4 text-sm text-[var(--tz-text-muted)]">
+          Three ways of saying how little counts as nothing — in R, in {currency}, or as a share
+          of the account. They are <strong>alternatives, not conditions</strong>: any one of them
+          calling a trade a breakeven is enough. Set a threshold to{' '}
+          <strong className="text-[var(--tz-text)]">0</strong> to switch that one off, and set all
+          three to 0 to stop marking breakevens at all.
+        </p>
+
         <div className="grid gap-4 sm:grid-cols-2">
           <Field
             label="Breakeven threshold (R)"
-            hint="Any closed trade whose realised R is smaller than this, in either direction, is a breakeven."
+            hint="Any closed trade whose realised R is smaller than this, in either direction, is a breakeven. 0 switches it off."
           >
             <NumberField
               value={risk.breakeven_threshold_r}
               step={0.01}
               onCommit={(value) => void apply({ risk: { breakeven_threshold_r: value } })}
+              off={!risk.breakeven_threshold_r}
             />
           </Field>
           <Field
             label={`Breakeven threshold (${currency})`}
-            hint="Used only when a trade has no known risk, so no R can be computed."
+            hint="Used only when a trade has no known risk, so no R can be computed. 0 switches it off."
           >
             <NumberField
               value={risk.breakeven_threshold_money}
               step={0.5}
               onCommit={(value) => void apply({ risk: { breakeven_threshold_money: value } })}
+              off={!risk.breakeven_threshold_money}
             />
           </Field>
           <Field
             label="Breakeven threshold (% of account)"
-            hint="A third way of saying the same thing, for people who think in percent. Any threshold calling a trade breakeven is enough — they are alternatives, not conditions to satisfy together. 0 turns it off."
+            hint="For people who think in percent. Applies whether or not the trade had a stop, since it measures the account rather than the risk. 0 switches it off."
           >
             <NumberField
               value={risk.breakeven_threshold_percent}
               step={0.05}
               onCommit={(value) => void apply({ risk: { breakeven_threshold_percent: value } })}
+              off={!risk.breakeven_threshold_percent}
             />
           </Field>
           <Field label="How breakevens count" className="sm:col-span-2">
@@ -1183,22 +1197,25 @@ function NumberField({
   value,
   step,
   disabled,
+  off,
   onCommit,
 }: {
   value: number
   step: number
   disabled?: boolean
+  /** Mark a zero as "switched off" rather than as a box nobody filled in. */
+  off?: boolean
   onCommit: (value: number) => void
 }) {
   const [draft, setDraft] = useState(String(value))
   useEffect(() => setDraft(String(value)), [value])
 
-  return (
+  const input = (
     <input
       type="number"
       step={step}
       disabled={disabled}
-      className="tz-input disabled:opacity-50"
+      className={clsx('tz-input disabled:opacity-50', off && 'pr-10')}
       value={draft}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={() => {
@@ -1210,5 +1227,15 @@ function NumberField({
         if (event.key === 'Enter') event.currentTarget.blur()
       }}
     />
+  )
+
+  if (!off) return input
+  return (
+    <div className="relative">
+      {input}
+      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--tz-text-faint)]">
+        off
+      </span>
+    </div>
   )
 }

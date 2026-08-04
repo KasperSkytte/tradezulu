@@ -285,6 +285,33 @@ class TestOutcome:
         assert trade.risk_amount is None
         assert classify_outcome(trade, cfg) == "breakeven"
 
+    def test_zero_switches_a_threshold_off(self):
+        """Each one is a spelling of the same idea, and 0 means "not this one".
+
+        The three are alternatives -- any of them calling a trade breakeven is
+        enough -- so switching one off has to be possible without switching off
+        the idea. A tiny win with every threshold at zero is a win.
+        """
+        cfg = {
+            **RISK,
+            "breakeven_threshold_r": 0,
+            "breakeven_threshold_money": 0,
+            "breakeven_threshold_percent": 0,
+        }
+        trade = make_trade(gross_profit=1.0, commission=0.0)
+        compute_derived(trade, cfg, 10_000.0)
+        assert trade.outcome == "win"
+
+    def test_the_others_still_apply_when_one_is_off(self):
+        cfg = {
+            **RISK,
+            "breakeven_threshold_r": 0,  # off
+            "breakeven_threshold_percent": 0.1,  # still on
+        }
+        trade = make_trade(gross_profit=5.0, commission=0.0)
+        compute_derived(trade, cfg, 10_000.0)
+        assert trade.outcome == "breakeven"
+
     def test_percent_of_account_counts_as_breakeven(self):
         """0.1% of a 10k account is 10, so a 5 win is a wasted effort."""
         cfg = {**RISK, "breakeven_threshold_r": 0, "breakeven_threshold_percent": 0.1}
