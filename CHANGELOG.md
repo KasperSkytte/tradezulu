@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.2](https://github.com/KasperSkytte/tradezulu/compare/v1.15.1...v1.15.2) (2026-08-04)
+
+
+### Bug fixes
+
+* **reports:** the axes have to hide money too ([3aac2d6](https://github.com/KasperSkytte/tradezulu/commit/3aac2d6a9c4a4cff227e8066a0c6bea9a6de430f))
+
 ## [1.15.1](https://github.com/KasperSkytte/tradezulu/compare/v1.15.0...v1.15.1) (2026-08-03)
 
 
