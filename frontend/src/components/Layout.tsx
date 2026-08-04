@@ -4,7 +4,6 @@ import {
   CalendarDays,
   LayoutDashboard,
   ListOrdered,
-  Copy,
   LogOut,
   Menu,
   Moon,
@@ -25,7 +24,6 @@ import { ZuluMark } from './ZuluMark'
 const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/trades', label: 'Trades', icon: ListOrdered, end: false },
-  { to: '/accounts', label: 'Accounts', icon: Copy, end: false },
   { to: '/calendar', label: 'Calendar', icon: CalendarDays, end: false },
   // "News" rather than a second calendar: this one is other people's diary,
   // and two menu items called Calendar would be a puzzle rather than a menu.
@@ -37,7 +35,6 @@ const NAV = [
 const PAGE_TITLES: Record<string, string> = {
   '/': 'Dashboard',
   '/trades': 'Trades',
-  '/accounts': 'Accounts',
   '/calendar': 'Calendar',
   '/news': 'News',
   '/reports': 'Reports',

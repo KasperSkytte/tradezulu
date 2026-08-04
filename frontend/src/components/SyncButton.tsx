@@ -63,7 +63,7 @@ export function SyncButton() {
   const title =
     settings.mt5.sync_mode === 'ea'
       ? `The terminal sends deals as they happen. Last received ${relative(status?.last_sync_at)}. Click to re-read.`
-      : 'Re-read the journal. Add your account on the Accounts page to sync automatically.'
+      : 'Re-read the journal. Add your account under Settings → Accounts to sync automatically.'
 
   return (
     <div className="flex items-center gap-2">

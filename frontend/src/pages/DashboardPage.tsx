@@ -66,7 +66,7 @@ export function DashboardPage() {
             <>
               Nothing was closed between {dateOnly(filters.start)} and {dateOnly(filters.end)}.
               Widen the date range, or connect MetaTrader 5 from{' '}
-              <Link to="/accounts" className="text-zulu-400 underline underline-offset-2">
+              <Link to="/settings#accounts" className="text-zulu-400 underline underline-offset-2">
                 Accounts
               </Link>
               .

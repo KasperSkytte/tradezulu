@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react'
-import { Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import { Layout } from './components/Layout'
 import { FiltersProvider } from './lib/filters'
@@ -20,9 +20,6 @@ const TradeDetailPage = lazy(() =>
 )
 const CalendarPage = lazy(() =>
   import('./pages/CalendarPage').then((module) => ({ default: module.CalendarPage })),
-)
-const AccountsPage = lazy(() =>
-  import('./pages/AccountsPage').then((m) => ({ default: m.AccountsPage })),
 )
 const NewsPage = lazy(() =>
   import('./pages/NewsPage').then((module) => ({ default: module.NewsPage })),
@@ -87,14 +84,10 @@ export function App() {
                 </Suspense>
               }
             />
-            <Route
-              path="accounts"
-              element={
-                <Suspense fallback={<Spinner />}>
-                  <AccountsPage />
-                </Suspense>
-              }
-            />
+            {/* Accounts moved into Settings. Anyone with the old address
+                bookmarked -- or a phone that installed the PWA when it was a
+                page -- lands on the section rather than on a 404. */}
+            <Route path="accounts" element={<Navigate to="/settings#accounts" replace />} />
             <Route
               path="calendar"
               element={

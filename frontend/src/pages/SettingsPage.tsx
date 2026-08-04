@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import {
   AlertTriangle,
   Check,
+  Copy,
   Database,
   Download,
   Gauge,
@@ -21,12 +22,15 @@ import type { DeepPartial } from '../lib/settings'
 import { PERIOD_OPTIONS } from '../lib/period'
 import type { Account, AppSettings, SystemInfo, Tag } from '../lib/types'
 import { Button, Card, CardHeader, Field, SegmentedControl, Skeleton, Toggle } from '../components/ui'
+import { AccountsPage } from './AccountsPage'
 
-// MetaTrader and the accounts it feeds now live together on the Accounts page.
-// Having a "MetaTrader 5" section here and an Accounts page there meant setting
-// an account up in one place and finding it listed in the other.
+// Accounts live here, with the rest of what is configured once and left alone.
+// They had a page of their own for a while; a top-level menu item for
+// something visited when an account is added, and never again, was a page's
+// worth of chrome for a settings screen.
 const SECTIONS = [
   { id: 'general', label: 'General', icon: Palette },
+  { id: 'accounts', label: 'Accounts', icon: Copy },
   { id: 'risk', label: 'Risk & R', icon: SlidersHorizontal },
   { id: 'score', label: 'Zulu Score', icon: Gauge },
   { id: 'charts', label: 'Charts', icon: CandlestickChart },
@@ -86,6 +90,7 @@ export function SettingsPage() {
 
       <div className="min-w-0 flex-1 space-y-4">
         {section === 'general' && <GeneralSection />}
+        {section === 'accounts' && <AccountsPage />}
         {section === 'risk' && <RiskSection />}
         {section === 'score' && <ScoreSection />}
         {section === 'charts' && <ChartsSection />}

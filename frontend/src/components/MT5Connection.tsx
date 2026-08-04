@@ -1,4 +1,4 @@
-/** The master account's credentials, on the Accounts page.
+/** The master account's credentials, with the accounts they belong to.
  *
  *  It used to be a section of its own in Settings, which meant an account was
  *  set up in one place and listed in another, and nothing explained why. The
