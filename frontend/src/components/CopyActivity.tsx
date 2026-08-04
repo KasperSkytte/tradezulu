@@ -1,6 +1,7 @@
 /** The copier's audit trail: what it did, and what it refused to do. */
 
 import { CheckCircle2, CircleSlash, MinusCircle, XCircle } from 'lucide-react'
+import { timeOnly } from '../lib/format'
 import type { CopyEvent, SlaveAccount } from '../lib/types'
 import { EmptyState } from './ui'
 
@@ -44,7 +45,7 @@ export function CopyActivity({
                   <Icon size={15} className={style.className} />
                 </td>
                 <td className="py-2 pr-3 align-top whitespace-nowrap text-[var(--tz-text-faint)]">
-                  {new Date(event.created_at).toLocaleTimeString()}
+                  {timeOnly(event.created_at)}
                 </td>
                 <td className="py-2 pr-3 align-top whitespace-nowrap">
                   {nameFor(event.slave_account_id)}

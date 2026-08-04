@@ -31,7 +31,7 @@ import type {
 import { CandlestickChart, ExternalLink } from 'lucide-react'
 import { api } from '../lib/api'
 import { useIsDark, useSettings } from '../lib/settings'
-import { price } from '../lib/format'
+import { dateTime, price } from '../lib/format'
 import type { Account, BrokerList, CandleResponse, TradeDetail } from '../lib/types'
 import { EmptyState, SegmentedControl, Skeleton } from './ui'
 
@@ -459,7 +459,7 @@ function TradingViewChart({ trade, timeframe }: { trade: TradeDetail; timeframe:
       <p className="mt-2 text-xs text-[var(--tz-text-faint)]">
         TradingView's embed always ends at the current price and cannot be moved to a date from
         outside it, so the window is widened until your trade falls inside it:{' '}
-        <strong>{new Date(trade.closed_at ?? trade.opened_at).toLocaleString()}</strong>. Replay
+        <strong>{dateTime(trade.closed_at ?? trade.opened_at)}</strong>. Replay
         opens on the trade itself, with your fills marked.
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--tz-text-muted)]">

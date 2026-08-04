@@ -26,6 +26,11 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "week_starts_on": "monday",  # monday | sunday
         "default_period": "last_30_days",
         "date_format": "yyyy-MM-dd",
+        # 24h or 12h, everywhere a time is written. Not derived from the
+        # locale: plenty of people read one and write the other, and a trading
+        # journal full of 1:05 PM when you think in 13:05 is a small friction
+        # applied to every row.
+        "time_format": "24h",  # 24h | 12h
         "theme": "dark",  # dark | light | system
         "accent": "jade",
         # Swaps the profit/loss green-red pair for a blue-amber pair that

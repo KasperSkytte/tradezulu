@@ -72,14 +72,37 @@ export function duration(seconds: number | null | undefined): string {
   return hours ? `${days}d ${hours}h` : `${days}d`
 }
 
+/** Whether times are written 13:05 or 1:05 PM.
+ *
+ *  Module state rather than an argument on seventeen call sites: every time in
+ *  the journal already goes through the helpers below, so setting it in one
+ *  place makes all of them right -- including the ones nobody remembers.
+ *  SettingsProvider keeps it in step, and its own re-render is what redraws
+ *  the times when it changes.
+ */
+let clock: '12h' | '24h' = '24h'
+
+export function setClock(next: '12h' | '24h') {
+  clock = next
+}
+
+/** For the places that format a time themselves, because they need a timezone
+ *  the date-fns helpers here do not take. */
+export function hour12(): boolean {
+  return clock === '12h'
+}
+
+const TIME_PATTERN = () => (clock === '12h' ? 'h:mm a' : 'HH:mm')
+
 export function toDate(value: string | Date | null | undefined): Date | null {
   if (!value) return null
   return value instanceof Date ? value : parseISO(value)
 }
 
-export function dateTime(value: string | null | undefined, pattern = 'dd MMM yyyy HH:mm'): string {
+export function dateTime(value: string | null | undefined, pattern?: string): string {
   const date = toDate(value)
-  return date ? format(date, pattern) : '—'
+  if (!date) return '—'
+  return format(date, pattern ?? `dd MMM yyyy ${TIME_PATTERN()}`)
 }
 
 export function dateOnly(value: string | null | undefined, pattern = 'dd MMM yyyy'): string {
@@ -89,7 +112,7 @@ export function dateOnly(value: string | null | undefined, pattern = 'dd MMM yyy
 
 export function timeOnly(value: string | null | undefined): string {
   const date = toDate(value)
-  return date ? format(date, 'HH:mm') : '—'
+  return date ? format(date, TIME_PATTERN()) : '—'
 }
 
 export function relative(value: string | null | undefined): string {

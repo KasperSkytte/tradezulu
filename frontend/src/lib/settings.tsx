@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createContext, use, useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { api } from './api'
+import { setClock } from './format'
 import type { AppSettings } from './types'
 
 const FALLBACK: AppSettings = {
@@ -12,6 +13,7 @@ const FALLBACK: AppSettings = {
     week_starts_on: 'monday',
     default_period: 'last_30_days',
     date_format: 'yyyy-MM-dd',
+    time_format: '24h',
     theme: 'dark',
     accent: 'jade',
     colorblind_mode: false,
@@ -78,6 +80,9 @@ interface SettingsState {
    *  worth. */
   showAmounts: boolean
   weekStartsOn: 0 | 1
+  /** For the few places that format a time themselves, because they need the
+   *  configured timezone that the date-fns helpers do not take. */
+  hour12: boolean
   save: (patch: DeepPartial<AppSettings>) => Promise<AppSettings>
   saving: boolean
   setTheme: (theme: 'dark' | 'light' | 'system') => void
@@ -129,6 +134,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     document.documentElement.classList.toggle('cb', settings.general.colorblind_mode)
   }, [settings.general.colorblind_mode])
 
+  // Every time in the journal is written by the helpers in lib/format, which
+  // are plain functions. This is what tells them which clock to use; the
+  // re-render this provider does on a settings change is what redraws them.
+  setClock(settings.general.time_format === '12h' ? '12h' : '24h')
+
   // Follow the OS while the user has picked "system".
   useEffect(() => {
     if (settings.general.theme !== 'system') return
@@ -145,6 +155,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       currency: settings.general.currency_symbol || '$',
       showAmounts: settings.general.show_amounts ?? false,
       weekStartsOn: settings.general.week_starts_on === 'sunday' ? 0 : 1,
+      hour12: settings.general.time_format === '12h',
       save: (patch) => mutation.mutateAsync(patch),
       saving: mutation.isPending,
       setTheme: (theme) => {

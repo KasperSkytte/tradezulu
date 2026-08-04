@@ -304,6 +304,19 @@ function GeneralSection() {
           />
         </Field>
 
+        <Field
+          label="Clock"
+          hint="How every time in the journal is written — trade times, the calendar, the news, the copier's log."
+        >
+          <SegmentedControl
+            value={general.time_format ?? '24h'}
+            onChange={(value) => void apply({ general: { time_format: value } })}
+            options={[
+              { value: '24h', label: '24-hour', title: '13:05' },
+              { value: '12h', label: '12-hour', title: '1:05 PM' },
+            ]}
+          />
+        </Field>
         <Field label="Week starts on">
           <SegmentedControl
             value={general.week_starts_on}

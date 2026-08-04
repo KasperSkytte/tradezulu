@@ -283,6 +283,8 @@ export interface AppSettings {
     week_starts_on: 'monday' | 'sunday'
     default_period: string
     date_format: string
+    /** '24h' writes 13:05, '12h' writes 1:05 PM. */
+    time_format: '24h' | '12h'
     theme: 'dark' | 'light' | 'system'
     accent: string
     colorblind_mode: boolean

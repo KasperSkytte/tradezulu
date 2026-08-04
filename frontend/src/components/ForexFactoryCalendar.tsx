@@ -42,8 +42,13 @@ export function ForexFactoryCalendar({
   title?: string | null
   upcomingOnly?: boolean
 }) {
-  const { settings } = useSettings()
+  const { settings, hour12 } = useSettings()
   const timezone = settings.general.timezone
+  // These rows need the configured timezone, which the date-fns helpers do not
+  // take, so they format their own times -- and then have to match the rest of
+  // the journal by hand. The browser's own locale does not: en-GB writes
+  // "04:00 pm" where everything else here writes "4:00 PM".
+  const clock = hour12 ? 'en-US' : 'en-GB'
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['news', 'forexfactory'],
@@ -130,11 +135,12 @@ export function ForexFactoryCalendar({
                   title="Open this day on ForexFactory"
                   className="flex items-baseline gap-3 px-4 py-2 text-sm transition-colors hover:bg-[var(--tz-surface-hover)] sm:px-5"
                 >
-                  <span className="tabular w-14 shrink-0 text-xs text-[var(--tz-text-muted)]">
-                    {new Date(event.time).toLocaleTimeString(undefined, {
+                  <span className="tabular w-16 shrink-0 text-xs text-[var(--tz-text-muted)]">
+                    {new Date(event.time).toLocaleTimeString(clock, {
                       timeZone: timezone,
-                      hour: '2-digit',
+                      hour: hour12 ? 'numeric' : '2-digit',
                       minute: '2-digit',
+                      hour12,
                     })}
                   </span>
                   <span
@@ -170,7 +176,7 @@ export function ForexFactoryCalendar({
           <AlertTriangle size={12} />
           ForexFactory is rate-limiting us, so this is the last copy that came through
           {data.updated_at
-            ? ` (${new Date(data.updated_at).toLocaleString(undefined, { timeZone: timezone })}).`
+            ? ` (${new Date(data.updated_at).toLocaleString(clock, { timeZone: timezone, hour12 })}).`
             : '.'}
         </p>
       )}
