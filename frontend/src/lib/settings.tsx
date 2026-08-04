@@ -37,8 +37,11 @@ const FALLBACK: AppSettings = {
   },
   zulu_score: { weights: {}, targets: {} },
   news: {
+    provider: 'tradingview',
     countries: ['us'],
     importance: 1,
+    currencies: ['USD'],
+    impacts: ['High'],
   },
   tags: {
     categories: [

@@ -97,8 +97,18 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # calendar showing forty entries a day is one nobody reads, which is worse
     # than not having one because it looks like cover.
     "news": {
+        # Which calendar to show. TradingView is a widget with its own data;
+        # ForexFactory is its published feed, read by this server and drawn
+        # here. Kept in the settings rather than in the browser so the choice
+        # survives logging in from somewhere else.
+        "provider": "tradingview",  # tradingview | forexfactory
+        # TradingView filters by country...
         "countries": ["us"],
         "importance": 1,  # 1 high, 0 medium and up, -1 everything
+        # ...and ForexFactory by currency. Red folder on the dollar only, which
+        # is what most people mean by "the news".
+        "currencies": ["USD"],
+        "impacts": ["High"],
     },
     "tags": {
         "categories": [

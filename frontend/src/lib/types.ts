@@ -308,10 +308,16 @@ export interface AppSettings {
     targets: Record<string, number>
   }
   news: {
-    /** ISO country codes shown in the economic calendar. */
+    /** Which calendar the News page shows. */
+    provider: 'tradingview' | 'forexfactory'
+    /** TradingView: ISO country codes. */
     countries: string[]
-    /** 1 high impact only, 0 medium and up, -1 everything. */
+    /** TradingView: 1 high impact only, 0 medium and up, -1 everything. */
     importance: number
+    /** ForexFactory: currency codes, e.g. USD. */
+    currencies: string[]
+    /** ForexFactory: folder colours by name — High is the red one. */
+    impacts: string[]
   }
   tags: {
     /** Groups the tag list is organised into. "Other" is always available for
@@ -533,4 +539,23 @@ export interface EquitySeries {
    *  points is empty: an equity curve belongs to one account. */
   single_account?: boolean
   sampling: string
+}
+
+export interface NewsEvent {
+  title: string
+  currency: string
+  /** ISO, with the release's own offset. */
+  time: string
+  impact: 'High' | 'Medium' | 'Low' | 'Holiday' | string
+  forecast: string
+  previous: string
+}
+
+export interface NewsCalendar {
+  source: string
+  events: NewsEvent[]
+  updated_at: string | null
+  /** The feed refused the last refresh and this is the copy held from before. */
+  stale: boolean
+  error: string | null
 }

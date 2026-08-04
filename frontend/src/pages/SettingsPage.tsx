@@ -279,6 +279,59 @@ function GeneralSection() {
 
       <div className="mt-4 grid gap-4 border-t border-[var(--tz-border)] pt-4 sm:grid-cols-2">
         <Field
+          label="Economic calendar"
+          hint="TradingView's widget brings its own data and its own look. ForexFactory publishes a feed, which this server reads and draws — it is the one people quote folder colours from."
+        >
+          <SegmentedControl
+            value={settings.news?.provider ?? 'tradingview'}
+            onChange={(value) => void apply({ news: { provider: value } })}
+            options={[
+              { value: 'tradingview', label: 'TradingView' },
+              { value: 'forexfactory', label: 'ForexFactory' },
+            ]}
+          />
+        </Field>
+      </div>
+
+      {(settings.news?.provider ?? 'tradingview') === 'forexfactory' ? (
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <Field
+            label="ForexFactory: currencies"
+            hint="Comma-separated, as ForexFactory writes them — USD, EUR, GBP. Events it marks 'All', like OPEC meetings, are always shown."
+          >
+            <input
+              className="tz-input"
+              defaultValue={(settings.news?.currencies ?? ['USD']).join(', ')}
+              onBlur={(event) =>
+                void apply({
+                  news: {
+                    currencies: event.target.value
+                      .split(/[\s,]+/)
+                      .map((code) => code.trim().toUpperCase())
+                      .filter(Boolean),
+                  },
+                })
+              }
+            />
+          </Field>
+          <Field label="ForexFactory: impact">
+            <select
+              className="tz-input"
+              value={(settings.news?.impacts ?? ['High']).join(',')}
+              onChange={(event) =>
+                void apply({ news: { impacts: event.target.value.split(',') } })
+              }
+            >
+              <option value="High">Red folder only</option>
+              <option value="High,Medium">Red and orange</option>
+              <option value="High,Medium,Low">Every folder</option>
+              <option value="High,Medium,Low,Holiday">Everything, holidays included</option>
+            </select>
+          </Field>
+        </div>
+      ) : (
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <Field
           label="Economic calendar: countries"
           hint="Comma-separated country codes — us, eu, gb, jp. The dollar alone is the default, since that is what moves most instruments."
         >
@@ -311,6 +364,7 @@ function GeneralSection() {
           </select>
         </Field>
       </div>
+      )}
 
       <div className="mt-4 border-t border-[var(--tz-border)] pt-2">
         <Toggle

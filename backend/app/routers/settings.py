@@ -19,6 +19,7 @@ from ..schemas import (
     TagIn,
     TagOut,
 )
+from ..services import news
 from ..services.aggregation import recompute_all
 from ..services.appsettings import DEFAULT_SETTINGS, get_app_settings, save_app_settings
 
@@ -31,6 +32,32 @@ router = APIRouter(tags=["settings"])
 @router.get("/settings")
 def read_settings(_user: CurrentUser, config: AppConfig) -> dict[str, Any]:
     return config
+
+
+@router.get("/news/calendar")
+def news_calendar(
+    _user: CurrentUser,
+    config: AppConfig,
+    currencies: str | None = None,
+    impacts: str | None = None,
+) -> dict[str, Any]:
+    """This week's releases from ForexFactory, filtered.
+
+    Fetched here rather than in the browser: the feed sends no CORS header, it
+    rate-limits hard, and one fetch serves everyone looking at the page.
+
+    The filters default to the saved ones, so the page asks for nothing and
+    gets what the user chose last time.
+    """
+    saved = config.get("news", {})
+    return news.calendar(
+        _split(currencies) or list(saved.get("currencies") or ["USD"]),
+        _split(impacts) or list(saved.get("impacts") or ["High"]),
+    )
+
+
+def _split(value: str | None) -> list[str]:
+    return [part for part in (value or "").replace(",", " ").split() if part]
 
 
 @router.get("/settings/defaults")

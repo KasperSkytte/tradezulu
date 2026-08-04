@@ -39,6 +39,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/trades': 'Trades',
   '/accounts': 'Accounts',
   '/calendar': 'Calendar',
+  '/news': 'News',
   '/reports': 'Reports',
   '/settings': 'Settings',
 }
@@ -55,8 +56,11 @@ export function Layout() {
   const title =
     PAGE_TITLES[location.pathname] ??
     (location.pathname.startsWith('/trades') ? 'Trade' : 'TradeZulu')
-  const showPeriod =
-    !location.pathname.startsWith('/settings') && !location.pathname.startsWith('/calendar')
+  // The date range means nothing on pages that do not read it: settings, the
+  // month calendar, and the news, which is always the week it is in.
+  const showPeriod = !['/settings', '/calendar', '/news'].some((path) =>
+    location.pathname.startsWith(path),
+  )
 
   return (
     <div className="flex min-h-full">
