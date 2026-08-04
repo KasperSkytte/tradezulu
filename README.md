@@ -59,7 +59,7 @@ docker compose run --rm --service-ports -e TZ_DEMO=1 tradezulu demo
  - Trade setup replay for each trade (from terminal or TradingView)
  - See detailed reports about which times of day, setups, tags, etc, that work the best for you
  - Did you follow your plan? See planned vs realised stats in R-multiples
- - Integrated high impact news calendar from TradingView
+ - Integrated high-impact news calendar, from TradingView or ForexFactory
 
 **Copier** — one master account, any number of slaves, any broker.
 
