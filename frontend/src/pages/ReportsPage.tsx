@@ -46,7 +46,7 @@ const SECTIONS: { key: BreakdownKey; title: string; hint: string }[] = [
 
 export function ReportsPage() {
   const { params } = useFilters()
-  const { currency, showAmounts } = useSettings()
+  const { currency, showAmounts, hour12 } = useSettings()
   const [metric, setMetric] = useState<Metric>('net_pnl')
 
   const summaryQuery = useQuery({
@@ -112,6 +112,18 @@ export function ReportsPage() {
   // Gridlines give the scale away on their own, so the axis has to speak the
   // same units as the bars above it. Unsigned and coarser than the values:
   // this is a ruler, not a reading.
+  // The hour buckets are built server-side as "07:00", which is a 24-hour
+  // clock however the journal is set to write times. Relabelled here rather
+  // than in the API: the bucket is an hour of the day, and how an hour is
+  // spelled is a question for whoever is reading it.
+  const formatHour = (key: string) => {
+    if (!hour12) return key
+    const hour = Number(key.slice(0, 2))
+    if (!Number.isFinite(hour)) return key
+    const suffix = hour < 12 ? 'AM' : 'PM'
+    return `${hour % 12 === 0 ? 12 : hour % 12} ${suffix}`
+  }
+
   const formatAxis = (value: number) => {
     if (metric === 'total_r') return `${num(value, 1)}R`
     if (hideMoney) return `${num((value / accountSize) * 100, 1)}%`
@@ -199,6 +211,7 @@ export function ReportsPage() {
                   hideMoney={hideMoney}
                   formatMetric={formatMetric}
                   formatAxis={formatAxis}
+                  formatKey={section.key === 'by_hour' ? formatHour : undefined}
                   cash={cash}
                 />
               ))}
@@ -220,6 +233,7 @@ function BreakdownCard({
   hideMoney,
   formatMetric,
   formatAxis,
+  formatKey,
   cash,
 }: {
   title: string
@@ -231,6 +245,9 @@ function BreakdownCard({
   hideMoney: boolean
   formatMetric: (value: number) => string
   formatAxis: (value: number) => string
+  /** How to write a row's name, where the server's own spelling is not the
+   *  user's -- the hour buckets, which arrive on a 24-hour clock. */
+  formatKey?: (key: string) => string
   cash: (value: number | null | undefined, options?: { sign?: boolean; decimals?: number }) => string
 }) {
   const [view, setView] = useState<'chart' | 'table'>('chart')
@@ -244,9 +261,10 @@ function BreakdownCard({
     )
   }
 
+  const label = formatKey ?? ((key: string) => key)
   const data = rows
     .map((row) => ({
-      label: row.key,
+      label: label(row.key),
       value:
         metric === 'total_r'
           ? (row.total_r ?? 0)
@@ -309,7 +327,7 @@ function BreakdownCard({
             <tbody className="divide-y divide-[var(--tz-border)]">
               {rows.map((row) => (
                 <tr key={row.key}>
-                  <td className="px-2 py-1.5">{row.key}</td>
+                  <td className="px-2 py-1.5">{label(row.key)}</td>
                   <td className="tabular px-2 py-1.5 text-right">{row.trades}</td>
                   <td className="tabular px-2 py-1.5 text-right">{percent(row.win_rate)}</td>
                   <td className="tabular px-2 py-1.5 text-right">
