@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.1](https://github.com/KasperSkytte/tradezulu/compare/v1.20.0...v1.20.1) (2026-08-04)
+
+
+### Bug fixes
+
+* **reports:** the hour buckets follow the clock setting too ([f37bef5](https://github.com/KasperSkytte/tradezulu/commit/f37bef5c7cc544f75651ba1d6211e5747771b5e1))
+
 ## [1.20.0](https://github.com/KasperSkytte/tradezulu/compare/v1.19.0...v1.20.0) (2026-08-04)
 
 
