@@ -302,6 +302,11 @@ export function DashboardPage() {
             <Row
               label="Worst loss"
               hint="The largest loss as a multiple of a typical one. 1.0 means every loss was the same size, which is what consistent sizing looks like. Large multiples are the trades that break accounts."
+              to={
+                summary.worst_loss_multiple != null && summary.largest_loss_id
+                  ? `/trades/${summary.largest_loss_id}`
+                  : undefined
+              }
               value={
                 summary.worst_loss_multiple == null ? (
                   <span className="text-[var(--tz-text-faint)]">too few losses</span>
@@ -408,8 +413,16 @@ export function DashboardPage() {
               label="Breakeven P&L"
               value={cash(summary.breakeven_pnl, { sign: true })}
             />
-            <Row label="Largest win" value={cash(summary.largest_win, { sign: true })} />
-            <Row label="Largest loss" value={cash(summary.largest_loss)} />
+            <Row
+              label="Largest win"
+              value={cash(summary.largest_win, { sign: true })}
+              to={summary.largest_win_id ? `/trades/${summary.largest_win_id}` : undefined}
+            />
+            <Row
+              label="Largest loss"
+              value={cash(summary.largest_loss)}
+              to={summary.largest_loss_id ? `/trades/${summary.largest_loss_id}` : undefined}
+            />
             <Row
               label="Best streak"
               value={`${summary.streaks.max_win_streak}W / ${summary.streaks.max_loss_streak}L`}
@@ -487,10 +500,15 @@ function Row({
   label,
   value,
   hint,
+  to,
 }: {
   label: string
   value: React.ReactNode
   hint?: string
+  /** Where this figure came from. A number describing one trade should be
+   *  able to take you to it: "largest loss -1,240" asks exactly one question,
+   *  and answering it meant searching the list by hand. */
+  to?: string
 }) {
   const explain = hint ?? define(label)
   return (
@@ -499,7 +517,23 @@ function Row({
         {label}
         {explain && <Hint text={explain} />}
       </dt>
-      <dd className="tabular font-medium">{value}</dd>
+      <dd className="tabular font-medium">
+        {to ? (
+          <Link
+            to={to}
+            title="Open this trade"
+            className="group inline-flex items-center gap-1 underline-offset-4 hover:underline"
+          >
+            {value}
+            <ArrowUpRight
+              size={12}
+              className="text-[var(--tz-text-faint)] transition-colors group-hover:text-[var(--tz-text-muted)]"
+            />
+          </Link>
+        ) : (
+          value
+        )}
+      </dd>
     </div>
   )
 }

@@ -168,6 +168,9 @@ export interface Summary {
   expectancy: number | null
   largest_win: number | null
   largest_loss: number | null
+  /** Which trade each of those was, so the figure can link to it. */
+  largest_win_id?: number | null
+  largest_loss_id?: number | null
   avg_win_r: number | null
   avg_loss_r: number | null
   expectancy_r: number | null

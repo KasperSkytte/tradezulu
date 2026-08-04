@@ -542,6 +542,12 @@ def summarize(
         "expectancy": _r(scored_net / n_scored if n_scored else None),
         "largest_win": _r(max(win_pnls) if win_pnls else None),
         "largest_loss": _r(min(loss_pnls) if loss_pnls else None),
+        # Which trade each of those was. A figure that describes one trade
+        # should be able to take you to it -- "largest loss: -1,240" invites
+        # exactly one question, and answering it meant searching the list by
+        # hand.
+        "largest_win_id": max(wins, key=lambda t: t.net_pnl).id if wins else None,
+        "largest_loss_id": min(losses, key=lambda t: t.net_pnl).id if losses else None,
         "avg_win_r": _r(_mean(win_rs), 2),
         "avg_loss_r": _r(_mean(loss_rs), 2),
         "expectancy_r": _r(_mean(all_rs), 3),

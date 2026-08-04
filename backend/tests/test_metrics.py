@@ -370,6 +370,33 @@ def _with_weights(**overrides: float) -> dict:
     return {"targets": SCORE["targets"], "weights": {**SCORE["weights"], **overrides}}
 
 
+class TestTradeSpecificFigures:
+    """A number about one trade should be able to point at it."""
+
+    def test_the_largest_win_and_loss_name_their_trades(self):
+        trades = [
+            trade(200, r=2.0, day=1),
+            trade(900, r=9.0, day=2),
+            trade(-100, r=-1.0, day=3),
+            trade(-450, r=-4.5, day=4),
+        ]
+        s = summarize(
+            trades, risk_cfg=RISK, stats_cfg=STATS, score_cfg=SCORE, account_size=10_000.0
+        )
+
+        biggest = next(t for t in trades if t.net_pnl == 900)
+        worst = next(t for t in trades if t.net_pnl == -450)
+        assert s["largest_win"] == 900.0
+        assert s["largest_win_id"] == biggest.id
+        assert s["largest_loss"] == -450.0
+        assert s["largest_loss_id"] == worst.id
+
+    def test_nothing_to_point_at_is_not_an_error(self):
+        s = summarize([], risk_cfg=RISK, stats_cfg=STATS, score_cfg=SCORE, account_size=10_000.0)
+        assert s["largest_win_id"] is None
+        assert s["largest_loss_id"] is None
+
+
 class TestBreakdowns:
     def test_grouped_by_symbol_and_direction(self):
         trades = [
