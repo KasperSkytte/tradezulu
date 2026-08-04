@@ -619,7 +619,13 @@ const SCORE_COMPONENTS = [
     target: 'worst_loss_multiple',
     label: 'Even losses',
     unit: '×',
-    hint: 'How many times a typical loss the worst one may be before this scores 0. Off by default: it is a real thing to want, but it is not what most people mean by risk.',
+    hint:
+      'Your worst loss measured against a typical one — the median of every loss in the period. ' +
+      'Losses all sized the same score 100; the target is the multiple at which the score reaches ' +
+      '0, so at 3 a worst loss three times a typical one scores nothing and 2× scores half marks. ' +
+      'It needs at least three losses before a typical one exists, and is blank until then. Off by ' +
+      'default because it answers a different question from Drawdown: not how far the account fell, ' +
+      'but whether you sized every loser the same way.',
   },
   { key: 'recovery_factor', target: 'recovery_factor', label: 'Recovery factor', unit: '', hint: 'Recovery factor that scores 100.' },
   { key: 'consistency', target: 'consistency', label: 'Consistency', unit: '%', hint: 'Consistency that scores 100.' },
