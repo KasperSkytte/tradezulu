@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.19.0](https://github.com/KasperSkytte/tradezulu/compare/v1.18.0...v1.19.0) (2026-08-04)
+
+
+### Features
+
+* **dashboard:** show the balance when amounts are on ([4ff435f](https://github.com/KasperSkytte/tradezulu/commit/4ff435fef663a44879c6d7589bc6b4817b737f1b))
+
+
+### Bug fixes
+
+* **charts:** widen the TradingView window until the trade is in it ([b4d9de9](https://github.com/KasperSkytte/tradezulu/commit/b4d9de97b4d12eaf3af2eac21f3dfed69ac86d65))
+* **stats:** the newest trades had no Net ROI ([a0ba5d1](https://github.com/KasperSkytte/tradezulu/commit/a0ba5d15e8dba4c5d944c80554ca030d33f8407d))
+
+
+### Refactoring
+
+* **ui:** put accounts back under settings ([17da78b](https://github.com/KasperSkytte/tradezulu/commit/17da78bb74ab1f97f1d321620fae3c61ff8d4a28))
+
 ## [1.18.0](https://github.com/KasperSkytte/tradezulu/compare/v1.17.0...v1.18.0) (2026-08-04)
 
 
