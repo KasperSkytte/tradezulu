@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.16.0](https://github.com/KasperSkytte/tradezulu/compare/v1.15.2...v1.16.0) (2026-08-04)
+
+
+### Features
+
+* **news:** add ForexFactory beside TradingView, and remember the choice ([1bb06bc](https://github.com/KasperSkytte/tradezulu/commit/1bb06bc2bfa62b4e38edfa09fbe0eefbd407a9a2))
+
+
+### Documentation
+
+* the news calendar has two sources now ([22ca7c2](https://github.com/KasperSkytte/tradezulu/commit/22ca7c2874d1811645f2a689036c37e8bc448228))
+
 ## [1.15.2](https://github.com/KasperSkytte/tradezulu/compare/v1.15.1...v1.15.2) (2026-08-04)
 
 
