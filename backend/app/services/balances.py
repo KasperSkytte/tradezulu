@@ -134,11 +134,20 @@ def _events(db: Session, account_id: int) -> list[Event]:
 def _walk(db: Session, account_id: int) -> list[tuple[Event, float | None]]:
     """Each event with the balance immediately before it, oldest first.
 
-    Walked from the newest end, adopting the closest anchor at or after each
-    event. A walk that reaches back past the account's funding goes negative
-    -- the money was there before the first trade anyone here knows about --
-    and those events get no balance rather than a percentage of a number that
-    cannot be one.
+    Two directions, meeting at the newest anchor.
+
+    Backwards from there for everything older, adopting the closest anchor at
+    or after each event. A walk that reaches back past the account's funding
+    goes negative -- the money was there before the first trade anyone here
+    knows about -- and those events get no balance rather than a percentage of
+    a number that cannot be one.
+
+    Forwards for anything newer, which is not an edge case: a terminal reports
+    its balance every minute or so, and MetaTrader's deal times are the
+    *broker's* clock, which for most brokers runs hours ahead of UTC. Between
+    them, the newest trades routinely sit after every recorded balance -- and
+    those are the rows anybody is actually looking at. They used to show a
+    dash while the rest of the column had numbers.
     """
     account = db.get(Account, account_id)
     if account is None:
@@ -148,20 +157,31 @@ def _walk(db: Session, account_id: int) -> list[tuple[Event, float | None]]:
     if not anchors:
         return [(event, None) for event in events]
 
+    newest_at, newest_balance = anchors[-1]
     out: list[tuple[Event, float | None]] = []
+
+    # ... older than the newest anchor: backwards, from whichever anchor is
+    # closest after each event.
+    older = [event for event in events if event.when <= newest_at]
     running: float | None = None
-    for event in reversed(events):
+    for event in reversed(older):
         while anchors and anchors[-1][0] >= event.when:
             running = anchors.pop()[1]
         if running is None:
-            # Later than every recorded balance: it has not happened as far as
-            # any of them are concerned.
             out.append((event, None))
             continue
         before = running - event.amount
         out.append((event, before if before > 0 else None))
         running = before
     out.reverse()
+
+    # ... and newer: forwards from that same anchor, adding each event as it
+    # goes, so a run of them stacks up in the order they happened.
+    running = newest_balance
+    for event in [event for event in events if event.when > newest_at]:
+        out.append((event, running if running > 0 else None))
+        running += event.amount
+
     return out
 
 

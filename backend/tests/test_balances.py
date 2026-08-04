@@ -11,7 +11,7 @@ from datetime import date, datetime
 
 import pytest
 
-from app.models import Account, Deal, Trade
+from app.models import Account, Deal, EquityPoint, Trade
 from app.services.balances import (
     attach_daily_returns,
     balance_before_trades,
@@ -129,6 +129,73 @@ class TestBalanceBeforeEachTrade:
 
         assert old.id not in before
         assert before[recent.id] == pytest.approx(80.0)
+
+
+class TestTradesNewerThanEverySample:
+    """A trade that closed after the last recorded balance still has one.
+
+    Two ways this happens on a live account, and both are ordinary: the
+    terminal reports its balance every minute or so, and a trade closed
+    between two of those reports is newer than every sample; and MetaTrader
+    deal times are the *broker's* clock, which for most brokers runs two or
+    three hours ahead of UTC, so the newest trades look like they are in the
+    future.
+
+    Either way, refusing to answer meant the newest rows -- the ones anybody
+    is actually looking at -- showed a dash where the rest of the column had
+    numbers.
+    """
+
+    def test_a_trade_after_the_last_sample_still_gets_a_balance(self, db):
+        row = account(db, balance=1_000.0)
+        row.last_sync_at = datetime(2026, 6, 10, 12, 0)
+        db.add(
+            EquityPoint(
+                account_id=row.id, time=datetime(2026, 6, 10, 12, 0),
+                balance=1_000.0, equity=1_000.0,
+            )
+        )
+        # Closed three hours "later" -- the broker's clock, or simply between
+        # two reports.
+        recent = closed(db, row.id, datetime(2026, 6, 10, 15, 0), 50.0)
+
+        before = balance_before_trades(db, {row.id})
+
+        assert before[recent.id] == pytest.approx(1_000.0)
+
+    def test_several_of_them_stack_up_in_order(self, db):
+        row = account(db, balance=1_000.0)
+        row.last_sync_at = datetime(2026, 6, 10, 12, 0)
+        db.add(
+            EquityPoint(
+                account_id=row.id, time=datetime(2026, 6, 10, 12, 0),
+                balance=1_000.0, equity=1_000.0,
+            )
+        )
+        first = closed(db, row.id, datetime(2026, 6, 10, 14, 0), 50.0)
+        second = closed(db, row.id, datetime(2026, 6, 10, 15, 0), 25.0)
+
+        before = balance_before_trades(db, {row.id})
+
+        assert before[first.id] == pytest.approx(1_000.0)
+        assert before[second.id] == pytest.approx(1_050.0), "the first one moved the balance"
+
+    def test_the_older_ones_are_unaffected(self, db):
+        row = account(db, balance=1_000.0)
+        row.last_sync_at = datetime(2026, 6, 10, 12, 0)
+        db.add(
+            EquityPoint(
+                account_id=row.id, time=datetime(2026, 6, 10, 12, 0),
+                balance=1_000.0, equity=1_000.0,
+            )
+        )
+        earlier = closed(db, row.id, datetime(2026, 6, 10, 9, 0), 100.0)
+        later = closed(db, row.id, datetime(2026, 6, 10, 15, 0), 50.0)
+
+        before = balance_before_trades(db, {row.id})
+
+        assert before[earlier.id] == pytest.approx(900.0), "walked back from the sample"
+        assert before[later.id] == pytest.approx(1_000.0), "walked forward from it"
 
 
 class TestOpeningBalance:
