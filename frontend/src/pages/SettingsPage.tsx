@@ -183,6 +183,66 @@ function SavedFlag({ saved }: { saved: boolean }) {
   )
 }
 
+//: Every currency ForexFactory files a release under. "All" is theirs for
+//: events that belong to none, and is never a choice -- those always show.
+const FF_CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD', 'NZD', 'CNY']
+
+const FF_IMPACTS = [
+  { value: 'High', label: 'Red' },
+  { value: 'Medium', label: 'Orange' },
+  { value: 'Low', label: 'Yellow' },
+  { value: 'Holiday', label: 'Holidays' },
+]
+
+/** Pick any number of things, one tap each.
+ *
+ *  A dropdown of fixed combinations was the wrong shape: it could offer "red
+ *  and orange" but not "red and holidays", which is a perfectly ordinary thing
+ *  to want -- the releases that move price, and the days nothing will.
+ */
+function ChipPicker({
+  options,
+  selected,
+  onChange,
+}: {
+  options: { value: string; label: string }[]
+  selected: string[]
+  onChange: (values: string[]) => void
+}) {
+  const toggle = (value: string) => {
+    const next = selected.includes(value)
+      ? selected.filter((entry) => entry !== value)
+      : [...selected, value]
+    // Kept in the order they are offered, so the saved list reads the same way
+    // every time rather than in the order they happened to be clicked.
+    onChange(options.filter((option) => next.includes(option.value)).map((o) => o.value))
+  }
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {options.map((option) => {
+        const on = selected.includes(option.value)
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => toggle(option.value)}
+            aria-pressed={on}
+            className={clsx(
+              'rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+              on
+                ? 'border-zulu-500/50 bg-zulu-500/15 text-zulu-400'
+                : 'border-[var(--tz-border)] text-[var(--tz-text-muted)] hover:text-[var(--tz-text)]',
+            )}
+          >
+            {option.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 const TIMEZONES = [
   'UTC',
   'Europe/Copenhagen',
@@ -283,50 +343,37 @@ function GeneralSection() {
           hint="TradingView's widget brings its own data and its own look. ForexFactory publishes a feed, which this server reads and draws — it is the one people quote folder colours from."
         >
           <SegmentedControl
-            value={settings.news?.provider ?? 'tradingview'}
+            value={settings.news?.provider ?? 'forexfactory'}
             onChange={(value) => void apply({ news: { provider: value } })}
             options={[
-              { value: 'tradingview', label: 'TradingView' },
               { value: 'forexfactory', label: 'ForexFactory' },
+              { value: 'tradingview', label: 'TradingView' },
             ]}
           />
         </Field>
       </div>
 
-      {(settings.news?.provider ?? 'tradingview') === 'forexfactory' ? (
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+      {(settings.news?.provider ?? 'forexfactory') === 'forexfactory' ? (
+        <div className="mt-4 space-y-4">
           <Field
             label="ForexFactory: currencies"
-            hint="Comma-separated, as ForexFactory writes them — USD, EUR, GBP. Events it marks 'All', like OPEC meetings, are always shown."
+            hint="Pick as many as you follow. Releases ForexFactory marks “All”, such as OPEC meetings, are always shown — they belong to no currency and move everything."
           >
-            <input
-              className="tz-input"
-              defaultValue={(settings.news?.currencies ?? ['USD']).join(', ')}
-              onBlur={(event) =>
-                void apply({
-                  news: {
-                    currencies: event.target.value
-                      .split(/[\s,]+/)
-                      .map((code) => code.trim().toUpperCase())
-                      .filter(Boolean),
-                  },
-                })
-              }
+            <ChipPicker
+              options={FF_CURRENCIES.map((code) => ({ value: code, label: code }))}
+              selected={settings.news?.currencies ?? ['USD']}
+              onChange={(currencies) => void apply({ news: { currencies } })}
             />
           </Field>
-          <Field label="ForexFactory: impact">
-            <select
-              className="tz-input"
-              value={(settings.news?.impacts ?? ['High']).join(',')}
-              onChange={(event) =>
-                void apply({ news: { impacts: event.target.value.split(',') } })
-              }
-            >
-              <option value="High">Red folder only</option>
-              <option value="High,Medium">Red and orange</option>
-              <option value="High,Medium,Low">Every folder</option>
-              <option value="High,Medium,Low,Holiday">Everything, holidays included</option>
-            </select>
+          <Field
+            label="ForexFactory: folders"
+            hint="Red is high impact. Any combination works — red and holidays alone is a perfectly reasonable filter."
+          >
+            <ChipPicker
+              options={FF_IMPACTS}
+              selected={settings.news?.impacts ?? ['High']}
+              onChange={(impacts) => void apply({ news: { impacts } })}
+            />
           </Field>
         </div>
       ) : (
@@ -421,6 +468,7 @@ function RiskSection() {
           hint="A trade that ends within a whisker of your entry cost you commission and attention but produced nothing. TradeZulu counts these separately so they cannot flatter your win rate."
           action={<SavedFlag saved={saved} />}
         />
+
         <div className="grid gap-4 sm:grid-cols-2">
           <Field
             label="Breakeven threshold (R)"

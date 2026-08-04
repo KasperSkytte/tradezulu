@@ -37,11 +37,12 @@ const FALLBACK: AppSettings = {
   },
   zulu_score: { weights: {}, targets: {} },
   news: {
-    provider: 'tradingview',
+    provider: 'forexfactory',
     countries: ['us'],
     importance: 1,
     currencies: ['USD'],
     impacts: ['High'],
+    range: 'upcoming',
   },
   tags: {
     categories: [

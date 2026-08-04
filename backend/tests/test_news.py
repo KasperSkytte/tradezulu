@@ -206,3 +206,38 @@ class TestEndpoint:
 
     def test_it_needs_a_session(self, client):
         assert client.get("/api/news/calendar").status_code == 401
+
+
+class TestDefaults:
+    def test_what_an_untouched_install_shows(self, auth_client, monkeypatch):
+        """Red folder, dollar, and what is still to come this week."""
+        monkeypatch.setattr(news.httpx, "get", lambda *a, **k: _Response(WEEK))
+
+        saved = auth_client.get("/api/settings").json()["news"]
+
+        assert saved["provider"] == "forexfactory"
+        assert saved["currencies"] == ["USD"]
+        assert saved["impacts"] == ["High"]
+        assert saved["range"] == "upcoming"
+
+    def test_several_folders_can_be_chosen_at_once(self, auth_client, monkeypatch):
+        """Red and holidays together, which no fixed list of combinations offered."""
+        monkeypatch.setattr(news.httpx, "get", lambda *a, **k: _Response(WEEK + [
+            {
+                "title": "Bank Holiday",
+                "country": "CHF",
+                "date": "2026-08-05T00:00:00-04:00",
+                "impact": "Holiday",
+                "forecast": "",
+                "previous": "",
+            }
+        ]))
+
+        body = auth_client.get(
+            "/api/news/calendar", params={"currencies": "USD,CHF", "impacts": "High,Holiday"}
+        ).json()
+
+        titles = [event["title"] for event in body["events"]]
+        assert "Bank Holiday" in titles
+        assert "ISM Manufacturing PMI" in titles
+        assert "Crude Oil Inventories" not in titles, "orange was not asked for"

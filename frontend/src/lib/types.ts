@@ -318,6 +318,8 @@ export interface AppSettings {
     currencies: string[]
     /** ForexFactory: folder colours by name — High is the red one. */
     impacts: string[]
+    /** 'upcoming' hides what has already happened this week. */
+    range: 'upcoming' | 'week'
   }
   tags: {
     /** Groups the tag list is organised into. "Other" is always available for
