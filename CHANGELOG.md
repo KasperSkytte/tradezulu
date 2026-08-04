@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.20.0](https://github.com/KasperSkytte/tradezulu/compare/v1.19.0...v1.20.0) (2026-08-04)
+
+
+### Features
+
+* **settings:** choose between a 24-hour and a 12-hour clock ([3b61095](https://github.com/KasperSkytte/tradezulu/commit/3b610955387ed3a12c819d16dec0a3fa631d2855))
+
+
+### Bug fixes
+
+* **reports:** read setups from the tags as well as the field ([0331f5e](https://github.com/KasperSkytte/tradezulu/commit/0331f5e51e9ea330229dc8b3095416c16c30aaf8))
+
 ## [1.19.0](https://github.com/KasperSkytte/tradezulu/compare/v1.18.0...v1.19.0) (2026-08-04)
 
 
