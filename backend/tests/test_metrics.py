@@ -413,6 +413,55 @@ class TestBreakdowns:
         directions = {row["key"]: row for row in result["by_direction"]}
         assert directions["long"]["trades"] == 2
 
+    def test_setups_come_from_tags_when_the_field_is_empty(self):
+        """Tagging is how most people label a plan.
+
+        The breakdown read only the free-text setup field, so a journal where
+        every setup is a tag showed an empty card -- which reads as "no edge
+        to see here" rather than "looking in the wrong place".
+        """
+        from app.models import Tag
+
+        breakout = Tag(name="Breakout", category="setup", color="#fff")
+        fomo = Tag(name="FOMO trade", category="emotion", color="#fff")
+
+        first = trade(300, r=3.0, day=1)
+        first.tags = [breakout, fomo]
+        second = trade(-100, r=-1.0, day=2)
+        second.tags = [breakout]
+
+        rows = {row["key"]: row for row in breakdowns([first, second], "excluded")["by_setup"]}
+
+        assert rows["Breakout"]["trades"] == 2
+        assert rows["Breakout"]["net_pnl"] == 200.0
+        assert "FOMO trade" not in rows, "that is a behaviour, not a plan"
+
+    def test_the_setup_field_wins_where_it_is_filled_in(self):
+        """Otherwise a trade with both would be counted twice, in two rows."""
+        from app.models import Tag
+
+        entry = trade(150, r=1.5, day=1)
+        entry.setup = "London breakout"
+        entry.tags = [Tag(name="Breakout", category="setup", color="#fff")]
+
+        rows = {row["key"]: row for row in breakdowns([entry], "excluded")["by_setup"]}
+
+        assert list(rows) == ["London breakout"]
+
+    def test_a_trade_with_two_setup_tags_is_in_both_rows(self):
+        from app.models import Tag
+
+        entry = trade(200, r=2.0, day=1)
+        entry.tags = [
+            Tag(name="Breakout", category="setup", color="#fff"),
+            Tag(name="Trend pullback", category="setup", color="#fff"),
+        ]
+
+        rows = {row["key"]: row for row in breakdowns([entry], "excluded")["by_setup"]}
+
+        assert rows["Breakout"]["trades"] == 1
+        assert rows["Trend pullback"]["trades"] == 1
+
     def test_r_multiple_buckets(self):
         trades = [trade(300, r=2.5, day=1), trade(-100, r=-1.0, day=2)]
         buckets = {row["key"]: row["trades"] for row in breakdowns(trades, "excluded")["by_r_multiple"]}

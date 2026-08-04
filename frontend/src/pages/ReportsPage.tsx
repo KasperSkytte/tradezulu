@@ -28,7 +28,11 @@ const SECTIONS: { key: BreakdownKey; title: string; hint: string }[] = [
     title: 'By tag',
     hint: 'The most valuable view in the journal: what your mistakes cost, in money.',
   },
-  { key: 'by_setup', title: 'By setup', hint: 'Performance of each named plan.' },
+  {
+    key: 'by_setup',
+    title: 'By setup',
+    hint: "Performance of each named plan — the setup field on a trade, or the tags you filed under Setup when it is empty.",
+  },
   { key: 'by_weekday', title: 'By day of week', hint: 'Are Mondays quietly bleeding you out?' },
   { key: 'by_hour', title: 'By hour opened', hint: 'Session and time-of-day edge.' },
   { key: 'by_duration', title: 'By hold time', hint: 'Do you cut winners or sit on losers?' },

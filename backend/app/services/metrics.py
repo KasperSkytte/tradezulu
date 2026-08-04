@@ -756,6 +756,28 @@ def breakdowns(
     tags = [{"key": k, **_group_stats(v, breakeven_handling)} for k, v in tag_buckets.items()]
     tags.sort(key=lambda row: row["net_pnl"] or 0)
 
+    # A trade's setup is whichever way it was recorded. The free-text field is
+    # the explicit answer and wins where it is filled in; otherwise the tags
+    # filed under the setup category are the answer, because tagging is how
+    # most people actually label a plan -- and reading only the field left this
+    # breakdown empty for them, which reads as "no edge to see here".
+    #
+    # Not `grouped`: a trade can carry two setup tags, and it belongs in both
+    # rows, exactly as it does under By tag.
+    setup_buckets: dict[str, list[Trade]] = defaultdict(list)
+    for trade in closed:
+        names = (
+            [trade.setup]
+            if trade.setup
+            else [tag.name for tag in trade.tags if tag.category == "setup"]
+        )
+        for name in names:
+            setup_buckets[str(name)].append(trade)
+    setups = [
+        {"key": k, **_group_stats(v, breakeven_handling)} for k, v in setup_buckets.items()
+    ]
+    setups.sort(key=lambda row: row["net_pnl"] or 0, reverse=True)
+
     return {
         "by_symbol": grouped(lambda t: t.symbol),
         "by_direction": grouped(lambda t: t.direction, ["long", "short"]),
@@ -765,7 +787,7 @@ def breakdowns(
         "by_hour": grouped(lambda t: f"{t.opened_at.hour:02d}:00", [f"{h:02d}:00" for h in range(24)]),
         "by_duration": grouped(duration_bucket, [name for name, _ in DURATION_BUCKETS]),
         "by_r_multiple": grouped(r_bucket, [name for name, _, _ in R_BUCKETS]),
-        "by_setup": grouped(lambda t: t.setup or None),
+        "by_setup": setups,
         "by_tag": tags,
     }
 
