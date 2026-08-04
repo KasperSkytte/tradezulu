@@ -26,36 +26,48 @@ export function NewsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          {provider === 'forexfactory' && (
-            <SegmentedControl
-              size="sm"
-              value={range}
-              onChange={(value) => void save({ news: { range: value } })}
-              options={[
-                { value: 'upcoming', label: 'Upcoming', title: 'From now to the end of the week' },
-                { value: 'week', label: 'Whole week', title: 'Including what has already been' },
-              ]}
-            />
-          )}
+      {/* Controls first and on the left, where the eye starts: which calendar
+          and how much of it are the two questions asked on arrival. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <SegmentedControl
+          size="sm"
+          value={provider}
+          onChange={(value) => void save({ news: { provider: value } })}
+          options={[
+            {
+              value: 'forexfactory',
+              label: 'ForexFactory',
+              title: 'ForexFactory’s published calendar, drawn here',
+            },
+            { value: 'tradingview', label: 'TradingView', title: "TradingView's own widget" },
+          ]}
+        />
+        {provider === 'forexfactory' && (
           <SegmentedControl
             size="sm"
-            value={provider}
-            onChange={(value) => void save({ news: { provider: value } })}
+            value={range}
+            onChange={(value) => void save({ news: { range: value } })}
             options={[
-              {
-                value: 'forexfactory',
-                label: 'ForexFactory',
-                title: 'ForexFactory’s published calendar, drawn here',
-              },
-              { value: 'tradingview', label: 'TradingView', title: "TradingView's own widget" },
+              { value: 'upcoming', label: 'Upcoming', title: 'From now to the end of the week' },
+              { value: 'week', label: 'Whole week', title: 'Including what has already been' },
             ]}
           />
-        </div>
+        )}
       </div>
 
-      <div className="max-w-3xl space-y-2 text-sm text-[var(--tz-text-muted)]">
+      {provider === 'forexfactory' ? (
+        <ForexFactoryCalendar upcomingOnly={range === 'upcoming'} />
+      ) : (
+        /* Tall here, where it is the whole page, rather than the panel-sized
+           box it was on the dashboard: the point of a calendar is seeing the
+           week without scrolling a frame inside a page. */
+        <NewsCalendar height={720} title={null} />
+      )}
+
+      {/* Below the calendar: it is the reason the page exists, but it is the
+          same paragraph every visit, and nobody should scroll past what they
+          came to read to get to it. */}
+      <div className="max-w-3xl space-y-2 border-t border-[var(--tz-border)] pt-4 text-sm text-[var(--tz-text-muted)]">
         <p>
           Price tends to move sharply around scheduled releases — inflation and unemployment
           figures, and central bank decisions on rates above all. When it moves quickly enough,
@@ -71,15 +83,6 @@ export function NewsPage() {
           <span className="text-[var(--tz-text)]">Settings → General</span>.
         </p>
       </div>
-
-      {provider === 'forexfactory' ? (
-        <ForexFactoryCalendar upcomingOnly={range === 'upcoming'} />
-      ) : (
-        /* Tall here, where it is the whole page, rather than the panel-sized
-           box it was on the dashboard: the point of a calendar is seeing the
-           week without scrolling a frame inside a page. */
-        <NewsCalendar height={720} title={null} />
-      )}
     </div>
   )
 }
