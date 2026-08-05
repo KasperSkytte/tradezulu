@@ -619,3 +619,63 @@ class TestRestoringAnArchivedMaster:
         assert response.json()["role"] == "archived"
         db.expire_all()
         assert db.scalar(select(Account).where(Account.login == "7777")).role == "master"
+
+
+class TestTheChartWindowReachesTheTerminal:
+    """How much history to send with each trade is a setting, not an EA input.
+
+    Sent on every heartbeat so widening it takes effect at the next trade
+    rather than at the next terminal restart -- and in seconds, so the terminal
+    divides by whatever timeframe it is set to collect rather than the server
+    having to know.
+    """
+
+    def test_the_default_is_a_day_either_side(self, auth_client, master):
+        reply = auth_client.post(
+            "/api/agent/poll", json=account_payload("5000", "Master-Server")
+        ).json()
+        assert reply["history_before_seconds"] == 86_400
+        assert reply["history_after_seconds"] == 86_400
+
+    def test_it_follows_the_setting(self, auth_client, master):
+        auth_client.put(
+            "/api/settings",
+            json={"charts": {"history_days_before": 5, "history_days_after": 0.5}},
+        )
+
+        reply = auth_client.post(
+            "/api/agent/poll", json=account_payload("5000", "Master-Server")
+        ).json()
+
+        assert reply["history_before_seconds"] == 5 * 86_400
+        assert reply["history_after_seconds"] == 43_200
+
+    def test_an_absurd_window_is_capped(self, auth_client, master):
+        """This is the size of every candle upload, on every closed trade.
+
+        Left uncapped, one mistyped number has a terminal posting years of bars
+        after each one.
+        """
+        auth_client.put("/api/settings", json={"charts": {"history_days_before": 100_000}})
+
+        reply = auth_client.post(
+            "/api/agent/poll", json=account_payload("5000", "Master-Server")
+        ).json()
+
+        assert reply["history_before_seconds"] == 90 * 86_400
+
+    def test_nothing_asked_for_is_nothing_sent(self, auth_client, master):
+        auth_client.put("/api/settings", json={"charts": {"history_days_after": 0}})
+
+        reply = auth_client.post(
+            "/api/agent/poll", json=account_payload("5000", "Master-Server")
+        ).json()
+
+        assert reply["history_after_seconds"] == 0
+
+    def test_a_slave_is_told_as_well(self, auth_client, slave):
+        """Slaves upload candles for their own copies, not only the master."""
+        reply = auth_client.post(
+            "/api/agent/poll", json=account_payload("9001", "Slave-Server")
+        ).json()
+        assert reply["history_before_seconds"] == 86_400

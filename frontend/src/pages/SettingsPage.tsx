@@ -843,14 +843,20 @@ function ChartsSection() {
         <div className="grid gap-4 sm:grid-cols-2">
           <Field
             label="Default chart"
-            hint="Replay uses candles TradeZulu stores and can mark your actual fills. TradingView has the full toolset but knows nothing about your trade."
+            hint="Replay and Studio both draw candles TradeZulu stores, so they know your actual fills; Studio also draws the position itself and brings drawing tools. TradingView has the full toolset but knows nothing about your trade."
+            className="sm:col-span-2"
           >
             <SegmentedControl
               value={settings.charts.provider}
               onChange={(value) => void apply({ charts: { provider: value } })}
               options={[
-                { value: 'local', label: 'Replay' },
-                { value: 'tradingview', label: 'TradingView' },
+                { value: 'local', label: 'Replay', title: 'Your fills marked on stored candles' },
+                {
+                  value: 'studio',
+                  label: 'Studio',
+                  title: 'The position drawn on the candles, plus drawing tools',
+                },
+                { value: 'tradingview', label: 'TradingView', title: 'The free embedded widget' },
               ]}
             />
           </Field>
@@ -862,7 +868,7 @@ function ChartsSection() {
                 void apply({ charts: { default_timeframe: event.target.value } })
               }
             >
-              {['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1'].map((timeframe) => (
+              {['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1', 'W1'].map((timeframe) => (
                 <option key={timeframe}>{timeframe}</option>
               ))}
             </select>
@@ -877,6 +883,7 @@ function ChartsSection() {
             <NumberField
               value={settings.charts.history_days_before}
               step={0.5}
+              min={0}
               suffix="days"
               onCommit={(value) => void apply({ charts: { history_days_before: value } })}
             />
@@ -891,6 +898,7 @@ function ChartsSection() {
             <NumberField
               value={settings.charts.history_days_after}
               step={0.5}
+              min={0}
               suffix="days"
               onCommit={(value) => void apply({ charts: { history_days_after: value } })}
             />
@@ -903,6 +911,7 @@ function ChartsSection() {
             <NumberField
               value={settings.charts.zoom_hours}
               step={0.5}
+              min={0}
               suffix="hours either side"
               onCommit={(value) => void apply({ charts: { zoom_hours: value } })}
             />
@@ -1284,6 +1293,7 @@ function SecuritySection() {
 function NumberField({
   value,
   step,
+  min,
   disabled,
   off,
   suffix,
@@ -1291,6 +1301,8 @@ function NumberField({
 }: {
   value: number
   step: number
+  /** Refuse anything below this. A negative window is not a window. */
+  min?: number
   disabled?: boolean
   /** Mark a zero as "switched off" rather than as a box nobody filled in. */
   off?: boolean
@@ -1305,13 +1317,15 @@ function NumberField({
     <input
       type="number"
       step={step}
+      min={min}
       disabled={disabled}
       className={clsx('tz-input disabled:opacity-50', (off || suffix) && 'pr-24')}
       value={draft}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={() => {
         const parsed = Number(draft)
-        if (Number.isFinite(parsed) && parsed !== value) onCommit(parsed)
+        const clamped = min !== undefined ? Math.max(min, parsed) : parsed
+        if (Number.isFinite(parsed) && clamped !== value) onCommit(clamped)
         else setDraft(String(value))
       }}
       onKeyDown={(event) => {
