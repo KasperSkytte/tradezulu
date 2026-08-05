@@ -136,7 +136,7 @@ registerOverlay<TradeExtras>({
 })
 
 /** One fill, at the minute it filled. */
-registerOverlay<{ label: string; color: string; above: boolean }>({
+registerOverlay<{ label: string; color: string; above: boolean; family: string }>({
   name: 'tradezulu-fill',
   totalStep: 1,
   needDefaultPointFigure: false,
@@ -146,7 +146,7 @@ registerOverlay<{ label: string; color: string; above: boolean }>({
     const point = coordinates[0]
     const extra = overlay.extendData
     if (!point || !extra) return []
-    const { label, color, above } = extra
+    const { label, color, above, family } = extra
     const tip = above ? point.y - 10 : point.y + 10
     const base = above ? point.y - 2 : point.y + 2
     return [
@@ -176,6 +176,7 @@ registerOverlay<{ label: string; color: string; above: boolean }>({
         styles: {
           color,
           size: 11,
+          family,
           backgroundColor: 'transparent',
           paddingLeft: 0,
           paddingRight: 0,
@@ -240,6 +241,10 @@ export function KLineReplay({ trade, timeframe }: { trade: TradeDetail; timefram
     const grid = token('--tz-grid', '#1f2532')
     const border = token('--tz-border', '#232939')
     const text = token('--tz-text-muted', '#98a1b8')
+    // KLineChart ships its own serif stack, which looked like a different
+    // application bolted into the page. Anything drawn to a canvas has to be
+    // told the font explicitly -- it inherits nothing from the stylesheet.
+    const family = styles.getPropertyValue('font-family').trim() || 'Inter, sans-serif'
 
     const chart = init(element, {
       styles: {
@@ -250,16 +255,27 @@ export function KLineReplay({ trade, timeframe }: { trade: TradeDetail; timefram
             upBorderColor: gain, downBorderColor: loss, noChangeBorderColor: text,
             upWickColor: gain, downWickColor: loss, noChangeWickColor: text,
           },
-          priceMark: { last: { text: { color: '#ffffff' } } },
-          tooltip: { title: { color: text }, legend: { color: text } },
+          priceMark: { last: { text: { color: '#ffffff', family } } },
+          tooltip: {
+            title: { color: text, family, size: 12 },
+            legend: { color: text, family, size: 12 },
+          },
         },
-        xAxis: { axisLine: { color: border }, tickLine: { color: border }, tickText: { color: text } },
-        yAxis: { axisLine: { color: border }, tickLine: { color: border }, tickText: { color: text } },
+        xAxis: {
+          axisLine: { color: border },
+          tickLine: { color: border },
+          tickText: { color: text, family, size: 11 },
+        },
+        yAxis: {
+          axisLine: { color: border },
+          tickLine: { color: border },
+          tickText: { color: text, family, size: 11 },
+        },
         crosshair: {
-          horizontal: { line: { color: text }, text: { backgroundColor: border } },
-          vertical: { line: { color: text }, text: { backgroundColor: border } },
+          horizontal: { line: { color: text }, text: { backgroundColor: border, family, size: 11 } },
+          vertical: { line: { color: text }, text: { backgroundColor: border, family, size: 11 } },
         },
-        overlay: { point: { color: entry, borderColor: `${entry}55` } },
+        overlay: { point: { color: entry, borderColor: `${entry}55` }, text: { family } },
       },
       formatter: {
         // The bars are the broker's wall clock; this is the only place that
@@ -359,6 +375,7 @@ export function KLineReplay({ trade, timeframe }: { trade: TradeDetail; timefram
         points: [{ timestamp: brokerEpoch(execution.time), value: execution.price }],
         extendData: {
           label: `${execution.kind === 'in' ? 'In' : 'Out'} ${execution.volume}`,
+          family,
           color:
             execution.kind === 'in' ? entry : execution.profit >= 0 ? gain : loss,
           above: execution.side === 'sell',
