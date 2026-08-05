@@ -13,6 +13,7 @@ import { Loader2, X } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import type { CopySettings, SlaveAccount } from '../lib/types'
 import { Button, Field, Toggle } from './ui'
+import { BrokerServerPicker } from './BrokerServerPicker'
 
 const SIZING_MODES = [
   { value: 'balance_ratio', label: 'Match the balance ratio', hint: 'A slave half the size trades half the lots.' },
@@ -141,6 +142,15 @@ export function SlaveForm({
           <section>
             <h3 className="tz-label">The account</h3>
             <div className="grid gap-3 sm:grid-cols-2">
+              <BrokerServerPicker
+                server={server}
+                onChange={({ server: next, broker: named }) => {
+                  setServer(next)
+                  // Only fill the broker in; never blank one the terminal has
+                  // already reported, and never overwrite something typed.
+                  if (named) setBroker(named)
+                }}
+              />
               <Field label="Account number">
                 <input
                   className="tz-input"
@@ -149,27 +159,12 @@ export function SlaveForm({
                   placeholder="5000123"
                 />
               </Field>
-              <Field label="Trade server">
-                <input
-                  className="tz-input"
-                  value={server}
-                  onChange={(event) => setServer(event.target.value)}
-                  placeholder="ICMarketsSC-Live12"
-                />
-              </Field>
               <Field label="Name" hint="What you want to call it here.">
                 <input
                   className="tz-input"
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                   placeholder="Prop challenge #1"
-                />
-              </Field>
-              <Field label="Broker" hint="Optional, for your own reference.">
-                <input
-                  className="tz-input"
-                  value={broker}
-                  onChange={(event) => setBroker(event.target.value)}
                 />
               </Field>
               <Field

@@ -12,13 +12,12 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Loader2, Lock } from 'lucide-react'
 import { api } from '../lib/api'
-import type { BrokerList, MT5Credentials, SyncStatus } from '../lib/types'
+import type { MT5Credentials, SyncStatus } from '../lib/types'
 import { Button, Field } from './ui'
-
-const OTHER = '__other__'
+import { BrokerServerPicker } from './BrokerServerPicker'
 
 export function MT5Account({ status }: { status?: SyncStatus }) {
   const queryClient = useQueryClient()
@@ -27,36 +26,18 @@ export function MT5Account({ status }: { status?: SyncStatus }) {
     queryKey: ['mt5-credentials'],
     queryFn: () => api.get<MT5Credentials>('/mt5/credentials'),
   })
-  const { data: brokerList } = useQuery({
-    queryKey: ['mt5-brokers'],
-    queryFn: () => api.get<BrokerList>('/mt5/brokers'),
-    staleTime: 60 * 60 * 1000,
-  })
-  const brokers = brokerList?.brokers ?? []
-
-  const [broker, setBroker] = useState('')
   const [server, setServer] = useState('')
   const [login, setLogin] = useState('')
   const [password, setPassword] = useState('')
   const [dirty, setDirty] = useState(false)
 
-  // A stored server tells us the broker: it is the same string the provisioner
-  // matches on, so the form reopens where it was left rather than blank.
+  // Reopen on what is stored. Which broker that server belongs to is the
+  // picker's business, not this form's.
   useEffect(() => {
-    if (!credentials || dirty || brokers.length === 0) return
+    if (!credentials || dirty) return
     setServer(credentials.server)
     setLogin(credentials.login)
-    const owner = brokers.find((b) =>
-      b.servers.some((s) => s.toLowerCase() === credentials.server.toLowerCase()),
-    )
-    setBroker(owner?.key ?? (credentials.server ? OTHER : ''))
-  }, [credentials, dirty, brokers])
-
-  const chosen = brokers.find((b) => b.key === broker)
-  const servers = useMemo(() => chosen?.servers ?? [], [chosen])
-  // A broker with no servers listed, or "other", means typing it. Brokers add
-  // servers without telling anyone, so this is never a dead end.
-  const freeText = broker === OTHER || broker === '' || servers.length === 0
+  }, [credentials, dirty])
 
   const save = useMutation({
     mutationFn: () =>
@@ -99,60 +80,10 @@ export function MT5Account({ status }: { status?: SyncStatus }) {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Broker">
-          <select
-            className="tz-input"
-            value={broker}
-            onChange={(event) => {
-              const next = event.target.value
-              track(setBroker)(next)
-              // Keep a typed server when moving to free text; otherwise the
-              // old broker's server would be left selected under a new broker.
-              const list = brokers.find((b) => b.key === next)?.servers ?? []
-              setServer(list.length === 1 ? list[0] : list.includes(server) ? server : '')
-            }}
-          >
-            <option value="">Select your broker…</option>
-            {brokers.map((b) => (
-              <option key={b.key} value={b.key}>
-                {b.label}
-              </option>
-            ))}
-            <option value={OTHER}>Not listed — type the server</option>
-          </select>
-        </Field>
-
-        <Field
-          label="Trade server"
-          hint={
-            freeText
-              ? 'Exactly as it appears in MetaTrader under File → Open an Account.'
-              : undefined
-          }
-        >
-          {freeText ? (
-            <input
-              className="tz-input"
-              placeholder="YourBroker-Live"
-              autoComplete="off"
-              value={server}
-              onChange={(event) => track(setServer)(event.target.value)}
-            />
-          ) : (
-            <select
-              className="tz-input"
-              value={server}
-              onChange={(event) => track(setServer)(event.target.value)}
-            >
-              <option value="">Select a server…</option>
-              {servers.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          )}
-        </Field>
+        <BrokerServerPicker
+          server={server}
+          onChange={({ server: next }) => track(setServer)(next)}
+        />
 
         <Field label="Account number">
           <input
