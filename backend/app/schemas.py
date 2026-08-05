@@ -2,14 +2,55 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
-from typing import Any
+from datetime import date, datetime, timezone
+from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
 
 
 class ORMModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+
+
+# --- clocks -----------------------------------------------------------------
+#
+# Two of them, stored in columns that look identical.
+#
+# One is ours: when a terminal last reported, when a copy was placed, when the
+# user last logged in. Those are real moments, recorded from this machine's
+# clock in UTC.
+#
+# The other is the broker's. MetaTrader keeps one clock -- its server's -- and
+# every deal, execution and candle is stamped with it and with no offset, which
+# for a typical broker is two or three hours from UTC. Nothing in the payload
+# says which; only the account's `broker_utc_offset_minutes` can turn one into
+# a real moment.
+#
+# SQLite hands both back as naive datetimes, and a naive timestamp in JSON is
+# read by every browser as *local* time. For the broker's clock that is the
+# behaviour we want -- the digits are passed through and read back unchanged,
+# so a fill shows at the time the terminal shows it, wherever it is opened.
+# For ours it is a bug: a UTC instant read as local made a terminal that had
+# reported five seconds ago show up as "quiet 2 hours ago" for anyone sitting
+# east of UTC, and -- worse, because it is silent -- made a genuinely dead
+# terminal look healthy for anyone sitting west of it.
+#
+# So the two are spelled differently from here on, and which clock a field is
+# on is part of its type rather than something to work out from its name.
+
+
+def _mark_utc(value: datetime) -> datetime:
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+#: A moment on our clock, serialised with its offset so a browser reads it as
+#: the instant it is rather than as local wall clock.
+ServerTime = Annotated[datetime, AfterValidator(_mark_utc)]
+
+#: A reading off the broker's clock, passed through exactly as MetaTrader
+#: wrote it. Deliberately naive: there is no offset to attach that would be
+#: true for every account.
+BrokerTime = datetime
 
 
 # --- auth -------------------------------------------------------------------
@@ -29,7 +70,7 @@ class PasswordChange(BaseModel):
 class UserOut(ORMModel):
     id: int
     username: str
-    last_login_at: datetime | None = None
+    last_login_at: ServerTime | None = None
 
 
 # --- tags -------------------------------------------------------------------
@@ -60,7 +101,7 @@ class ExecutionOut(ORMModel):
     side: str
     volume: float
     price: float
-    time: datetime
+    time: BrokerTime
     profit: float
     commission: float
     swap: float
@@ -77,8 +118,8 @@ class TradeOut(ORMModel):
     position_id: int
     symbol: str
     direction: str
-    opened_at: datetime
-    closed_at: datetime | None
+    opened_at: BrokerTime
+    closed_at: BrokerTime | None
     trade_date: date | None
     volume: float
     closed_volume: float
@@ -274,7 +315,7 @@ class SyncStatus(BaseModel):
     balance: float | None
     equity: float | None
     currency: str | None
-    last_sync_at: datetime | None
+    last_sync_at: ServerTime | None
     last_sync_source: str | None
     total_deals: int
     total_trades: int
@@ -328,14 +369,14 @@ class AccountOut(ORMModel):
     equity: float
     initial_balance: float
     is_default: bool
-    last_sync_at: datetime | None
+    last_sync_at: ServerTime | None
     last_sync_source: str
     #: How far this broker's clock runs from UTC; None until a terminal says.
     broker_utc_offset_minutes: int | None = None
 
 
 class CandleOut(BaseModel):
-    time: datetime
+    time: BrokerTime
     open: float
     high: float
     low: float
@@ -427,7 +468,7 @@ class SlaveAccountOut(BaseModel):
     balance: float
     equity: float
     is_default: bool
-    last_sync_at: datetime | None
+    last_sync_at: ServerTime | None
     #: How far this broker's clock runs from UTC; None until a terminal says.
     broker_utc_offset_minutes: int | None = None
 
@@ -435,7 +476,7 @@ class SlaveAccountOut(BaseModel):
     copy_dry_run: bool
     copy_halted: bool
     copy_halt_reason: str
-    copy_halted_at: datetime | None
+    copy_halted_at: ServerTime | None
     has_password: bool
 
     symbol_prefix: str
@@ -463,7 +504,7 @@ class CopyEventOut(ORMModel):
     rule: str
     message: str
     latency_ms: int
-    created_at: datetime
+    created_at: ServerTime
 
 
 # --- expert advisor agent ---------------------------------------------------
