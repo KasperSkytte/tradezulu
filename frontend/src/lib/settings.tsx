@@ -65,6 +65,7 @@ const FALLBACK: AppSettings = {
   charts: {
     provider: 'local',
     default_timeframe: 'M15',
+    collect_timeframe: 'M5',
     history_days_before: 1,
     history_days_after: 1,
     zoom_hours: 2,

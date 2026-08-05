@@ -32,6 +32,7 @@ from ..db import get_db
 from ..deps import require_ingest_auth
 from ..models import Account, CopyEvent
 from ..schemas import AgentCommandResult, AgentPollIn, AgentPollOut
+from ..services import candles as timeframes
 from ..services.accounts import single_master
 from ..services.appsettings import get_app_settings
 from ..services.copier.agent import (
@@ -189,6 +190,18 @@ def _history_seconds(charts: dict[str, Any], key: str) -> int:
     return int(min(days, 90.0) * 86_400)
 
 
+def _candle_seconds(charts: dict[str, Any]) -> int:
+    """One bar of the timeframe to collect, in seconds.
+
+    Anything the journal does not recognise falls back to the default rather
+    than to whatever ``seconds()`` happens to return for an unknown name: this
+    decides what every terminal stores, and a typo should not quietly change
+    the shortest timeframe any chart can ever show.
+    """
+    name = str(charts.get("collect_timeframe") or "M5").upper()
+    return timeframes.seconds(name if name in timeframes.TIMEFRAMES else "M5")
+
+
 @router.post("/poll", response_model=AgentPollOut)
 def poll(payload: AgentPollIn, db: Session = Depends(get_db)) -> AgentPollOut:
     """One heartbeat from a terminal: here is my state, what should I do?"""
@@ -235,6 +248,7 @@ def poll(payload: AgentPollIn, db: Session = Depends(get_db)) -> AgentPollOut:
         poll_seconds=2 if account.role == "slave" and account.copy_enabled else 10,
         history_before_seconds=_history_seconds(charts, "history_days_before"),
         history_after_seconds=_history_seconds(charts, "history_days_after"),
+        candle_seconds=_candle_seconds(charts),
         commands=commands,
     )
 

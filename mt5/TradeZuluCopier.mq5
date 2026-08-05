@@ -43,7 +43,7 @@ input bool   UploadCandles    = true;  // Send bars around each trade, so charts
 // M15, M30, H1, H4 and D1 out of these -- while nothing can build M5 out of
 // M15. The base timeframe is the only one that has to be collected, so it is
 // the smallest one worth storing.
-input ENUM_TIMEFRAMES CandleTimeframe = PERIOD_M5;   // Which timeframe to send (others are derived from it)
+input ENUM_TIMEFRAMES CandleTimeframe = PERIOD_M5;   // Which timeframe to send until the server says (others are derived from it)
 // A full trading day either side, so a chart can be zoomed out to the session
 // the trade happened in rather than to the twenty bars around the entry. 288
 // M5 bars is 24 hours.
@@ -69,6 +69,10 @@ bool     g_candles_done = false;   // the one-off backfill for trades already jo
 // the server has said, when the CandlesBefore/After inputs stand in.
 int      g_history_before = 0;
 int      g_history_after  = 0;
+// Which timeframe to collect, as the length of one bar. Set in the journal and
+// sent down on every heartbeat; PERIOD_CURRENT until it has, when the
+// CandleTimeframe input stands in.
+ENUM_TIMEFRAMES g_candle_tf = PERIOD_CURRENT;
 
 //--- stops seen on live positions -----------------------------------
 // MetaTrader records a stop on the *order*, so a stop attached after entry --
@@ -339,6 +343,12 @@ void Poll()
    // heartbeat instead of waiting for a restart.
    g_history_before = (int)StringToInteger(JsonValue(reply, "history_before_seconds"));
    g_history_after  = (int)StringToInteger(JsonValue(reply, "history_after_seconds"));
+
+   // Which timeframe to collect. Sent as the length of one bar so neither side
+   // has to agree with the other about how a timeframe is spelled.
+   int bar = (int)StringToInteger(JsonValue(reply, "candle_seconds"));
+   if(bar > 0)
+      g_candle_tf = TimeframeOf(bar);
 
    string role = JsonValue(reply, "role");
    bool   halted = JsonValue(reply, "halted") == "true";
@@ -745,6 +755,32 @@ void FetchCursor()
       Print("TradeZulu: journal already has deals up to ticket ", g_last_ticket);
 }
 
+// The timeframe whose bars last this many seconds. Anything unrecognised
+// leaves the collected timeframe alone rather than guessing at a neighbour:
+// collecting the wrong one silently is worse than collecting the old one.
+ENUM_TIMEFRAMES TimeframeOf(const int bar_seconds)
+{
+   switch(bar_seconds)
+   {
+      case 60:     return PERIOD_M1;
+      case 300:    return PERIOD_M5;
+      case 900:    return PERIOD_M15;
+      case 1800:   return PERIOD_M30;
+      case 3600:   return PERIOD_H1;
+      case 14400:  return PERIOD_H4;
+      case 86400:  return PERIOD_D1;
+      case 604800: return PERIOD_W1;
+   }
+   return g_candle_tf;
+}
+
+// Which timeframe is actually being collected: what the server asked for, or
+// the input until it has asked.
+ENUM_TIMEFRAMES CollectedTimeframe()
+{
+   return g_candle_tf == PERIOD_CURRENT ? CandleTimeframe : g_candle_tf;
+}
+
 string TimeframeName(const ENUM_TIMEFRAMES timeframe)
 {
    switch(timeframe)
@@ -768,7 +804,8 @@ string CandlesJson(const string symbol, const datetime from, const datetime to)
 {
    MqlRates rates[];
    ArraySetAsSeries(rates, false);
-   int span = PeriodSeconds(CandleTimeframe);
+   ENUM_TIMEFRAMES tf = CollectedTimeframe();
+   int span = PeriodSeconds(tf);
    // The server owns this window: it is set in the journal, in days, and sent
    // here on every heartbeat, so widening it takes effect on the next trade
    // rather than at the next restart. The inputs above are what to use until
@@ -778,7 +815,7 @@ string CandlesJson(const string symbol, const datetime from, const datetime to)
    datetime start = from - (datetime)before;
    datetime end   = to   + (datetime)after;
 
-   int got = CopyRates(symbol, CandleTimeframe, start, end, rates);
+   int got = CopyRates(symbol, tf, start, end, rates);
    if(got <= 0)
       return "";
 
@@ -799,7 +836,7 @@ string CandlesJson(const string symbol, const datetime from, const datetime to)
       bars += "}";
    }
    return "{" + JStr("symbol", symbol)
-        + "," + JStr("timeframe", TimeframeName(CandleTimeframe))
+        + "," + JStr("timeframe", TimeframeName(tf))
         + ",\"candles\":[" + bars + "]}";
 }
 

@@ -673,6 +673,37 @@ class TestTheChartWindowReachesTheTerminal:
 
         assert reply["history_after_seconds"] == 0
 
+    def test_the_collected_timeframe_is_sent_as_a_bar_length(self, auth_client, master):
+        """Named by length so neither side has to agree about spelling."""
+        reply = auth_client.post(
+            "/api/agent/poll", json=account_payload("5000", "Master-Server")
+        ).json()
+        assert reply["candle_seconds"] == 300
+
+    def test_asking_for_M1_reaches_the_terminal(self, auth_client, master):
+        """M1 cannot be derived from anything, so it has to be collected.
+
+        Until it is, the chart cannot offer it however it is configured -- the
+        server builds longer timeframes out of shorter ones and never the other
+        way round.
+        """
+        auth_client.put("/api/settings", json={"charts": {"collect_timeframe": "M1"}})
+
+        reply = auth_client.post(
+            "/api/agent/poll", json=account_payload("5000", "Master-Server")
+        ).json()
+
+        assert reply["candle_seconds"] == 60
+
+    def test_an_unknown_timeframe_falls_back_rather_than_guessing(self, auth_client, master):
+        auth_client.put("/api/settings", json={"charts": {"collect_timeframe": "nonsense"}})
+
+        reply = auth_client.post(
+            "/api/agent/poll", json=account_payload("5000", "Master-Server")
+        ).json()
+
+        assert reply["candle_seconds"] == 300
+
     def test_a_slave_is_told_as_well(self, auth_client, slave):
         """Slaves upload candles for their own copies, not only the master."""
         reply = auth_client.post(

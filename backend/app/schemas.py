@@ -599,4 +599,8 @@ class AgentPollOut(BaseModel):
     #: takes effect on the next heartbeat instead of at the next restart.
     history_before_seconds: int = 86_400
     history_after_seconds: int = 86_400
+    #: Which timeframe to collect, as the length of one bar in seconds. Sent
+    #: rather than named so the terminal does not have to agree with this
+    #: server about spelling.
+    candle_seconds: int = 300
     commands: list[dict[str, Any]] = Field(default_factory=list)

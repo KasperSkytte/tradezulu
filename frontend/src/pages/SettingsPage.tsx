@@ -186,11 +186,11 @@ const BAR_SECONDS: Record<string, number> = {
 
 /** What a number of days works out to in bars, so it is not an abstraction.
  *
- *  Quoted at the default timeframe, which is the one the terminal collects and
- *  therefore the one that decides how much it has to upload.
+ *  Quoted at the *collected* timeframe rather than the viewed one: that is
+ *  what the terminal actually has to send, and the two can differ.
  */
 function barsHint(days: number, timeframe: string): string {
-  const seconds = BAR_SECONDS[timeframe] ?? BAR_SECONDS.M5
+  const seconds = BAR_SECONDS[timeframe ?? 'M5'] ?? BAR_SECONDS.M5
   const bars = Math.max(1, Math.round(((days || 0) * 86_400) / seconds))
   return `About ${bars.toLocaleString()} ${timeframe} bars.`
 }
@@ -860,6 +860,22 @@ function ChartsSection() {
               ]}
             />
           </Field>
+          <Field
+            label="Collect"
+            hint="Which timeframe the terminal stores. Everything longer is built from it — M15, H1 and the rest are arithmetic on these — but nothing can be built downwards, so this is the shortest a chart will ever show. M1 is five times the bars of M5 for detail most trades do not need. Changing it takes effect at the next trade; what is already stored keeps working."
+          >
+            <select
+              className="tz-input"
+              value={settings.charts.collect_timeframe ?? 'M5'}
+              onChange={(event) =>
+                void apply({ charts: { collect_timeframe: event.target.value } })
+              }
+            >
+              {['M1', 'M5', 'M15', 'M30', 'H1'].map((timeframe) => (
+                <option key={timeframe}>{timeframe}</option>
+              ))}
+            </select>
+          </Field>
           <Field label="Default timeframe">
             <select
               className="tz-input"
@@ -877,8 +893,8 @@ function ChartsSection() {
             label="History before entry"
             hint={`How far back of the chart to keep around each trade. ${barsHint(
               settings.charts.history_days_before,
-              settings.charts.default_timeframe,
-            )} The terminal uploads this much with every closed trade, so a large window means a large upload.`}
+              settings.charts.collect_timeframe,
+            )} Bars are shared between trades that overlap, so a busy day is stored once however many trades were taken in it.`}
           >
             <NumberField
               value={settings.charts.history_days_before}
@@ -892,7 +908,7 @@ function ChartsSection() {
             label="History after exit"
             hint={barsHint(
               settings.charts.history_days_after,
-              settings.charts.default_timeframe,
+              settings.charts.collect_timeframe,
             )}
           >
             <NumberField

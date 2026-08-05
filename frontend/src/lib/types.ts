@@ -346,6 +346,8 @@ export interface AppSettings {
   charts: {
     provider: 'local' | 'studio' | 'tradingview'
     default_timeframe: string
+    /** Which timeframe the terminal collects. Nothing shorter can be shown. */
+    collect_timeframe: string
     /** How much chart history to keep around each trade, in days either side. */
     history_days_before: number
     history_days_after: number

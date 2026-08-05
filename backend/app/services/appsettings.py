@@ -159,6 +159,16 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         # tradingview -> free TradingView Advanced Chart widget
         "provider": "local",
         "default_timeframe": "M5",
+        # Which timeframe the terminal actually collects. Everything longer is
+        # arithmetic on it -- the server folds M15, H1 and the rest out of
+        # these -- but nothing can be built downwards, so this is the shortest
+        # timeframe a chart will ever be able to show.
+        #
+        # M5 rather than M1 by default because M1 is five times the upload for
+        # a detail most trades do not need. Change it to M1 and the finer bars
+        # start arriving with the next trade; what is already stored stays
+        # where it is and keeps working.
+        "collect_timeframe": "M5",
         # How much history to keep around each trade, in days either side.
         #
         # In days rather than in bars because that is the question anyone
