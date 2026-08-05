@@ -63,6 +63,10 @@ class Plan:
     #: the plan so the window can be changed in the web interface rather than
     #: by editing a unit file on the machine.
     maintenance: dict
+    #: Where this plan came from, and what it took to ask -- so anything that
+    #: has a plan can also report back without being handed them separately.
+    base_url: str = ""
+    token: str = ""
     #: Every account the server has, including ones with no credentials yet.
     #: Anything on this machine that is not in here belongs to an account that
     #: has been forgotten, and is cleared up. None means the server did not say
@@ -83,6 +87,8 @@ def fetch_plan(base_url: str, token: str) -> Plan:
         api_key=data.get("api_key", ""),
         terminals=list(data.get("terminals", [])),
         maintenance=dict(data.get("maintenance") or {}),
+        base_url=base_url,
+        token=token,
         known_accounts={int(value) for value in known} if known is not None else None,
     )
 
@@ -838,6 +844,99 @@ def health(last_seen: datetime | None, launched: datetime | None, now: datetime)
     return "never-reported" if last_seen is None else "gone-quiet"
 
 
+#: What a terminal is doing, in words the journal can show without knowing
+#: anything about Wine, prefixes or MetaTrader. Ordered worst to best only for
+#: reading; nothing depends on the order.
+PHASES = ("failed", "quiet", "installing", "starting", "retrying", "running")
+
+
+def terminal_status(spec: dict, bottle: Path, state: dict, now: datetime) -> dict:
+    """One account's terminal, described for somebody looking at the journal.
+
+    Everything here is already known -- it is the same evidence supervise()
+    acts on -- it simply never left this machine. "No terminal yet" was the
+    only thing the accounts page could say, whether MetaTrader was still
+    installing, sitting on a refused login, or given up on twenty minutes ago,
+    and those want very different reactions from the person reading it.
+    """
+    last_seen = _parse_time(spec.get("last_seen"))
+    launched = _parse_time(state.get("launched"))
+    verdict = health(last_seen, launched, now)
+    attempts = int(state.get("restarts") or 0) + int(state.get("rebuilds") or 0)
+
+    if state.get("gave_up"):
+        return {
+            "phase": "failed",
+            "message": (
+                "Restarting and rebuilding both failed. Check the account number, "
+                "password and server, then use Forget and add it again."
+            ),
+            "attempts": attempts,
+        }
+
+    if verdict == "reporting":
+        return {"phase": "running", "message": "Its Expert Advisor is reporting in.", "attempts": 0}
+
+    if not bottle.exists() or terminal_dir(bottle) is None:
+        return {
+            "phase": "installing",
+            "message": "Building its MetaTrader install. This takes a few minutes the first time.",
+            "attempts": attempts,
+        }
+
+    if attempts:
+        return {
+            "phase": "retrying",
+            "message": f"It has not reported in; trying again (attempt {attempts + 1}).",
+            "attempts": attempts,
+        }
+
+    if verdict == "settling" or (launched is not None and last_seen is None):
+        return {
+            "phase": "starting",
+            "message": "Started, waiting for its Expert Advisor to report in.",
+            "attempts": attempts,
+        }
+
+    if verdict == "gone-quiet":
+        return {
+            "phase": "quiet",
+            "message": "It was reporting and has stopped.",
+            "attempts": attempts,
+        }
+
+    return {
+        "phase": "starting",
+        "message": "Waiting for a terminal to be started for it.",
+        "attempts": attempts,
+    }
+
+
+def report_status(base_url: str, token: str, states: list[dict]) -> None:
+    """Tell the server what each terminal is doing.
+
+    Best-effort on purpose: this is how the accounts page stops saying "no
+    terminal yet" for twenty minutes, and it is not worth failing a
+    provisioning cycle over. The next cycle sends the state again anyway.
+    """
+    if not states or not base_url:
+        return
+    # Everything inside the guard, including building the request: a malformed
+    # base URL raises when the Request is constructed, not when it is sent, and
+    # that would take down the provisioning cycle this is only commentary on.
+    try:
+        request = urllib.request.Request(
+            base_url.rstrip("/") + "/api/agent/terminals/state",
+            data=json.dumps({"terminals": states}).encode(),
+            headers={"X-API-Key": token, "Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=20):
+            pass
+    except Exception as error:  # noqa: BLE001 - reporting must not break provisioning
+        log.debug("could not report terminal status: %s", error)
+
+
 def reconcile(plan: Plan, template: Path, expert: Path, settled: bool = True) -> None:
     """Make the terminals on this machine match what the server asks for.
 
@@ -878,6 +977,27 @@ def reconcile(plan: Plan, template: Path, expert: Path, settled: bool = True) ->
             log.exception("could not reconcile account %s", spec.get("account_id"))
 
     reap(plan)
+
+    # Read back after the pass, so what is reported is where each terminal
+    # ended up rather than where it was when the cycle began.
+    now = datetime.now(timezone.utc)
+    report_status(
+        plan.base_url,
+        plan.token,
+        [
+            dict(
+                account_id=int(spec["account_id"]),
+                **terminal_status(
+                    spec,
+                    bottle_for(int(spec["account_id"])),
+                    load_state(int(spec["account_id"])),
+                    now,
+                ),
+            )
+            for spec in plan.terminals
+            if spec.get("enabled") and spec.get("account_id") is not None
+        ],
+    )
 
 
 def ensure_terminal(

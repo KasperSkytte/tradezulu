@@ -521,3 +521,76 @@ class TestBuildKey:
         tz.provide_binary(terminal, mq5)
 
         assert (tz.BUILDS / f"TradeZuluCopier-{tz.build_key(mq5, terminal)}.ex5").exists()
+
+
+class TestTerminalStatus:
+    """What the journal is told a terminal is doing.
+
+    The provisioner has always known the difference between installing,
+    starting, retrying and having given up -- it acts on it every cycle -- and
+    never said so anywhere the user could see. All of it reads as "no terminal
+    yet" until this leaves the machine.
+    """
+
+    @staticmethod
+    def _status(tmp_path, spec=None, state=None, exists=True):
+        bottle = tmp_path / "tz-1"
+        if exists:
+            (bottle / "drive_c" / "Program Files" / "MT5").mkdir(parents=True)
+            (bottle / "drive_c" / "Program Files" / "MT5" / "terminal64.exe").touch()
+        return tz.terminal_status(
+            {"account_id": 1, "login": "5000", **(spec or {})},
+            bottle,
+            state or {},
+            datetime(2026, 8, 5, 12, 0, tzinfo=timezone.utc),
+        )
+
+    def test_a_terminal_that_is_reporting_is_running(self, tmp_path):
+        status = self._status(
+            tmp_path, spec={"last_seen": "2026-08-05T11:59:50+00:00"}
+        )
+        assert status["phase"] == "running"
+
+    def test_no_metatrader_yet_is_installing(self, tmp_path):
+        """The first start of an account builds a whole Wine prefix."""
+        status = self._status(tmp_path, exists=False)
+        assert status["phase"] == "installing"
+        assert "few minutes" in status["message"]
+
+    def test_freshly_launched_is_starting(self, tmp_path):
+        status = self._status(
+            tmp_path, state={"launched": "2026-08-05T11:59:30+00:00"}
+        )
+        assert status["phase"] == "starting"
+
+    def test_being_retried_says_how_many_times(self, tmp_path):
+        status = self._status(
+            tmp_path,
+            state={"launched": "2026-08-05T10:00:00+00:00", "restarts": 2},
+        )
+        assert status["phase"] == "retrying"
+        assert status["attempts"] == 2
+
+    def test_given_up_is_a_failure_with_something_to_do(self, tmp_path):
+        status = self._status(tmp_path, state={"gave_up": True, "restarts": 2, "rebuilds": 2})
+        assert status["phase"] == "failed"
+        assert "Forget" in status["message"]
+        assert status["attempts"] == 4
+
+    def test_one_that_worked_and_stopped_is_quiet(self, tmp_path):
+        status = self._status(
+            tmp_path,
+            spec={"last_seen": "2026-08-05T09:00:00+00:00"},
+            state={"launched": "2026-08-05T08:00:00+00:00"},
+        )
+        assert status["phase"] == "quiet"
+
+    def test_running_beats_a_stale_failure(self, tmp_path):
+        """Only gave_up outranks it: anything reporting in is working."""
+        status = self._status(
+            tmp_path,
+            spec={"last_seen": "2026-08-05T11:59:50+00:00"},
+            state={"restarts": 2, "rebuilds": 1},
+        )
+        assert status["phase"] == "running"
+        assert status["attempts"] == 0

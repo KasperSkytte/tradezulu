@@ -471,6 +471,8 @@ class SlaveAccountOut(BaseModel):
     last_sync_at: ServerTime | None
     #: How far this broker's clock runs from UTC; None until a terminal says.
     broker_utc_offset_minutes: int | None = None
+    #: What the provisioner last reported this terminal was doing.
+    terminal_state: dict[str, Any] = Field(default_factory=dict)
 
     copy_enabled: bool
     copy_dry_run: bool
@@ -584,6 +586,20 @@ class AgentPollIn(BaseModel):
     @classmethod
     def _stringify_login(cls, value: Any) -> str:
         return "" if value is None else str(value)
+
+
+class TerminalStateIn(BaseModel):
+    """One terminal, as the provisioner currently sees it."""
+
+    account_id: int
+    #: installing | starting | retrying | running | quiet | failed
+    phase: str = Field(default="", max_length=24)
+    message: str = Field(default="", max_length=400)
+    attempts: int = 0
+
+
+class TerminalStatesIn(BaseModel):
+    terminals: list[TerminalStateIn] = Field(default_factory=list)
 
 
 class AgentPollOut(BaseModel):

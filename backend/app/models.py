@@ -83,6 +83,12 @@ class Account(Base):
     # that can turn one into a real moment. NULL means no terminal has told us
     # yet, and times are shown as the broker wrote them.
     broker_utc_offset_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # What the provisioner last said this account's terminal was doing:
+    # {"phase", "message", "attempts", "at"}. The provisioner is the only thing
+    # that can tell installing from starting from given-up, and without this it
+    # kept that to itself -- so a terminal that was still building MetaTrader
+    # and one that had been abandoned twenty minutes ago read identically.
+    terminal_state: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     last_sync_source: Mapped[str] = mapped_column(String(32), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 

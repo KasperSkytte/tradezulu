@@ -31,7 +31,12 @@ from ..config import settings
 from ..db import get_db
 from ..deps import require_ingest_auth
 from ..models import Account, CopyEvent
-from ..schemas import AgentCommandResult, AgentPollIn, AgentPollOut
+from ..schemas import (
+    AgentCommandResult,
+    AgentPollIn,
+    AgentPollOut,
+    TerminalStatesIn,
+)
 from ..services import candles as timeframes
 from ..services.accounts import single_master
 from ..services.appsettings import get_app_settings
@@ -260,6 +265,34 @@ def result(payload: AgentCommandResult, db: Session = Depends(get_db)) -> None:
     if account is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such account")
     record_result(db, account, payload)
+    db.commit()
+
+
+@router.post("/terminals/state", status_code=status.HTTP_204_NO_CONTENT)
+def terminal_states(payload: TerminalStatesIn, db: Session = Depends(get_db)) -> None:
+    """Record what the provisioner says each terminal is doing.
+
+    The provisioner is the only thing that can tell a MetaTrader still
+    installing from one sitting on a refused login from one that was given up
+    on twenty minutes ago. Until it sent this, the journal knew only whether an
+    Expert Advisor had ever reported, so all three read as "no terminal yet"
+    and none of them suggested what to do about it.
+
+    Unknown accounts are skipped rather than refused: an account can be
+    forgotten here between the provisioner reading its plan and reporting on
+    it, and that is not an error on either side.
+    """
+    when = datetime.now(timezone.utc).isoformat()
+    for entry in payload.terminals:
+        account = db.get(Account, entry.account_id)
+        if account is None:
+            continue
+        account.terminal_state = {
+            "phase": entry.phase,
+            "message": entry.message,
+            "attempts": entry.attempts,
+            "at": when,
+        }
     db.commit()
 
 

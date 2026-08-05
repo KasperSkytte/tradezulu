@@ -710,3 +710,69 @@ class TestTheChartWindowReachesTheTerminal:
             "/api/agent/poll", json=account_payload("9001", "Slave-Server")
         ).json()
         assert reply["history_before_seconds"] == 86_400
+
+
+class TestReportingWhatATerminalIsDoing:
+    """The provisioner is the only thing that can tell why there is no terminal.
+
+    A MetaTrader still installing, one sitting on a login the broker refused,
+    and one abandoned twenty minutes ago are identical from here: no Expert
+    Advisor has reported for any of them. The accounts page said "no terminal
+    yet" for all three, which is true of all three and useful about none.
+    """
+
+    def test_a_state_is_recorded(self, auth_client, db, slave):
+        response = auth_client.post(
+            "/api/agent/terminals/state",
+            json={
+                "terminals": [
+                    {
+                        "account_id": slave.id,
+                        "phase": "installing",
+                        "message": "Building its MetaTrader install.",
+                        "attempts": 0,
+                    }
+                ]
+            },
+        )
+
+        assert response.status_code == 204
+        db.expire_all()
+        state = db.get(Account, slave.id).terminal_state
+        assert state["phase"] == "installing"
+        assert state["message"] == "Building its MetaTrader install."
+        assert state["at"]
+
+    def test_it_reaches_the_accounts_page(self, auth_client, slave):
+        auth_client.post(
+            "/api/agent/terminals/state",
+            json={"terminals": [{"account_id": slave.id, "phase": "failed", "attempts": 4}]},
+        )
+
+        listed = auth_client.get("/api/accounts").json()
+
+        row = next(a for a in listed if a["id"] == slave.id)
+        assert row["terminal_state"]["phase"] == "failed"
+        assert row["terminal_state"]["attempts"] == 4
+
+    def test_the_newest_report_replaces_the_last(self, auth_client, db, slave):
+        for phase in ("installing", "starting", "running"):
+            auth_client.post(
+                "/api/agent/terminals/state",
+                json={"terminals": [{"account_id": slave.id, "phase": phase}]},
+            )
+
+        db.expire_all()
+        assert db.get(Account, slave.id).terminal_state["phase"] == "running"
+
+    def test_an_account_forgotten_mid_cycle_is_not_an_error(self, auth_client):
+        """The provisioner read its plan before the account was removed."""
+        response = auth_client.post(
+            "/api/agent/terminals/state",
+            json={"terminals": [{"account_id": 999_999, "phase": "starting"}]},
+        )
+        assert response.status_code == 204
+
+    def test_an_account_nothing_has_been_said_about_has_no_state(self, slave, auth_client):
+        listed = auth_client.get("/api/accounts").json()
+        assert next(a for a in listed if a["id"] == slave.id)["terminal_state"] == {}

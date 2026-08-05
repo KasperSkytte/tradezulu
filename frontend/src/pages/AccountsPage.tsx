@@ -17,6 +17,7 @@ import {
   Pause,
   Play,
   Plus,
+  Loader2,
   ShieldCheck,
   Shuffle,
   Trash2,
@@ -349,28 +350,58 @@ function AccountRow({
  *  the only evidence any of this works, so it belongs next to the account it
  *  is evidence about.
  */
+//: How the provisioner's phases read, and how alarming each one looks.
+const PHASES: Record<string, { label: string; tone: string; icon: 'ok' | 'wait' | 'bad' }> = {
+  running: { label: 'terminal up', tone: 'border-gain-500/40 bg-gain-500/10 text-gain-400', icon: 'ok' },
+  installing: { label: 'installing', tone: 'text-[var(--tz-text-muted)]', icon: 'wait' },
+  starting: { label: 'starting', tone: 'text-[var(--tz-text-muted)]', icon: 'wait' },
+  retrying: { label: 'retrying', tone: 'border-[var(--tz-border)] text-[var(--tz-text-muted)]', icon: 'wait' },
+  quiet: { label: 'quiet', tone: 'border-loss-500/40 bg-loss-500/10 text-loss-400', icon: 'bad' },
+  failed: { label: 'start failed', tone: 'border-loss-500/40 bg-loss-500/10 text-loss-400', icon: 'bad' },
+}
+
 function TerminalPill({ account }: { account: SlaveAccount }) {
   const seen = account.last_sync_at ? new Date(account.last_sync_at).getTime() : 0
-  if (!seen) {
-    return (
-      <Pill className="text-[var(--tz-text-muted)]" title="No terminal has reported for this account yet">
+  // A master polls every ten seconds and a slave every two, so a minute of
+  // silence is already unusual and two is something to look at.
+  const reporting = seen > 0 && Date.now() - seen < 2 * 60 * 1000
+
+  // What the provisioner says, which is the only thing that can tell a
+  // MetaTrader still installing from one that was given up on. It is not
+  // always there -- an Expert Advisor can report from a terminal nothing here
+  // provisioned -- so a terminal that is plainly working says so regardless.
+  const state = account.terminal_state ?? {}
+  const phase = reporting ? 'running' : String(state.phase ?? '')
+  const known = PHASES[phase]
+
+  if (!known) {
+    return reporting ? (
+      <Pill className={PHASES.running.tone} title="Its Expert Advisor is reporting in">
+        <Check size={11} /> terminal up
+      </Pill>
+    ) : (
+      <Pill
+        className="text-[var(--tz-text-muted)]"
+        title="No terminal has reported for this account, and no provisioner has said what it is doing"
+      >
         <CircleDot size={11} /> no terminal yet
       </Pill>
     )
   }
-  // A master polls every ten seconds and a slave every two, so a minute of
-  // silence is already unusual and two is something to look at.
-  const quietFor = Date.now() - seen
-  if (quietFor < 2 * 60 * 1000) {
-    return (
-      <Pill className="border-gain-500/40 bg-gain-500/10 text-gain-400" title="Its Expert Advisor is reporting in">
-        <Check size={11} /> terminal up
-      </Pill>
-    )
-  }
+
+  const icon =
+    known.icon === 'ok' ? <Check size={11} />
+    : known.icon === 'bad' ? <AlertTriangle size={11} />
+    : <Loader2 size={11} className={phase === 'installing' || phase === 'starting' ? 'animate-spin' : undefined} />
+
   return (
-    <Pill className="border-loss-500/40 bg-loss-500/10 text-loss-400" title="Its Expert Advisor has stopped reporting">
-      <AlertTriangle size={11} /> quiet {relative(account.last_sync_at)}
+    <Pill
+      className={known.tone}
+      title={String(state.message || '') || 'Its Expert Advisor is reporting in'}
+    >
+      {icon} {known.label}
+      {phase === 'quiet' && seen > 0 && ` ${relative(account.last_sync_at)}`}
+      {Number(state.attempts) > 0 && phase !== 'running' && ` · ${state.attempts} tried`}
     </Pill>
   )
 }

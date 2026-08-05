@@ -504,6 +504,13 @@ export interface SlaveAccount {
   symbol_map: Record<string, string>
   /** Master symbol -> this broker's name for it, as the copier worked it out. */
   symbol_learned: Record<string, string>
+  /** What the provisioner last said this terminal was doing. */
+  terminal_state: {
+    phase?: string
+    message?: string
+    attempts?: number
+    at?: string
+  }
   settings: CopySettings
   open_copies: number
 }
