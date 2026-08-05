@@ -236,21 +236,68 @@ class TestDerived:
         trade = compute_derived(make_trade(), RISK, 10_000.0)
         assert trade.duration_seconds == 3600
 
-    def test_trade_date_uses_configured_timezone(self):
-        # 23:30 UTC on the 4th is already the 5th in Copenhagen (UTC+2 in May).
+    def test_the_brokers_day_is_the_default(self):
+        """A timestamp from MetaTrader is the broker's clock, not UTC.
+
+        Reading it as UTC and converting to the configured timezone is two
+        conversions where there should be one and a half. On a broker three
+        hours ahead with the journal set to Copenhagen it moved a trade closed
+        at 22:00 on the 4th -- 21:00 on the 4th where the trader was sitting --
+        into the 5th, and took two days' worth of figures with it.
+        """
         trade = make_trade(
-            opened_at=datetime(2026, 5, 4, 23, 0),
-            closed_at=datetime(2026, 5, 4, 23, 30),
+            opened_at=datetime(2026, 8, 4, 21, 55),
+            closed_at=datetime(2026, 8, 4, 22, 0),
         )
         compute_derived(trade, RISK, 10_000.0, "Europe/Copenhagen")
-        assert trade.trade_date.isoformat() == "2026-05-05"
+        assert trade.trade_date.isoformat() == "2026-08-04"
 
-        compute_derived(trade, RISK, 10_000.0, "UTC")
-        assert trade.trade_date.isoformat() == "2026-05-04"
+    def test_local_takes_the_brokers_offset_off_first(self):
+        """22:00 on a UTC+3 broker is 21:00 in Copenhagen, still the 4th."""
+        trade = make_trade(
+            opened_at=datetime(2026, 8, 4, 21, 55),
+            closed_at=datetime(2026, 8, 4, 22, 0),
+        )
+        compute_derived(
+            trade, RISK, 10_000.0, "Europe/Copenhagen",
+            times_mode="local", broker_offset_minutes=180,
+        )
+        assert trade.trade_date.isoformat() == "2026-08-04"
 
-    def test_unknown_timezone_falls_back_to_utc(self):
+    def test_local_can_still_move_a_trade_across_midnight(self):
+        """It has to be able to, or the setting would mean nothing.
+
+        A UTC+3 broker runs one hour ahead of Copenhagen in August, so the
+        first hour of the broker's day is still the evening before there.
+        """
+        trade = make_trade(
+            opened_at=datetime(2026, 8, 5, 0, 25),
+            closed_at=datetime(2026, 8, 5, 0, 30),
+        )
+        compute_derived(
+            trade, RISK, 10_000.0, "Europe/Copenhagen",
+            times_mode="local", broker_offset_minutes=180,
+        )
+        assert trade.trade_date.isoformat() == "2026-08-04"
+
+    def test_local_without_a_known_offset_keeps_the_brokers_day(self):
+        """There is nothing to take off, so nothing is guessed at."""
+        trade = make_trade(
+            opened_at=datetime(2026, 8, 4, 21, 55),
+            closed_at=datetime(2026, 8, 4, 22, 0),
+        )
+        compute_derived(
+            trade, RISK, 10_000.0, "Europe/Copenhagen",
+            times_mode="local", broker_offset_minutes=None,
+        )
+        assert trade.trade_date.isoformat() == "2026-08-04"
+
+    def test_unknown_timezone_still_produces_a_day(self):
         trade = make_trade()
-        compute_derived(trade, RISK, 10_000.0, "Not/AZone")
+        compute_derived(
+            trade, RISK, 10_000.0, "Not/AZone",
+            times_mode="local", broker_offset_minutes=180,
+        )
         assert trade.trade_date is not None
 
 

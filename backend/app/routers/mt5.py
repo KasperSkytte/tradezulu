@@ -163,6 +163,7 @@ def _apply_ingest(
             config["risk"],
             config["general"]["timezone"],
             position_ids=sorted(touched) or None,
+            times_mode=config["general"].get("times", "broker"),
         )
     else:
         trades = 0

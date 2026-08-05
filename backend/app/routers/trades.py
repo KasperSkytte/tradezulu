@@ -316,4 +316,11 @@ def _naive(value: Any):
 def _recompute(db: Session, trade: Trade, config: dict[str, Any]) -> None:
     account = trade.account if trade.account is not None else get_default_account(db)
     account_size = resolve_account_size(account, config["risk"])
-    compute_derived(trade, config["risk"], account_size, config["general"]["timezone"])
+    compute_derived(
+        trade,
+        config["risk"],
+        account_size,
+        config["general"]["timezone"],
+        times_mode=config["general"].get("times", "broker"),
+        broker_offset_minutes=account.broker_utc_offset_minutes if account else None,
+    )

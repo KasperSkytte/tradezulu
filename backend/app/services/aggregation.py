@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -262,11 +262,45 @@ def compute_risk_amount(
     return None, "none"
 
 
+def trading_day(
+    reference: datetime,
+    tz_name: str,
+    *,
+    mode: str = "broker",
+    broker_offset_minutes: int | None = None,
+) -> date:
+    """Which day a trade belongs to.
+
+    MetaTrader stamps every trade with the broker's server clock and says
+    nothing about it. This used to be read as UTC and converted to the
+    configured timezone, which is two conversions where there should be one and
+    a half: on a broker three hours ahead with the journal set to Copenhagen,
+    a trade closed at 22:00 on Monday -- 21:00 Monday where the trader was
+    sitting -- was filed under Tuesday, and every daily figure for both days
+    was wrong.
+
+    "broker" files a trade on the broker's own trading day, which is what
+    MetaTrader shows and what a broker's own statement will agree with.
+
+    "local" turns the broker's clock into a real moment first, by taking off
+    how far it runs from UTC, and only then asks what day that was where the
+    trader is. Without a known offset there is nothing to take off, so it falls
+    back to the broker's day rather than inventing a boundary.
+    """
+    if mode != "local" or broker_offset_minutes is None:
+        return reference.date()
+    utc = reference.replace(tzinfo=timezone.utc) - timedelta(minutes=broker_offset_minutes)
+    return utc.astimezone(_tz(tz_name)).date()
+
+
 def compute_derived(
     trade: Trade,
     risk_cfg: dict[str, Any],
     account_size: float,
     tz_name: str = "UTC",
+    *,
+    times_mode: str = "broker",
+    broker_offset_minutes: int | None = None,
 ) -> Trade:
     """Recompute net P&L, risk, R multiples, outcome and bucket date in place."""
     trade.net_pnl = round(effective_net_pnl(trade, risk_cfg), 2)
@@ -298,8 +332,9 @@ def compute_derived(
         trade.duration_seconds = None
 
     reference = trade.closed_at or trade.opened_at
-    local = reference.replace(tzinfo=timezone.utc).astimezone(_tz(tz_name))
-    trade.trade_date = local.date()
+    trade.trade_date = trading_day(
+        reference, tz_name, mode=times_mode, broker_offset_minutes=broker_offset_minutes
+    )
     return trade
 
 
@@ -425,6 +460,7 @@ def rebuild_trades(
     risk_cfg: dict[str, Any],
     tz_name: str,
     position_ids: Sequence[int] | None = None,
+    times_mode: str = "broker",
 ) -> int:
     """Re-fold deals into trades, preserving all user-entered journal fields."""
     stmt = select(Deal).where(Deal.account_id == account_id)
@@ -481,7 +517,14 @@ def rebuild_trades(
             trade.initial_target = agg.initial_target
             trade.target_source = "mt5" if agg.initial_target else "none"
 
-        compute_derived(trade, risk_cfg, account_size, tz_name)
+        compute_derived(
+            trade,
+            risk_cfg,
+            account_size,
+            tz_name,
+            times_mode=times_mode,
+            broker_offset_minutes=account.broker_utc_offset_minutes if account else None,
+        )
         _sync_executions(db, trade, agg.executions)
         count += 1
 
@@ -518,12 +561,21 @@ def resolve_account_size(account: Account | None, risk_cfg: dict[str, Any]) -> f
     return account.balance or 0.0
 
 
-def recompute_all(db: Session, risk_cfg: dict[str, Any], tz_name: str) -> int:
+def recompute_all(
+    db: Session, risk_cfg: dict[str, Any], tz_name: str, times_mode: str = "broker"
+) -> int:
     """Apply current settings to every stored trade (called after settings change)."""
     accounts = {a.id: a for a in db.scalars(select(Account)).all()}
     trades = list(db.scalars(select(Trade)).all())
     for trade in trades:
-        account_size = resolve_account_size(accounts.get(trade.account_id), risk_cfg)
-        compute_derived(trade, risk_cfg, account_size, tz_name)
+        account = accounts.get(trade.account_id)
+        compute_derived(
+            trade,
+            risk_cfg,
+            resolve_account_size(account, risk_cfg),
+            tz_name,
+            times_mode=times_mode,
+            broker_offset_minutes=account.broker_utc_offset_minutes if account else None,
+        )
     db.flush()
     return len(trades)

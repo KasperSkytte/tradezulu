@@ -228,7 +228,17 @@ def _persist_positions(
                 resolved.append(tag)
             trade.tags = resolved
 
-        compute_derived(trade, config["risk"], account_size, tz_name)
+        # An imported statement carries the broker's clock like any other, but
+        # nothing has reported how far it runs from UTC unless a terminal has
+        # been attached, in which case the account knows.
+        compute_derived(
+            trade,
+            config["risk"],
+            account_size,
+            tz_name,
+            times_mode=config["general"].get("times", "broker"),
+            broker_offset_minutes=account.broker_utc_offset_minutes if account else None,
+        )
 
     db.flush()
     return created, updated

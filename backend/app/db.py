@@ -77,6 +77,47 @@ def _warn_if_admin_env_is_ignored(db: Session, existing: User | None) -> None:
     )
 
 
+#: Set once the stored trade_date values have been rebuilt under the corrected
+#: day boundary. A marker rather than a version check: it is a data repair, it
+#: has to happen exactly once, and it must not run again on every boot.
+DAY_REPAIR_KEY = "trading_days_rebuilt"
+
+
+def _refile_trading_days(db: Session) -> None:
+    """Rebuild which day each stored trade belongs to, once.
+
+    Trade dates were computed by reading MetaTrader's timestamps as UTC and
+    converting them to the configured timezone. They are the broker's clock,
+    so that was one conversion too many: on a broker three hours ahead with the
+    journal set to Copenhagen, everything after 22:00 was filed on the next
+    day, and the calendar, the daily P&L and every "by day" figure inherited
+    it.
+
+    Nothing else about a trade changes -- this recomputes the same fields the
+    settings page already recomputes on demand -- but it has to happen without
+    being asked, because the wrong dates are already stored and nobody would
+    know to ask.
+    """
+    from .models import Setting
+    from .services.aggregation import recompute_all
+    from .services.appsettings import get_app_settings
+
+    if db.get(Setting, DAY_REPAIR_KEY) is not None:
+        return
+
+    config = get_app_settings(db)
+    count = recompute_all(
+        db,
+        config["risk"],
+        config["general"]["timezone"],
+        config["general"].get("times", "broker"),
+    )
+    db.add(Setting(key=DAY_REPAIR_KEY, value={"trades": count}))
+    db.commit()
+    if count:
+        log.info("Refiled %d trades onto the corrected trading day", count)
+
+
 def init_db() -> None:
     """Create tables and seed the first user, default account and tag list."""
     sqlite_path = settings.sqlite_path
@@ -129,3 +170,4 @@ def init_db() -> None:
             log.info("Created placeholder default account")
 
         db.commit()
+        _refile_trading_days(db)

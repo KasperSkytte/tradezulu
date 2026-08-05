@@ -77,15 +77,29 @@ async def update_settings(
     merged = save_app_settings(db, patch)
 
     # Anything that changes how a trade is scored requires a recompute pass.
-    if before["risk"] != merged["risk"] or before["general"]["timezone"] != merged["general"]["timezone"]:
-        recompute_all(db, merged["risk"], merged["general"]["timezone"])
+    if (
+        before["risk"] != merged["risk"]
+        or before["general"]["timezone"] != merged["general"]["timezone"]
+        or before["general"].get("times") != merged["general"].get("times")
+    ):
+        recompute_all(
+            db,
+            merged["risk"],
+            merged["general"]["timezone"],
+            merged["general"].get("times", "broker"),
+        )
     db.commit()
     return merged
 
 
 @router.post("/settings/recompute")
 def recompute(_user: CurrentUser, db: DbSession, config: AppConfig) -> dict[str, int]:
-    count = recompute_all(db, config["risk"], config["general"]["timezone"])
+    count = recompute_all(
+        db,
+        config["risk"],
+        config["general"]["timezone"],
+        config["general"].get("times", "broker"),
+    )
     db.commit()
     return {"recomputed": count}
 
@@ -181,7 +195,12 @@ def update_account(
             setattr(account, key, value)
 
     if "initial_balance" in data:
-        recompute_all(db, config["risk"], config["general"]["timezone"])
+        recompute_all(
+            db,
+            config["risk"],
+            config["general"]["timezone"],
+            config["general"].get("times", "broker"),
+        )
     db.commit()
     db.refresh(account)
     return account
