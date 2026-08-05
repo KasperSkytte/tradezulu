@@ -18,6 +18,7 @@ import {
   Play,
   Plus,
   ShieldCheck,
+  Shuffle,
   Trash2,
 } from 'lucide-react'
 import clsx from 'clsx'
@@ -29,6 +30,7 @@ import { Button, Card, CardHeader, EmptyState, ErrorState, Field, Skeleton } fro
 import { SlaveForm } from '../components/SlaveForm'
 import { CopyActivity } from '../components/CopyActivity'
 import { ImportCard } from '../components/ImportCard'
+import { SymbolMappings } from '../components/SymbolMappings'
 import { MT5Connection } from '../components/MT5Connection'
 
 export function AccountsPage() {
@@ -174,7 +176,9 @@ function AccountRow({
   onEdit?: () => void
 }) {
   const [error, setError] = useState<string | null>(null)
+  const [symbols, setSymbols] = useState(false)
   const isSlave = account.role === 'slave'
+  const learnedCount = Object.keys(account.symbol_learned ?? {}).length
 
   const arm = useMutation({
     mutationFn: (body: { enabled: boolean; dry_run: boolean }) =>
@@ -199,6 +203,13 @@ function AccountRow({
 
   return (
     <div className="py-4 first:pt-0 last:pb-0">
+      {symbols && (
+        <SymbolMappings
+          account={account}
+          onClose={() => setSymbols(false)}
+          onChanged={onChanged}
+        />
+      )}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -280,6 +291,18 @@ function AccountRow({
                   Go live
                 </Button>
               )}
+
+              <Button
+                variant="ghost"
+                icon={<Shuffle size={15} />}
+                onClick={() => setSymbols(true)}
+                title="What this broker calls each of the master's instruments"
+              >
+                Symbols
+                {learnedCount > 0 && (
+                  <span className="ml-1 text-xs text-[var(--tz-text-faint)]">{learnedCount}</span>
+                )}
+              </Button>
 
               {onEdit && (
                 <Button variant="ghost" onClick={onEdit}>

@@ -482,8 +482,22 @@ class SlaveAccountOut(BaseModel):
     symbol_prefix: str
     symbol_suffix: str
     symbol_map: dict[str, str]
+    #: What the copier worked out for itself, master symbol -> this broker's
+    #: name for it. Shown so the mapping is something you can check, not
+    #: something you have to trust.
+    symbol_learned: dict[str, str] = Field(default_factory=dict)
     settings: CopySettingsOut
     open_copies: int
+
+
+class SymbolMappingIn(BaseModel):
+    """Correcting, or forgetting, how a slave names an instrument."""
+
+    #: Master symbol -> the name to use on this slave. Replaces the whole set.
+    overrides: dict[str, str] = Field(default_factory=dict)
+    #: Master symbols whose remembered match should be worked out again, for
+    #: when the copier picked something and the broker has since changed it.
+    forget: list[str] = Field(default_factory=list)
 
 
 class SlaveArmIn(BaseModel):

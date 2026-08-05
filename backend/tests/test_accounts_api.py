@@ -310,3 +310,64 @@ class TestAuth:
         """`client` has not logged in."""
         assert client.get("/api/accounts").status_code == 401
         assert client.post("/api/accounts", json={"login": "9", "server": "s"}).status_code == 401
+
+
+class TestSymbolMappings:
+    """Correcting what the copier decided an instrument is called.
+
+    The copier resolves symbols on its own, which is the one thing about it
+    that most deserves to be inspectable: a wrong mapping is not a missed
+    trade, it is real money on an instrument nobody chose.
+    """
+
+    def test_overrides_are_saved(self, auth_client, slave):
+        response = auth_client.put(
+            f"/api/accounts/{slave['id']}/symbols",
+            json={"overrides": {"XAUUSD+": "GOLD"}},
+        )
+        assert response.status_code == 200
+        assert response.json()["symbol_map"] == {"XAUUSD+": "GOLD"}
+
+    def test_what_the_copier_worked_out_is_visible(self, auth_client, db, slave):
+        account = db.get(Account, slave["id"])
+        account.symbol_learned = {"XAUUSD+": "XAUUSD"}
+        db.commit()
+
+        listed = auth_client.get("/api/accounts").json()
+
+        assert next(a for a in listed if a["id"] == slave["id"])["symbol_learned"] == {
+            "XAUUSD+": "XAUUSD"
+        }
+
+    def test_forgetting_one_leaves_the_rest(self, auth_client, db, slave):
+        """A broker renaming one instrument should not re-resolve every other."""
+        account = db.get(Account, slave["id"])
+        account.symbol_learned = {"XAUUSD+": "XAUUSD", "EURUSD+": "EURUSD"}
+        db.commit()
+
+        response = auth_client.put(
+            f"/api/accounts/{slave['id']}/symbols",
+            json={"overrides": {}, "forget": ["XAUUSD+"]},
+        )
+
+        assert response.json()["symbol_learned"] == {"EURUSD+": "EURUSD"}
+
+    def test_saving_overrides_does_not_wipe_what_was_learned(self, auth_client, db, slave):
+        account = db.get(Account, slave["id"])
+        account.symbol_learned = {"EURUSD+": "EURUSD"}
+        db.commit()
+
+        response = auth_client.put(
+            f"/api/accounts/{slave['id']}/symbols",
+            json={"overrides": {"XAUUSD+": "GOLD"}},
+        )
+
+        assert response.json()["symbol_learned"] == {"EURUSD+": "EURUSD"}
+
+    def test_blank_rows_are_dropped(self, auth_client, slave):
+        """The dialog adds an empty pair when you click Add."""
+        response = auth_client.put(
+            f"/api/accounts/{slave['id']}/symbols",
+            json={"overrides": {"XAUUSD+": "GOLD", "": "", "  ": "X"}},
+        )
+        assert response.json()["symbol_map"] == {"XAUUSD+": "GOLD"}

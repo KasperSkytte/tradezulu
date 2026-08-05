@@ -32,6 +32,7 @@ from ..schemas import (
     SlaveAccountIn,
     SlaveAccountOut,
     SlaveArmIn,
+    SymbolMappingIn,
 )
 from ..services.accounts import purge_account, single_master
 from ..services.copier.config import defaults as copy_defaults
@@ -70,6 +71,7 @@ def _as_out(account: Account, db: Session) -> SlaveAccountOut:
         symbol_prefix=account.symbol_prefix,
         symbol_suffix=account.symbol_suffix,
         symbol_map=account.symbol_map or {},
+        symbol_learned=account.symbol_learned or {},
         settings=CopySettingsOut(**settings),
         open_copies=open_copies or 0,
     )
@@ -156,6 +158,42 @@ def update_account(
 
     if payload.settings is not None:
         account.copy_settings = {**copy_defaults(), **payload.settings}
+
+    db.commit()
+    db.refresh(account)
+    return _as_out(account, db)
+
+
+@router.put("/{account_id}/symbols", response_model=SlaveAccountOut)
+def set_symbol_mappings(
+    account_id: int, payload: SymbolMappingIn, db: Session = Depends(get_db)
+) -> SlaveAccountOut:
+    """Set this slave's symbol overrides, and forget what was guessed.
+
+    Its own endpoint rather than part of the account update, because that one
+    takes the whole account -- login, server, password -- and correcting one
+    ticker should not mean resubmitting all of it.
+
+    Forgetting is separate from overriding on purpose. An override says "this
+    is the name"; forgetting says "work it out again", which is what you want
+    when the broker has renamed something and the copier is still holding the
+    old answer.
+    """
+    account = _get(db, account_id)
+
+    account.symbol_map = {
+        str(key).strip().upper(): str(value).strip()
+        for key, value in payload.overrides.items()
+        if str(key).strip() and str(value).strip()
+    }
+
+    if payload.forget:
+        drop = {str(name).strip().upper() for name in payload.forget}
+        account.symbol_learned = {
+            key: value
+            for key, value in (account.symbol_learned or {}).items()
+            if str(key).strip().upper() not in drop
+        }
 
     db.commit()
     db.refresh(account)

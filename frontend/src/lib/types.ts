@@ -497,6 +497,8 @@ export interface SlaveAccount {
   symbol_prefix: string
   symbol_suffix: string
   symbol_map: Record<string, string>
+  /** Master symbol -> this broker's name for it, as the copier worked it out. */
+  symbol_learned: Record<string, string>
   settings: CopySettings
   open_copies: number
 }
