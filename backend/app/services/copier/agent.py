@@ -24,6 +24,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ...models import Account, CopyEvent, CopyLink, EquityPoint, Trade
+from .. import brokerclock
 from .config import mirror_stops_enabled, risk_from, sizing_from, symbol_rules_from
 from .engine import ActionType, CopiedPosition, MasterPosition, SlaveContext, plan
 from .risk import OpenPosition, SlaveSnapshot
@@ -51,6 +52,12 @@ def update_account_state(db: Session, account: Account, payload: Any) -> None:
         account.currency = payload.currency
     if payload.name and not account.name:
         account.name = payload.name
+
+    # Every heartbeat, so a broker moving on or off summer time is picked up
+    # within a poll rather than at the next trade.
+    offset = brokerclock.offset_minutes(getattr(payload, "server_time", None))
+    if offset is not None:
+        account.broker_utc_offset_minutes = offset
 
     today = datetime.now(timezone.utc).date()
     if account.day_start_date != today or not account.day_start_equity:

@@ -14,6 +14,7 @@ const FALLBACK: AppSettings = {
     default_period: 'last_30_days',
     date_format: 'yyyy-MM-dd',
     time_format: '24h',
+    chart_times: 'broker',
     theme: 'dark',
     accent: 'jade',
     colorblind_mode: false,

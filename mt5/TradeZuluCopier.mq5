@@ -299,6 +299,7 @@ string PollBody()
    body += "," + JNum("balance",     AccountInfoDouble(ACCOUNT_BALANCE), 2);
    body += "," + JNum("equity",      AccountInfoDouble(ACCOUNT_EQUITY), 2);
    body += "," + JNum("margin_free", AccountInfoDouble(ACCOUNT_MARGIN_FREE), 2);
+   body += "," + JInt("server_time", (long)TimeCurrent());
    body += "," + JBool("trade_allowed", TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) != 0);
    body += ",\"positions\":" + PositionsJson();
    body += ",\"symbols\":" + SymbolsJson();
@@ -711,6 +712,11 @@ string AccountJson()
    out += "," + JInt("leverage", AccountInfoInteger(ACCOUNT_LEVERAGE));
    out += "," + JNum("balance", AccountInfoDouble(ACCOUNT_BALANCE), 2);
    out += "," + JNum("equity",  AccountInfoDouble(ACCOUNT_EQUITY), 2);
+   // The broker's own clock. Every other time in this payload -- deal times,
+   // candle times -- is on it and carries no offset, so without this one the
+   // journal cannot tell 09:00 in Cyprus from 09:00 anywhere else. The server
+   // works the offset out by comparing it against real UTC on arrival.
+   out += "," + JInt("server_time", (long)TimeCurrent());
    out += "}";
    return out;
 }

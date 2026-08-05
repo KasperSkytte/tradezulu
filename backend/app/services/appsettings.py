@@ -31,6 +31,16 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         # journal full of 1:05 PM when you think in 13:05 is a small friction
         # applied to every row.
         "time_format": "24h",  # 24h | 12h
+        # Whose clock the chart replay is labelled with. MetaTrader keeps one
+        # clock -- the broker's -- and writes every timestamp on it without
+        # saying so, which for most brokers is a couple of hours from the
+        # trader's own wall clock.
+        #
+        # "broker" reads the way the terminal does, which is what anyone
+        # checking a fill against MetaTrader wants. "local" reads the way the
+        # day was actually lived, using the timezone above, and needs a
+        # terminal to have reported the broker's clock at least once.
+        "chart_times": "broker",  # broker | local
         "theme": "dark",  # dark | light | system
         "accent": "jade",
         # Swaps the profit/loss green-red pair for a blue-amber pair that

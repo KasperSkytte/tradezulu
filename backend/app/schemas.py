@@ -181,6 +181,8 @@ class MT5AccountInfo(BaseModel):
     leverage: int = 0
     balance: float = 0.0
     equity: float = 0.0
+    #: The broker's own clock, as a Unix epoch -- see services.brokerclock.
+    server_time: int | None = None
 
     @field_validator("login", mode="before")
     @classmethod
@@ -328,6 +330,8 @@ class AccountOut(ORMModel):
     is_default: bool
     last_sync_at: datetime | None
     last_sync_source: str
+    #: How far this broker's clock runs from UTC; None until a terminal says.
+    broker_utc_offset_minutes: int | None = None
 
 
 class CandleOut(BaseModel):
@@ -424,6 +428,8 @@ class SlaveAccountOut(BaseModel):
     equity: float
     is_default: bool
     last_sync_at: datetime | None
+    #: How far this broker's clock runs from UTC; None until a terminal says.
+    broker_utc_offset_minutes: int | None = None
 
     copy_enabled: bool
     copy_dry_run: bool
@@ -511,6 +517,9 @@ class AgentPollIn(BaseModel):
     balance: float = 0.0
     equity: float = 0.0
     margin_free: float = 0.0
+    #: The broker's own clock, as a Unix epoch. Used to work out how far it
+    #: runs from UTC -- see services.brokerclock.
+    server_time: int | None = None
     trade_allowed: bool = True
     positions: list[AgentPosition] = Field(default_factory=list)
     symbols: list[AgentSymbol] = Field(default_factory=list)

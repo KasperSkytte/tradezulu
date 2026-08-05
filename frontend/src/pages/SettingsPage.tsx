@@ -317,6 +317,27 @@ function GeneralSection() {
             ]}
           />
         </Field>
+        <Field
+          label="Chart times"
+          hint="MetaTrader stamps everything with the broker's clock, which is usually a
+                couple of hours from yours. Broker time reads exactly as it does in the
+                terminal; your timezone reads as the day was actually lived. Only the
+                axis labels change either way — the candles are never moved, so a fill
+                always stays on the bar it happened in."
+        >
+          <SegmentedControl
+            value={general.chart_times ?? 'broker'}
+            onChange={(value) => void apply({ general: { chart_times: value } })}
+            options={[
+              { value: 'broker', label: 'Broker time', title: "The terminal's own clock" },
+              {
+                value: 'local',
+                label: general.timezone || 'Your timezone',
+                title: 'Converted using the timezone above',
+              },
+            ]}
+          />
+        </Field>
         <Field label="Week starts on">
           <SegmentedControl
             value={general.week_starts_on}

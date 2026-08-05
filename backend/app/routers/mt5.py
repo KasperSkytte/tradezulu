@@ -34,6 +34,7 @@ from ..schemas import (
     MT5IngestResponse,
     SyncStatus,
 )
+from ..services import brokerclock
 from ..services import candles as timeframes
 from ..services.accounts import purge_account
 from ..services.aggregation import (
@@ -90,6 +91,9 @@ def _resolve_account(db: Session, info: dict[str, Any]) -> Account:
         account.balance = float(info["balance"])
     if info.get("equity") is not None:
         account.equity = float(info["equity"])
+    offset = brokerclock.offset_minutes(info.get("server_time"))
+    if offset is not None:
+        account.broker_utc_offset_minutes = offset
     return account
 
 

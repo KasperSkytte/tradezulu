@@ -285,6 +285,8 @@ export interface AppSettings {
     date_format: string
     /** '24h' writes 13:05, '12h' writes 1:05 PM. */
     time_format: '24h' | '12h'
+    /** Whose clock the replay chart is labelled with. */
+    chart_times: 'broker' | 'local'
     theme: 'dark' | 'light' | 'system'
     accent: string
     colorblind_mode: boolean
@@ -395,6 +397,8 @@ export interface Account {
   is_default: boolean
   last_sync_at: string | null
   last_sync_source: string
+  /** How far this broker's clock runs from UTC; null until a terminal says. */
+  broker_utc_offset_minutes: number | null
 }
 
 export interface Candle {

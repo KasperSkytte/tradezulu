@@ -77,6 +77,12 @@ class Account(Base):
     initial_balance: Mapped[float] = mapped_column(Float, default=0.0)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # How far the broker's clock runs from UTC, in minutes. Every timestamp
+    # MetaTrader reports -- deals, candles, everything -- is on the broker's
+    # server clock and carries no offset with it, so this is the only thing
+    # that can turn one into a real moment. NULL means no terminal has told us
+    # yet, and times are shown as the broker wrote them.
+    broker_utc_offset_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_sync_source: Mapped[str] = mapped_column(String(32), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
