@@ -346,8 +346,11 @@ export interface AppSettings {
   charts: {
     provider: 'local' | 'studio' | 'tradingview'
     default_timeframe: string
-    candles_before: number
-    candles_after: number
+    /** How much chart history to keep around each trade, in days either side. */
+    history_days_before: number
+    history_days_after: number
+    /** Context either side of the position when a chart first opens. */
+    zoom_hours: number
     tradingview_prefix: string
     symbol_map: Record<string, string>
   }

@@ -47,8 +47,8 @@ input ENUM_TIMEFRAMES CandleTimeframe = PERIOD_M5;   // Which timeframe to send 
 // A full trading day either side, so a chart can be zoomed out to the session
 // the trade happened in rather than to the twenty bars around the entry. 288
 // M5 bars is 24 hours.
-input int    CandlesBefore    = 288;   // Bars before the entry
-input int    CandlesAfter     = 288;   // Bars after the exit
+input int    CandlesBefore    = 288;   // Bars before the entry (until the server says)
+input int    CandlesAfter     = 288;   // Bars after the exit (until the server says)
 input int    CandleBackfillDays = 60;  // How far back to fetch charts for trades already journalled
 
 //--- state ----------------------------------------------------------
@@ -64,6 +64,11 @@ bool     g_cursor_known = false;
 datetime g_next_history = 0;
 int      g_sent_deals   = 0;
 bool     g_candles_done = false;   // the one-off backfill for trades already journalled
+// How much chart history to send around each trade, in seconds either side.
+// Set in the journal, in days, and sent down on every heartbeat; zero until
+// the server has said, when the CandlesBefore/After inputs stand in.
+int      g_history_before = 0;
+int      g_history_after  = 0;
 
 //--- stops seen on live positions -----------------------------------
 // MetaTrader records a stop on the *order*, so a stop attached after entry --
@@ -328,6 +333,12 @@ void Poll()
       EventKillTimer();
       EventSetTimer(g_poll_seconds);
    }
+
+   // How much chart history the journal wants around each trade. It is a
+   // setting there, in days, so widening it reaches every terminal on the next
+   // heartbeat instead of waiting for a restart.
+   g_history_before = (int)StringToInteger(JsonValue(reply, "history_before_seconds"));
+   g_history_after  = (int)StringToInteger(JsonValue(reply, "history_after_seconds"));
 
    string role = JsonValue(reply, "role");
    bool   halted = JsonValue(reply, "halted") == "true";
@@ -758,8 +769,14 @@ string CandlesJson(const string symbol, const datetime from, const datetime to)
    MqlRates rates[];
    ArraySetAsSeries(rates, false);
    int span = PeriodSeconds(CandleTimeframe);
-   datetime start = from - (datetime)(span * MathMax(1, CandlesBefore));
-   datetime end   = to   + (datetime)(span * MathMax(1, CandlesAfter));
+   // The server owns this window: it is set in the journal, in days, and sent
+   // here on every heartbeat, so widening it takes effect on the next trade
+   // rather than at the next restart. The inputs above are what to use until
+   // it has said, and for a terminal running without one.
+   int before = g_history_before > 0 ? g_history_before : span * MathMax(1, CandlesBefore);
+   int after  = g_history_after  > 0 ? g_history_after  : span * MathMax(1, CandlesAfter);
+   datetime start = from - (datetime)before;
+   datetime end   = to   + (datetime)after;
 
    int got = CopyRates(symbol, CandleTimeframe, start, end, rates);
    if(got <= 0)

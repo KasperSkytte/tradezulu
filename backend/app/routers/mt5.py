@@ -468,9 +468,8 @@ def get_candles(
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Trade not found")
         symbol = trade.symbol
         before, after = timeframes.window_padding(
-            timeframe,
-            int(config["charts"].get("candles_before", 120)),
-            int(config["charts"].get("candles_after", 60)),
+            float(config["charts"].get("history_days_before", timeframes.DEFAULT_DAYS)),
+            float(config["charts"].get("history_days_after", timeframes.DEFAULT_DAYS)),
         )
         start = trade.opened_at - before
         end = (trade.closed_at or trade.opened_at) + after

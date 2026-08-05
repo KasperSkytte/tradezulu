@@ -168,6 +168,27 @@ def _restore_master(db: Session, account: Account) -> None:
     log.info("agent: account %s is the master again", account.login)
 
 
+#: A day either side, when the setting is missing or nonsense.
+_DEFAULT_HISTORY_SECONDS = 86_400
+
+
+def _history_seconds(charts: dict[str, Any], key: str) -> int:
+    """The configured window as seconds, for a terminal to divide into bars.
+
+    Clamped rather than trusted: this ends up as the size of every candle
+    upload, and a stray zero would leave charts with nothing to draw while a
+    stray very large number would have a terminal posting months of bars after
+    every trade.
+    """
+    try:
+        days = float(charts.get(key, 1.0))
+    except (TypeError, ValueError):
+        return _DEFAULT_HISTORY_SECONDS
+    if days <= 0:
+        return 0
+    return int(min(days, 90.0) * 86_400)
+
+
 @router.post("/poll", response_model=AgentPollOut)
 def poll(payload: AgentPollIn, db: Session = Depends(get_db)) -> AgentPollOut:
     """One heartbeat from a terminal: here is my state, what should I do?"""
@@ -204,6 +225,7 @@ def poll(payload: AgentPollIn, db: Session = Depends(get_db)) -> AgentPollOut:
     account.last_sync_source = "agent"
     db.commit()
 
+    charts = get_app_settings(db)["charts"]
     return AgentPollOut(
         account_id=account.id,
         role=account.role,
@@ -211,6 +233,8 @@ def poll(payload: AgentPollIn, db: Session = Depends(get_db)) -> AgentPollOut:
         dry_run=bool(account.copy_dry_run),
         halted=bool(account.copy_halted),
         poll_seconds=2 if account.role == "slave" and account.copy_enabled else 10,
+        history_before_seconds=_history_seconds(charts, "history_days_before"),
+        history_after_seconds=_history_seconds(charts, "history_days_after"),
         commands=commands,
     )
 

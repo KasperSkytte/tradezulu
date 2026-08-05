@@ -392,8 +392,21 @@ function LocalReplay({ trade, timeframe }: { trade: TradeDetail; timeframe: stri
         .sort((a, b) => Number(a.time) - Number(b.time)),
     )
 
-    chart.timeScale().fitContent()
-  }, [data, trade])
+    // Open on the position plus the configured context, not on everything
+    // fetched: with several days of history stored, fitContent drew the trade
+    // as a couple of pixels in the middle of a week.
+    const context = Math.max(0, settings.charts.zoom_hours ?? 2) * 3600
+    const opened = brokerTime(trade.opened_at)
+    const closed = trade.closed_at ? brokerTime(trade.closed_at) : opened
+    const first = data.candles[0] ? brokerTime(data.candles[0].time) : opened
+    const last = data.candles[data.candles.length - 1]
+      ? brokerTime(data.candles[data.candles.length - 1].time)
+      : closed
+    chart.timeScale().setVisibleRange({
+      from: (Math.max(Number(first), Number(opened) - context) as Time),
+      to: (Math.min(Number(last), Number(closed) + context) as Time),
+    })
+  }, [data, trade, settings.charts.zoom_hours])
 
   const hasCandles = Boolean(data?.candles.length)
   // Asked for something shorter than what was collected, which is the one

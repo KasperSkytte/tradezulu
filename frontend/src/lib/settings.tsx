@@ -65,8 +65,9 @@ const FALLBACK: AppSettings = {
   charts: {
     provider: 'local',
     default_timeframe: 'M15',
-    candles_before: 120,
-    candles_after: 60,
+    history_days_before: 1,
+    history_days_after: 1,
+    zoom_hours: 2,
     tradingview_prefix: '',
     symbol_map: {},
   },

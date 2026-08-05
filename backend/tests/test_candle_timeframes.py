@@ -10,7 +10,14 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.services.candles import Bar, aggregate, available, source_for, window_padding
+from app.services.candles import (
+    Bar,
+    aggregate,
+    available,
+    bars_in,
+    source_for,
+    window_padding,
+)
 
 
 def bars(count: int, *, span: int = 300, start: datetime | None = None) -> list[Bar]:
@@ -95,20 +102,50 @@ class TestFolding:
 
 
 class TestWindow:
-    def test_the_window_widens_with_the_timeframe(self):
-        """A hundred bars of H4 is a fortnight; a hundred of M5 is eight hours.
+    """How much is read around a trade, now measured in days.
 
-        Padding measured in bars of the *requested* timeframe is what makes
-        zooming out actually show more, rather than the same eight hours drawn
-        as two candles.
-        """
-        before_m5, _ = window_padding("M5", 120, 60)
-        before_h4, _ = window_padding("H4", 120, 60)
+    It used to be a bar count of the requested timeframe, which meant the same
+    setting was twelve hours at M5 and most of a month at H4 -- impossible to
+    reason about, and it asked for history no terminal had ever collected. A
+    window in days means the same stretch however finely it is drawn.
+    """
 
-        assert before_m5 == timedelta(hours=10)
-        assert before_h4 == timedelta(days=20)
+    def test_days_are_days_at_any_timeframe(self):
+        assert window_padding(1, 1) == (timedelta(days=1), timedelta(days=1))
 
-    @pytest.mark.parametrize("count", [0, -5])
-    def test_a_silly_padding_still_leaves_one_bar(self, count):
-        before, after = window_padding("M5", count, count)
-        assert before == after == timedelta(minutes=5)
+    def test_either_side_is_set_separately(self):
+        """The run-up to an entry and what happened afterwards are different
+        questions, and people want different amounts of each."""
+        before, after = window_padding(5, 0.5)
+        assert before == timedelta(days=5)
+        assert after == timedelta(hours=12)
+
+    @pytest.mark.parametrize("days", [0, None])
+    def test_nothing_asked_for_still_gives_a_usable_window(self, days):
+        """An empty box in the settings must not produce an empty chart."""
+        before, after = window_padding(days, days)
+        assert before == after == timedelta(days=1)
+
+    def test_a_negative_window_is_not_a_negative_window(self):
+        before, after = window_padding(-5, -5)
+        assert before == after == timedelta(0)
+
+
+class TestBarsIn:
+    """Turning a number of days into the bar count the terminal is asked for."""
+
+    def test_a_day_of_five_minute_bars(self):
+        assert bars_in(1, "M5") == 288
+
+    def test_a_week_of_them(self):
+        assert bars_in(7, "M5") == 2016
+
+    def test_the_same_day_at_a_longer_timeframe(self):
+        assert bars_in(1, "H1") == 24
+        assert bars_in(1, "H4") == 6
+
+    def test_a_fraction_of_a_day(self):
+        assert bars_in(0.5, "M15") == 48
+
+    def test_never_asks_for_nothing(self):
+        assert bars_in(0, "H4") == 1

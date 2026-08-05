@@ -57,3 +57,47 @@ class TestTimesWidenedFromTheChart:
 
     def test_an_install_that_never_saw_the_old_name_gets_the_default(self, db):
         assert get_app_settings(db)["general"]["times"] == "broker"
+
+
+class TestTheChartWindowInDays:
+    """The window around a trade was a bar count and is now days.
+
+    A bar count meant a different length of time at every timeframe -- 144 bars
+    was twelve hours at M5 and most of a month at H4 -- so there is no faithful
+    conversion from the old setting. It is dropped rather than mistranslated,
+    and the defaults describe the same window the terminal was already
+    collecting: a day either side.
+    """
+
+    def test_the_defaults_are_a_day_either_side(self, db):
+        charts = get_app_settings(db)["charts"]
+        assert charts["history_days_before"] == 1.0
+        assert charts["history_days_after"] == 1.0
+
+    def test_the_old_bar_counts_decide_nothing(self, db):
+        """They sit in the document until the next save prunes them.
+
+        Nothing reads them any more, so the window is the new default rather
+        than a bar count reinterpreted as days -- which would have turned 144
+        into a 144-day window on the first upgrade.
+        """
+        db.add(Setting(key=SETTINGS_KEY, value={"charts": {"candles_before": 144}}))
+        db.flush()
+
+        charts = get_app_settings(db)["charts"]
+
+        assert charts["history_days_before"] == 1.0
+
+    def test_they_are_gone_once_anything_is_saved(self, db):
+        db.add(Setting(key=SETTINGS_KEY, value={"charts": {"candles_before": 144}}))
+        db.flush()
+
+        save_app_settings(db, {"charts": {"history_days_before": 2}})
+
+        assert "candles_before" not in get_app_settings(db)["charts"]
+
+    def test_a_chosen_window_is_kept(self, db):
+        save_app_settings(db, {"charts": {"history_days_before": 5, "zoom_hours": 4}})
+        charts = get_app_settings(db)["charts"]
+        assert charts["history_days_before"] == 5
+        assert charts["zoom_hours"] == 4

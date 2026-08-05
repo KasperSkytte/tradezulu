@@ -593,4 +593,10 @@ class AgentPollOut(BaseModel):
     dry_run: bool
     halted: bool
     poll_seconds: int = 5
+    #: How much history to send around each closed trade, in seconds either
+    #: side. Seconds rather than a bar count so the terminal can divide by
+    #: whatever timeframe it is set to collect, and so changing the setting
+    #: takes effect on the next heartbeat instead of at the next restart.
+    history_before_seconds: int = 86_400
+    history_after_seconds: int = 86_400
     commands: list[dict[str, Any]] = Field(default_factory=list)

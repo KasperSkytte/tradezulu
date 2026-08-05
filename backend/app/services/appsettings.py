@@ -159,13 +159,22 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         # tradingview -> free TradingView Advanced Chart widget
         "provider": "local",
         "default_timeframe": "M5",
-        # Counted in bars of whichever timeframe is being shown, so zooming out
-        # widens the window rather than drawing the same afternoon as four
-        # candles. Half a day either side at the collected timeframe, so the
-        # chart opens on the session the trade happened in rather than on the
-        # twenty bars around the entry.
-        "candles_before": 144,
-        "candles_after": 144,
+        # How much history to keep around each trade, in days either side.
+        #
+        # In days rather than in bars because that is the question anyone
+        # actually has -- "how far back can I look" -- and because a bar count
+        # means a different length of time at every timeframe. The Expert
+        # Advisor is told how many bars that works out to for the timeframe it
+        # collects, and the same window is what the chart is served from.
+        #
+        # Raising these makes the terminal upload more with every closed
+        # trade: a day of M5 is 288 bars, a week is a little over 2,000.
+        "history_days_before": 1.0,
+        "history_days_after": 1.0,
+        # How much of it the chart opens on, in hours either side of the
+        # position. The whole position is always on screen -- this is the
+        # context around it -- so a trade held longer than this still fits.
+        "zoom_hours": 2.0,
         # Maps broker symbols to TradingView tickers, e.g. {"EURUSD": "OANDA:EURUSD"}
         "tradingview_prefix": "",
         "symbol_map": {},

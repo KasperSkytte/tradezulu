@@ -179,6 +179,22 @@ function useSaver() {
   }
 }
 
+//: Seconds in one bar of each timeframe, for turning days into a bar count.
+const BAR_SECONDS: Record<string, number> = {
+  M1: 60, M5: 300, M15: 900, M30: 1800, H1: 3600, H4: 14_400, D1: 86_400,
+}
+
+/** What a number of days works out to in bars, so it is not an abstraction.
+ *
+ *  Quoted at the default timeframe, which is the one the terminal collects and
+ *  therefore the one that decides how much it has to upload.
+ */
+function barsHint(days: number, timeframe: string): string {
+  const seconds = BAR_SECONDS[timeframe] ?? BAR_SECONDS.M5
+  const bars = Math.max(1, Math.round(((days || 0) * 86_400) / seconds))
+  return `About ${bars.toLocaleString()} ${timeframe} bars.`
+}
+
 function SavedFlag({ saved }: { saved: boolean }) {
   if (!saved) return null
   return (
@@ -851,18 +867,44 @@ function ChartsSection() {
               ))}
             </select>
           </Field>
-          <Field label="Candles before entry">
+          <Field
+            label="History before entry"
+            hint={`How far back of the chart to keep around each trade. ${barsHint(
+              settings.charts.history_days_before,
+              settings.charts.default_timeframe,
+            )} The terminal uploads this much with every closed trade, so a large window means a large upload.`}
+          >
             <NumberField
-              value={settings.charts.candles_before}
-              step={10}
-              onCommit={(value) => void apply({ charts: { candles_before: value } })}
+              value={settings.charts.history_days_before}
+              step={0.5}
+              suffix="days"
+              onCommit={(value) => void apply({ charts: { history_days_before: value } })}
             />
           </Field>
-          <Field label="Candles after exit">
+          <Field
+            label="History after exit"
+            hint={barsHint(
+              settings.charts.history_days_after,
+              settings.charts.default_timeframe,
+            )}
+          >
             <NumberField
-              value={settings.charts.candles_after}
-              step={10}
-              onCommit={(value) => void apply({ charts: { candles_after: value } })}
+              value={settings.charts.history_days_after}
+              step={0.5}
+              suffix="days"
+              onCommit={(value) => void apply({ charts: { history_days_after: value } })}
+            />
+          </Field>
+          <Field
+            label="Chart opens on"
+            hint="Context either side of the position when a chart first opens. The whole position is always on screen, so a trade held longer than this still fits — this is how much room it gets around it. Zoom out for the rest of the history above."
+            className="sm:col-span-2"
+          >
+            <NumberField
+              value={settings.charts.zoom_hours}
+              step={0.5}
+              suffix="hours either side"
+              onCommit={(value) => void apply({ charts: { zoom_hours: value } })}
             />
           </Field>
           <Field
@@ -1244,6 +1286,7 @@ function NumberField({
   step,
   disabled,
   off,
+  suffix,
   onCommit,
 }: {
   value: number
@@ -1251,6 +1294,8 @@ function NumberField({
   disabled?: boolean
   /** Mark a zero as "switched off" rather than as a box nobody filled in. */
   off?: boolean
+  /** The unit, shown inside the box: a number of what is not always obvious. */
+  suffix?: string
   onCommit: (value: number) => void
 }) {
   const [draft, setDraft] = useState(String(value))
@@ -1261,7 +1306,7 @@ function NumberField({
       type="number"
       step={step}
       disabled={disabled}
-      className={clsx('tz-input disabled:opacity-50', off && 'pr-10')}
+      className={clsx('tz-input disabled:opacity-50', (off || suffix) && 'pr-24')}
       value={draft}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={() => {
@@ -1275,12 +1320,13 @@ function NumberField({
     />
   )
 
-  if (!off) return input
+  const note = off ? 'off' : suffix
+  if (!note) return input
   return (
     <div className="relative">
       {input}
       <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--tz-text-faint)]">
-        off
+        {note}
       </span>
     </div>
   )

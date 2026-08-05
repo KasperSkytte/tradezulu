@@ -300,10 +300,15 @@ export function KLineReplay({ trade, timeframe }: { trade: TradeDetail; timefram
     const frame = () => {
       const barMs = BAR_MILLIS[timeframe] ?? BAR_MILLIS.M15
       const held = Math.max(closedAt - openedAt, barMs)
-      // Three times the time spent in the trade, so the run-up to the entry is
-      // on screen with it, and never fewer than forty bars or a scalp is drawn
-      // as two candles filling the pane.
-      const wanted = Math.min(Math.max(Math.round((held / barMs) * 3), 40), bars.length)
+      // The position, plus the configured context either side of it. Always the
+      // whole position: a chart of a trade that does not fit the trade on it is
+      // not a chart of the trade. Everything beyond this is still loaded and one
+      // scroll away.
+      const context = Math.max(0, settings.charts.zoom_hours ?? 2) * 3_600_000
+      const wanted = Math.min(
+        Math.max(Math.round((held + context * 2) / barMs), 20),
+        bars.length,
+      )
       chart.setBarSpace(Math.max(element.clientWidth / wanted, 2))
       // Room past the newest bar. A trade closed minutes ago has no candles
       // after it to be padded with, and would otherwise sit under the price
@@ -367,7 +372,7 @@ export function KLineReplay({ trade, timeframe }: { trade: TradeDetail; timefram
     }
     // Rebuilt when any of these change: the chart is cheap to make and the
     // alternative is patching six things back into agreement by hand.
-  }, [bars, trade, timeframe, dark, hour12, shiftMinutes, zone])
+  }, [bars, trade, timeframe, dark, hour12, shiftMinutes, zone, settings.charts.zoom_hours])
 
   const start = (name: string) => {
     setTool(name)

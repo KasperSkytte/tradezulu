@@ -118,11 +118,30 @@ def _fold(bars: list[Bar], start: datetime | None) -> Bar:
     )
 
 
-def window_padding(timeframe: str, before: int, after: int) -> tuple[timedelta, timedelta]:
-    """How far either side of a trade to fetch, in real time rather than bars.
+#: A day either side, if nothing says otherwise.
+DEFAULT_DAYS = 1.0
 
-    Asked of the *requested* timeframe, so switching to H4 widens the window
-    rather than showing the same two hours as four bars.
+
+def window_padding(days_before: float, days_after: float) -> tuple[timedelta, timedelta]:
+    """How far either side of a trade to read, as real time.
+
+    Days rather than a bar count, so the window means the same thing at every
+    timeframe: switching from M5 to H4 changes how finely the same stretch is
+    drawn, not how much of it there is. A bar count did the opposite -- 144
+    bars was twelve hours at M5 and most of a month at H4 -- which made the
+    setting impossible to reason about and asked for history nothing had
+    collected.
     """
-    span = seconds(timeframe)
-    return timedelta(seconds=span * max(1, before)), timedelta(seconds=span * max(1, after))
+    return (
+        timedelta(days=max(0.0, days_before or DEFAULT_DAYS)),
+        timedelta(days=max(0.0, days_after or DEFAULT_DAYS)),
+    )
+
+
+def bars_in(days: float, timeframe: str) -> int:
+    """How many bars of ``timeframe`` fit in ``days``.
+
+    What the terminal has to be asked for, and what the settings page shows so
+    a number of days is not an abstract quantity.
+    """
+    return max(1, round(days * 86_400 / seconds(timeframe)))
