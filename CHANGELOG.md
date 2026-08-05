@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.22.0](https://github.com/KasperSkytte/tradezulu/compare/v1.21.0...v1.22.0) (2026-08-05)
+
+
+### Features
+
+* **charts:** set the history window in days, and how much opens on screen ([a9d60ac](https://github.com/KasperSkytte/tradezulu/commit/a9d60ac0139c468ced25ff9f5dce1afd7a0fed13))
+
 ## [1.21.0](https://github.com/KasperSkytte/tradezulu/compare/v1.20.1...v1.21.0) (2026-08-05)
 
 
