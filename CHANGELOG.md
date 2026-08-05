@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.21.0](https://github.com/KasperSkytte/tradezulu/compare/v1.20.1...v1.21.0) (2026-08-05)
+
+
+### Features
+
+* **chart:** a Studio tab that draws the position on the candles ([0c9eba4](https://github.com/KasperSkytte/tradezulu/commit/0c9eba40d4c44c20e4f20d35398ab25d6d8f2960))
+* **chart:** read a trade in your own timezone, optionally ([c98a59d](https://github.com/KasperSkytte/tradezulu/commit/c98a59dc121b0c88999bb75dac24dcb8be33f0d4))
+* **copier:** show and correct the symbols a slave was matched to ([f5a3239](https://github.com/KasperSkytte/tradezulu/commit/f5a323909b6d830c221f1a03697de7cb99dafdf0))
+* **settings:** the clock choice applies to every time in the journal ([4a84db7](https://github.com/KasperSkytte/tradezulu/commit/4a84db7ecedba517554fdd521242ad5a8ada6cdc))
+
+
+### Bug fixes
+
+* **accounts:** the broker's clock offset reaches the browser ([53f58bf](https://github.com/KasperSkytte/tradezulu/commit/53f58bf37f00e8586c5e64aa91abc62c34e092f5))
+* **api:** stop a healthy terminal reporting itself as "quiet 2 hours ago" ([00ed805](https://github.com/KasperSkytte/tradezulu/commit/00ed8053830eb64da4c90ced80ba0cc0699a35b5))
+* **chart:** put the fills and the candles on one clock ([2df97fd](https://github.com/KasperSkytte/tradezulu/commit/2df97fd5bcc7d4a078225ab2e3aed63e180d6a67))
+* **copier:** match the instrument when the master is the decorated one ([9660ffe](https://github.com/KasperSkytte/tradezulu/commit/9660ffe1c1bb281d3deb6adb9434ebbee1ece43f))
+
 ## [1.20.1](https://github.com/KasperSkytte/tradezulu/compare/v1.20.0...v1.20.1) (2026-08-04)
 
 
