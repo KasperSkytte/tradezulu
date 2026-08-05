@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.23.0](https://github.com/KasperSkytte/tradezulu/compare/v1.22.0...v1.23.0) (2026-08-05)
+
+
+### Features
+
+* **accounts:** pick a slave's broker and trade server, not type them ([4e9dfc7](https://github.com/KasperSkytte/tradezulu/commit/4e9dfc764bda3b9443cbf8b524fc0e269320131f))
+* **agent:** say whether a terminal actually started ([06c4634](https://github.com/KasperSkytte/tradezulu/commit/06c463428792cc1e30a90a85c96827e3235a4bc0))
+* **charts:** choose which timeframe the terminal collects, so M1 is possible ([d71e106](https://github.com/KasperSkytte/tradezulu/commit/d71e1068e4f7025633b2935eb6905fd3279e589b))
+
+
+### Bug fixes
+
+* **settings:** offer Studio as a default chart, and W1 as a timeframe ([3338ca6](https://github.com/KasperSkytte/tradezulu/commit/3338ca6289e5763401b563d96ed73c1d70b082a9))
+
 ## [1.22.0](https://github.com/KasperSkytte/tradezulu/compare/v1.21.0...v1.22.0) (2026-08-05)
 
 
