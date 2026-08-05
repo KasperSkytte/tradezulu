@@ -280,6 +280,31 @@ class TestOnlyOneMaster:
         assert auth_client.delete(f"/api/accounts/{second.id}").status_code == 200
 
 
+class TestTheBrokersClock:
+    """How far the broker's clock runs from UTC has to reach the browser.
+
+    The chart is the only thing that can turn a MetaTrader timestamp into a
+    real moment, and it needs this number to do it. The response is built field
+    by field rather than from the model, so a column that exists everywhere
+    else can still arrive as null -- which looks exactly like a terminal that
+    has not reported yet, and silently leaves the chart on the broker's clock.
+    """
+
+    def test_it_reaches_the_response(self, auth_client, db, slave):
+        account = db.get(Account, slave["id"])
+        account.broker_utc_offset_minutes = 180
+        db.commit()
+
+        listed = auth_client.get("/api/accounts").json()
+
+        assert next(a for a in listed if a["id"] == slave["id"])[
+            "broker_utc_offset_minutes"
+        ] == 180
+
+    def test_an_account_no_terminal_has_reported_says_nothing(self, slave):
+        assert slave["broker_utc_offset_minutes"] is None
+
+
 class TestAuth:
     def test_the_endpoints_need_a_session(self, client):
         """`client` has not logged in."""

@@ -60,6 +60,7 @@ def _as_out(account: Account, db: Session) -> SlaveAccountOut:
         equity=account.equity,
         is_default=account.is_default,
         last_sync_at=account.last_sync_at,
+        broker_utc_offset_minutes=account.broker_utc_offset_minutes,
         copy_enabled=account.copy_enabled,
         copy_dry_run=account.copy_dry_run,
         copy_halted=account.copy_halted,
