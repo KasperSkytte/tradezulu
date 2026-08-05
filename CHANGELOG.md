@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.23.1](https://github.com/KasperSkytte/tradezulu/compare/v1.23.0...v1.23.1) (2026-08-05)
+
+
+### Bug fixes
+
+* **calendar:** file a trade on the day it happened ([a04a867](https://github.com/KasperSkytte/tradezulu/commit/a04a867c76b1d0b577a9d663e6d14be5b2303e93))
+
 ## [1.23.0](https://github.com/KasperSkytte/tradezulu/compare/v1.22.0...v1.23.0) (2026-08-05)
 
 
