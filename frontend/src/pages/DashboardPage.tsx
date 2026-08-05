@@ -589,8 +589,8 @@ function RecentTradeList({
               <DirectionBadge direction={trade.direction} />
             </div>
             <p className="mt-0.5 text-xs text-[var(--tz-text-muted)]">
-              {dateOnly(trade.closed_at ?? trade.opened_at, 'd MMM')} ·{' '}
-              {timeOnly(trade.closed_at ?? trade.opened_at)} · {num(trade.volume, 2)} lots
+              {dateOnly(trade.closed_at ?? trade.opened_at, 'd MMM', trade.account_id)} ·{' '}
+              {timeOnly(trade.closed_at ?? trade.opened_at, trade.account_id)} · {num(trade.volume, 2)} lots
             </p>
           </div>
           <div className="text-right">

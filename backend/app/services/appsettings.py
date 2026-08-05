@@ -31,16 +31,19 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         # journal full of 1:05 PM when you think in 13:05 is a small friction
         # applied to every row.
         "time_format": "24h",  # 24h | 12h
-        # Whose clock the chart replay is labelled with. MetaTrader keeps one
-        # clock -- the broker's -- and writes every timestamp on it without
-        # saying so, which for most brokers is a couple of hours from the
-        # trader's own wall clock.
+        # Whose clock the journal is written in. MetaTrader keeps one clock --
+        # the broker's -- and writes every timestamp on it without saying so,
+        # which for most brokers is a couple of hours from the trader's own
+        # wall clock.
         #
         # "broker" reads the way the terminal does, which is what anyone
         # checking a fill against MetaTrader wants. "local" reads the way the
         # day was actually lived, using the timezone above, and needs a
         # terminal to have reported the broker's clock at least once.
-        "chart_times": "broker",  # broker | local
+        #
+        # Display only. Which trading day a trade is filed under is decided
+        # server-side and does not move with this.
+        "times": "broker",  # broker | local
         "theme": "dark",  # dark | light | system
         "accent": "jade",
         # Swaps the profit/loss green-red pair for a blue-amber pair that
@@ -223,7 +226,20 @@ def get_app_settings(db: Session) -> dict[str, Any]:
     if mode in RETIRED_SYNC_MODES:
         merged["mt5"]["sync_mode"] = RETIRED_SYNC_MODES[mode]
     _migrate_score_weights(stored, merged)
+    _migrate_times(stored, merged)
     return merged
+
+
+def _migrate_times(stored: dict[str, Any], merged: dict[str, Any]) -> None:
+    """Carry the choice over from when it only governed the chart.
+
+    It was introduced as ``chart_times`` and applied to the replay alone.
+    Widening it to the whole journal renamed it; anyone who had already picked
+    their own timezone should not silently be put back on the broker's.
+    """
+    previous = stored.get("general", {}).get("chart_times")
+    if previous in ("broker", "local") and "times" not in stored.get("general", {}):
+        merged["general"]["times"] = previous
 
 
 def _migrate_score_weights(stored: dict[str, Any], merged: dict[str, Any]) -> None:

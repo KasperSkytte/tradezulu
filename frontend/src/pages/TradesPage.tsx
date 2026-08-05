@@ -339,9 +339,9 @@ function TradeRow({
       </td>
       <td className="whitespace-nowrap px-3 py-2">
         <Link to={`/trades/${trade.id}`} className="block hover:text-zulu-400">
-          <span className="block">{dateOnly(trade.closed_at ?? trade.opened_at, 'd MMM yy')}</span>
+          <span className="block">{dateOnly(trade.closed_at ?? trade.opened_at, 'd MMM yy', trade.account_id)}</span>
           <span className="text-xs text-[var(--tz-text-muted)]">
-            {timeOnly(trade.closed_at ?? trade.opened_at)}
+            {timeOnly(trade.closed_at ?? trade.opened_at, trade.account_id)}
           </span>
         </Link>
       </td>
@@ -421,8 +421,8 @@ function TradeCard({ trade, currency }: { trade: Trade; currency: string }) {
             <OutcomeBadge outcome={trade.outcome} />
           </div>
           <p className="mt-1 text-xs text-[var(--tz-text-muted)]">
-            {dateOnly(trade.closed_at ?? trade.opened_at, 'd MMM yyyy')} ·{' '}
-            {timeOnly(trade.closed_at ?? trade.opened_at)} · {num(trade.volume, 2)} lots ·{' '}
+            {dateOnly(trade.closed_at ?? trade.opened_at, 'd MMM yyyy', trade.account_id)} ·{' '}
+            {timeOnly(trade.closed_at ?? trade.opened_at, trade.account_id)} · {num(trade.volume, 2)} lots ·{' '}
             {duration(trade.duration_seconds)}
           </p>
         </div>

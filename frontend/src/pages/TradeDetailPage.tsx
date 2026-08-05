@@ -102,8 +102,8 @@ export function TradeDetailPage() {
             )}
           </div>
           <p className="mt-1 text-sm text-[var(--tz-text-muted)]">
-            {dateTime(trade.opened_at)}
-            {trade.closed_at && ` → ${timeOnly(trade.closed_at)}`} · {num(trade.volume, 2)} lots ·
+            {dateTime(trade.opened_at, undefined, trade.account_id)}
+            {trade.closed_at && ` → ${timeOnly(trade.closed_at, trade.account_id)}`} · {num(trade.volume, 2)} lots ·
             held {duration(trade.duration_seconds)}
           </p>
         </div>
@@ -343,7 +343,7 @@ export function TradeDetailPage() {
               <tbody className="divide-y divide-[var(--tz-border)]">
                 {trade.executions.map((execution) => (
                   <tr key={execution.id}>
-                    <td className="whitespace-nowrap px-4 py-2">{dateTime(execution.time)}</td>
+                    <td className="whitespace-nowrap px-4 py-2">{dateTime(execution.time, undefined, trade.account_id)}</td>
                     <td className="px-4 py-2">
                       <span className="tz-chip bg-[var(--tz-surface-2)]">
                         {execution.kind === 'in' ? 'Entry' : 'Exit'} · {execution.side}

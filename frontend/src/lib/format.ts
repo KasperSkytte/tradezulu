@@ -94,24 +94,130 @@ export function hour12(): boolean {
 
 const TIME_PATTERN = () => (clock === '12h' ? 'h:mm a' : 'HH:mm')
 
-export function toDate(value: string | Date | null | undefined): Date | null {
-  if (!value) return null
-  return value instanceof Date ? value : parseISO(value)
+/**
+ * Whose clock the journal is written in.
+ *
+ * MetaTrader stamps everything with the broker's server clock and says nothing
+ * about it, so a timestamp from a trade arrives as bare digits -- and bare
+ * digits are what a browser reads as its own local time, which is how they
+ * have always been rendered here: exactly as the terminal shows them.
+ *
+ * Reading them as the day was actually lived instead needs two things the
+ * digits do not carry: how far the broker's clock runs from UTC, and which
+ * timezone to write the result in. Both arrive here from SettingsProvider.
+ *
+ * Kept per account rather than as one number, because two brokers are not
+ * necessarily on the same clock and a journal covering both would otherwise
+ * put one of them an hour out. An account nobody has reported an offset for
+ * stays on the broker's clock rather than being guessed at.
+ *
+ * Timestamps that arrive *with* an offset are ours, not the broker's -- when a
+ * terminal last reported, when a copy was placed -- and are already unambiguous
+ * moments. Those are never touched.
+ */
+type Clock = {
+  mode: 'broker' | 'local'
+  zone: string
+  offsets: Map<number, number>
+  /** For anything not tied to one account -- the default account's. */
+  fallback: number | null
 }
 
-export function dateTime(value: string | null | undefined, pattern?: string): string {
-  const date = toDate(value)
+let clockSetting: Clock = { mode: 'broker', zone: 'UTC', offsets: new Map(), fallback: null }
+
+export function setTimeDisplay(next: Clock) {
+  clockSetting = next
+}
+
+const MARKED = /Z$|[+-]\d\d:?\d\d$/
+const HAS_TIME = /\d{2}:\d{2}/
+
+/** Formatters are not cheap to build and this runs per row. */
+const zoneFormatters = new Map<string, Intl.DateTimeFormat>()
+
+function zoneFormatter(zone: string): Intl.DateTimeFormat {
+  let found = zoneFormatters.get(zone)
+  if (!found) {
+    found = new Intl.DateTimeFormat('en-GB', {
+      timeZone: zone,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
+    zoneFormatters.set(zone, found)
+  }
+  return found
+}
+
+/**
+ * A broker timestamp as the wall clock of ``zone``.
+ *
+ * Returned as a Date whose *local* components are the wanted ones, because
+ * that is what date-fns prints. Built from the parts rather than by adding an
+ * offset in milliseconds: the arithmetic version silently gains or loses an
+ * hour for a timestamp that lands near a daylight-saving change.
+ */
+function asZoned(value: string, offsetMinutes: number, zone: string): Date {
+  const instant = new Date(Date.parse(`${value}Z`) - offsetMinutes * 60_000)
+  const parts: Record<string, number> = {}
+  for (const part of zoneFormatter(zone).formatToParts(instant)) {
+    if (part.type !== 'literal') parts[part.type] = Number(part.value)
+  }
+  return new Date(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second,
+  )
+}
+
+export function toDate(
+  value: string | Date | null | undefined,
+  account?: number | null,
+): Date | null {
+  if (!value) return null
+  if (value instanceof Date) return value
+  if (clockSetting.mode === 'broker' || MARKED.test(value)) return parseISO(value)
+  // A bare date is a calendar day, not a moment: the day a trade was filed
+  // under, the ends of the period in view. Converting one moves it to the day
+  // before whenever the broker is ahead of the zone, which is how "7 Jul – 5
+  // Aug" became "6 Jul – 4 Aug" merely because the clock was switched.
+  if (!HAS_TIME.test(value)) return parseISO(value)
+
+  const offset =
+    (account === null || account === undefined ? undefined : clockSetting.offsets.get(account)) ??
+    clockSetting.fallback
+  if (offset === null || offset === undefined) return parseISO(value)
+  return asZoned(value, offset, clockSetting.zone)
+}
+
+export function dateTime(
+  value: string | null | undefined,
+  pattern?: string,
+  account?: number | null,
+): string {
+  const date = toDate(value, account)
   if (!date) return '—'
   return format(date, pattern ?? `dd MMM yyyy ${TIME_PATTERN()}`)
 }
 
-export function dateOnly(value: string | null | undefined, pattern = 'dd MMM yyyy'): string {
-  const date = toDate(value)
+export function dateOnly(
+  value: string | null | undefined,
+  pattern = 'dd MMM yyyy',
+  account?: number | null,
+): string {
+  const date = toDate(value, account)
   return date ? format(date, pattern) : '—'
 }
 
-export function timeOnly(value: string | null | undefined): string {
-  const date = toDate(value)
+export function timeOnly(value: string | null | undefined, account?: number | null): string {
+  const date = toDate(value, account)
   return date ? format(date, TIME_PATTERN()) : '—'
 }
 

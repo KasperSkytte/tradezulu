@@ -2,8 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createContext, use, useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { api } from './api'
-import { setClock } from './format'
-import type { AppSettings } from './types'
+import { setClock, setTimeDisplay } from './format'
+import type { Account, AppSettings } from './types'
 
 const FALLBACK: AppSettings = {
   general: {
@@ -14,7 +14,7 @@ const FALLBACK: AppSettings = {
     default_period: 'last_30_days',
     date_format: 'yyyy-MM-dd',
     time_format: '24h',
-    chart_times: 'broker',
+    times: 'broker',
     theme: 'dark',
     accent: 'jade',
     colorblind_mode: false,
@@ -127,6 +127,15 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   const settings = data ?? FALLBACK
 
+  // Which clock the journal is written in needs the broker's, and only the
+  // accounts know that. Cached hard: it changes when a broker moves on or off
+  // summer time, not between page views.
+  const { data: accounts = [] } = useQuery({
+    queryKey: ['accounts'],
+    queryFn: () => api.get<Account[]>('/accounts'),
+    staleTime: 300_000,
+  })
+
   useEffect(() => {
     if (data) applyTheme(data.general.theme)
   }, [data])
@@ -139,6 +148,20 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   // are plain functions. This is what tells them which clock to use; the
   // re-render this provider does on a settings change is what redraws them.
   setClock(settings.general.time_format === '12h' ? '12h' : '24h')
+  setTimeDisplay({
+    mode: settings.general.times === 'local' ? 'local' : 'broker',
+    zone: settings.general.timezone || 'UTC',
+    offsets: new Map(
+      accounts
+        .filter((account) => account.broker_utc_offset_minutes !== null)
+        .map((account) => [account.id, account.broker_utc_offset_minutes as number]),
+    ),
+    // For the handful of times not tied to one account. The default account is
+    // the one whose trades fill the journal.
+    fallback:
+      (accounts.find((account) => account.is_default) ?? accounts[0])
+        ?.broker_utc_offset_minutes ?? null,
+  })
 
   // Follow the OS while the user has picked "system".
   useEffect(() => {

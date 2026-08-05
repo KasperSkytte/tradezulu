@@ -285,8 +285,8 @@ export interface AppSettings {
     date_format: string
     /** '24h' writes 13:05, '12h' writes 1:05 PM. */
     time_format: '24h' | '12h'
-    /** Whose clock the replay chart is labelled with. */
-    chart_times: 'broker' | 'local'
+    /** Whose clock the journal is written in: the broker's, or your own. */
+    times: 'broker' | 'local'
     theme: 'dark' | 'light' | 'system'
     accent: string
     colorblind_mode: boolean

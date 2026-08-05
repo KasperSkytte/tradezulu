@@ -208,7 +208,7 @@ export function KLineReplay({ trade, timeframe }: { trade: TradeDetail; timefram
   })
   const brokerOffset = accounts.find((a) => a.id === trade.account_id)?.broker_utc_offset_minutes
   const local =
-    settings.general.chart_times === 'local' && brokerOffset !== null && brokerOffset !== undefined
+    settings.general.times === 'local' && brokerOffset !== null && brokerOffset !== undefined
   // Same rule as the other tab: the bars keep the broker's clock and only the
   // labels move, so a fill never leaves the bar it happened on.
   const shiftMinutes = local ? brokerOffset : 0

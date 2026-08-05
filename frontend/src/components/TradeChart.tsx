@@ -239,7 +239,7 @@ function LocalReplay({ trade, timeframe }: { trade: TradeDetail; timeframe: stri
   })
   const brokerOffset = accounts.find((a) => a.id === trade.account_id)
     ?.broker_utc_offset_minutes
-  const wantsLocal = settings.general.chart_times === 'local'
+  const wantsLocal = settings.general.times === 'local'
   const local = wantsLocal && brokerOffset !== null && brokerOffset !== undefined
   const clock: Clock = local
     ? { hour12, offsetMinutes: brokerOffset, timeZone: settings.general.timezone }
@@ -587,7 +587,7 @@ function TradingViewChart({ trade, timeframe }: { trade: TradeDetail; timeframe:
       <p className="mt-2 text-xs text-[var(--tz-text-faint)]">
         TradingView's embed always ends at the current price and cannot be moved to a date from
         outside it, so the window is widened until your trade falls inside it:{' '}
-        <strong>{dateTime(trade.closed_at ?? trade.opened_at)}</strong>. Replay
+        <strong>{dateTime(trade.closed_at ?? trade.opened_at, undefined, trade.account_id)}</strong>. Replay
         opens on the trade itself, with your fills marked.
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--tz-text-muted)]">
