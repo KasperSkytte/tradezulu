@@ -18,6 +18,7 @@ import {
   ColorType,
   CrosshairMode,
   LineStyle,
+  TickMarkType,
   createChart,
   createSeriesMarkers,
 } from 'lightweight-charts'
@@ -62,6 +63,25 @@ function rangeCovering(when: string | null): string {
   // left edge of a five-day chart.
   const found = TV_RANGES.find(([limit]) => days * 1.25 + 1 < limit)
   return found ? found[1] : 'ALL'
+}
+
+/**
+ * Seconds since the epoch for a timestamp the API returned.
+ *
+ * Every time in the journal is the broker's server clock -- MetaTrader has no
+ * other -- but they do not all come back written the same way: candles are
+ * marked UTC, executions are not. `Date.parse` reads an unmarked timestamp as
+ * the *viewer's* local time, so the entry arrow was placed an hour or two from
+ * the candle it belongs to, in whichever direction the reader happened to be
+ * sitting, and by a different amount in summer than in winter.
+ *
+ * Both are put on one clock here instead. The chart is then internally
+ * consistent wherever it is read from, and the axis reads the same as the
+ * terminal the trade was taken in.
+ */
+function brokerTime(value: string): Time {
+  const marked = /Z$|[+-]\d\d:?\d\d$/.test(value)
+  return (Date.parse(marked ? value : `${value}Z`) / 1000) as Time
 }
 
 const TV_INTERVAL: Record<string, string> = {
@@ -132,7 +152,62 @@ export function TradeChart({ trade }: { trade: TradeDetail }) {
 
 /* --------------------------------------------------------------------- */
 
+/**
+ * Which clock the axis is labelled with.
+ *
+ * The candles are never moved. A bar belongs to the minute the broker matched
+ * it in, and rewriting that to suit the reader would mean the chart no longer
+ * agreed with the terminal, the trade ticket, or the next person's screenshot.
+ * Only the labels change -- the same instants, read off a different clock.
+ *
+ * ``offsetMinutes`` is how far the broker's clock runs from UTC, so subtracting
+ * it turns a broker wall-clock stamp back into the real moment; ``timeZone``
+ * then says how to write that moment down. Staying on the broker's clock is
+ * the pair (0, UTC), because that is exactly what the stored timestamps
+ * already are.
+ */
+type Clock = { hour12: boolean; offsetMinutes: number; timeZone: string }
+
+function axisLabels({ hour12, offsetMinutes, timeZone }: Clock) {
+  const at = (value: Time) => new Date((Number(value) - offsetMinutes * 60) * 1000)
+  const time = (date: Date) =>
+    date.toLocaleTimeString(hour12 ? 'en-US' : 'en-GB', {
+      hour: hour12 ? 'numeric' : '2-digit',
+      minute: '2-digit',
+      hour12,
+      timeZone,
+    })
+  const day = (date: Date) =>
+    date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone })
+
+  return {
+    localization: { timeFormatter: (value: Time) => `${day(at(value))} ${time(at(value))}` },
+    tickMarkFormatter: (value: Time, type: TickMarkType) => {
+      const date = at(value)
+      switch (type) {
+        case TickMarkType.Year:
+          return date.toLocaleDateString('en-GB', { year: 'numeric', timeZone })
+        case TickMarkType.Month:
+          return date.toLocaleDateString('en-GB', { month: 'short', timeZone })
+        case TickMarkType.DayOfMonth:
+          return day(date)
+        default:
+          return time(date)
+      }
+    },
+  }
+}
+
+/** Written the way a broker offset is usually spoken: UTC+3, UTC-4:30. */
+function utcOffsetLabel(minutes: number): string {
+  const sign = minutes < 0 ? '-' : '+'
+  const hours = Math.floor(Math.abs(minutes) / 60)
+  const rest = Math.abs(minutes) % 60
+  return `UTC${sign}${hours}${rest ? `:${String(rest).padStart(2, '0')}` : ''}`
+}
+
 function LocalReplay({ trade, timeframe }: { trade: TradeDetail; timeframe: string }) {
+  const { settings, hour12 } = useSettings()
   const container = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -144,6 +219,23 @@ function LocalReplay({ trade, timeframe }: { trade: TradeDetail; timeframe: stri
     queryFn: () =>
       api.get<CandleResponse>('/mt5/candles', { trade_id: trade.id, timeframe }),
   })
+
+  // Which clock to label the axis with. Reading the trade in the user's own
+  // timezone needs the broker's offset, and until a terminal has reported one
+  // there is nothing to convert *from*: guessing would put every label an hour
+  // or three out while looking authoritative, so the broker's clock stands.
+  const { data: accounts = [] } = useQuery({
+    queryKey: ['accounts'],
+    queryFn: () => api.get<Account[]>('/accounts'),
+    staleTime: 300_000,
+  })
+  const brokerOffset = accounts.find((a) => a.id === trade.account_id)
+    ?.broker_utc_offset_minutes
+  const wantsLocal = settings.general.chart_times === 'local'
+  const local = wantsLocal && brokerOffset !== null && brokerOffset !== undefined
+  const clock: Clock = local
+    ? { hour12, offsetMinutes: brokerOffset, timeZone: settings.general.timezone }
+    : { hour12, offsetMinutes: 0, timeZone: 'UTC' }
 
   useEffect(() => {
     if (!container.current) return
@@ -171,7 +263,12 @@ function LocalReplay({ trade, timeframe }: { trade: TradeDetail; timeframe: stri
         secondsVisible: false,
       },
       crosshair: { mode: CrosshairMode.Normal },
-      handleScale: { axisPressedMouseMove: { time: true, price: false } },
+      // Both axes drag. The price one used to be pinned, which keeps the
+      // candles filling the pane but leaves no way to stretch a quiet stretch
+      // of the chart open far enough to see where a stop actually sat.
+      // Double-clicking the price axis puts it back on auto.
+      handleScale: { axisPressedMouseMove: { time: true, price: true } },
+      handleScroll: { vertTouchDrag: true },
     })
 
     const series = chart.addSeries(CandlestickSeries, {
@@ -192,6 +289,16 @@ function LocalReplay({ trade, timeframe }: { trade: TradeDetail; timeframe: stri
       seriesRef.current = null
     }
   }, [trade.digits])
+
+  // Applied rather than passed to createChart, so flipping the clock relabels
+  // the axis in place: rebuilding the chart would drop the candles with it.
+  useEffect(() => {
+    const labels = axisLabels(clock)
+    chartRef.current?.applyOptions({
+      localization: labels.localization,
+      timeScale: { tickMarkFormatter: labels.tickMarkFormatter },
+    })
+  }, [clock.hour12, clock.offsetMinutes, clock.timeZone, trade.digits])
 
   useEffect(() => {
     const series = seriesRef.current
@@ -215,7 +322,7 @@ function LocalReplay({ trade, timeframe }: { trade: TradeDetail; timeframe: stri
 
     series.setData(
       data.candles.map((candle) => ({
-        time: (Date.parse(candle.time) / 1000) as Time,
+        time: brokerTime(candle.time),
         open: candle.open,
         high: candle.high,
         low: candle.low,
@@ -268,7 +375,7 @@ function LocalReplay({ trade, timeframe }: { trade: TradeDetail; timeframe: stri
       series,
       trade.executions
         .map((execution) => ({
-          time: (Date.parse(execution.time) / 1000) as Time,
+          time: brokerTime(execution.time),
           position: execution.side === 'buy' ? ('belowBar' as const) : ('aboveBar' as const),
           color: execution.kind === 'in' ? entry : execution.profit >= 0 ? gain : loss,
           shape: execution.side === 'buy' ? ('arrowUp' as const) : ('arrowDown' as const),
@@ -345,9 +452,22 @@ function LocalReplay({ trade, timeframe }: { trade: TradeDetail; timeframe: stri
         {hasCandles && (
           <span className="ml-auto">
             {data?.candles.length} candles ·{' '}
-            {data?.source === 'local'
-              ? 'as recorded'
-              : `built from ${data?.source}`}
+            {data?.source === 'local' ? 'as recorded' : `built from ${data?.source}`} ·{' '}
+            <span
+              title={
+                local
+                  ? `The broker's clock runs ${utcOffsetLabel(brokerOffset)}; times are ` +
+                    'converted to your timezone. The candles themselves are untouched.'
+                  : brokerOffset === null || brokerOffset === undefined
+                    ? 'Times are the broker’s own clock. No terminal has reported how ' +
+                      'far it runs from UTC yet, so it cannot be converted.'
+                    : `Times are the broker’s own clock (${utcOffsetLabel(brokerOffset)}), ` +
+                      'the same as in MetaTrader.'
+              }
+            >
+              {local ? settings.general.timezone.replace(/_/g, ' ') : 'broker time'}
+              {!local && wantsLocal && ' (offset unknown)'}
+            </span>
           </span>
         )}
       </div>
