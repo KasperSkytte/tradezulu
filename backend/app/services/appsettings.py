@@ -150,7 +150,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "history_days_on_full_sync": 730,
     },
     "charts": {
-        # local -> replay from candles stored by the Expert Advisor
+        # local       -> replay from candles stored by the Expert Advisor
+        # studio      -> the same candles with the position drawn on them,
+        #                plus drawing tools
         # tradingview -> free TradingView Advanced Chart widget
         "provider": "local",
         "default_timeframe": "M5",

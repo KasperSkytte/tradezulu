@@ -344,7 +344,7 @@ export interface AppSettings {
     history_days_on_full_sync: number
   }
   charts: {
-    provider: 'local' | 'tradingview'
+    provider: 'local' | 'studio' | 'tradingview'
     default_timeframe: string
     candles_before: number
     candles_after: number

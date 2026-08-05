@@ -1,11 +1,13 @@
 /**
  * Trade replay.
  *
- * Two providers, both free:
+ * Three providers, all free:
  *  - "local" draws candles TradeZulu already holds (pushed by the Expert
- *    Advisor) with the real entry, exit, stop and
- *    target marked on the price scale. This is the one that can show *your*
- *    fills, so it is the default.
+ *    Advisor) with the real entry, exit, stop and target marked on the price
+ *    scale. This is the one that can show *your* fills, so it is the default.
+ *  - "studio" draws the same candles with the position itself on them -- a box
+ *    from entry to exit, the risk shaded below and the target above -- plus
+ *    drawing tools. See KLineReplay.
  *  - "tradingview" embeds the free Advanced Chart widget, which has every
  *    drawing tool but no knowledge of your trade; entry and exit are listed
  *    beside it so you can find them on the chart.
@@ -31,6 +33,7 @@ import type {
 } from 'lightweight-charts'
 import { CandlestickChart, ExternalLink } from 'lucide-react'
 import { api } from '../lib/api'
+import { KLineReplay } from './KLineReplay'
 import { useIsDark, useSettings } from '../lib/settings'
 import { dateTime, price } from '../lib/format'
 import type { Account, BrokerList, CandleResponse, TradeDetail } from '../lib/types'
@@ -94,9 +97,11 @@ const TV_INTERVAL: Record<string, string> = {
   D1: 'D',
 }
 
+type Provider = 'local' | 'studio' | 'tradingview'
+
 export function TradeChart({ trade }: { trade: TradeDetail }) {
   const { settings } = useSettings()
-  const [provider, setProvider] = useState<'local' | 'tradingview'>(settings.charts.provider)
+  const [provider, setProvider] = useState<Provider>(settings.charts.provider)
   const [timeframe, setTimeframe] = useState(settings.charts.default_timeframe || 'M15')
 
   // Which timeframes the replay can actually draw. The terminal collects one
@@ -110,7 +115,7 @@ export function TradeChart({ trade }: { trade: TradeDetail }) {
     queryKey: ['candles', trade.id, timeframe],
     queryFn: () =>
       api.get<CandleResponse>('/mt5/candles', { trade_id: trade.id, timeframe }),
-    enabled: provider === 'local',
+    enabled: provider !== 'tradingview',
   })
   const offered =
     provider === 'tradingview' || !data?.available?.length ? TIMEFRAMES : data.available
@@ -130,6 +135,11 @@ export function TradeChart({ trade }: { trade: TradeDetail }) {
           onChange={setProvider}
           options={[
             { value: 'local', label: 'Replay', title: 'Candles stored by TradeZulu' },
+            {
+              value: 'studio',
+              label: 'Studio',
+              title: 'The same candles, with the position drawn on them and drawing tools',
+            },
             { value: 'tradingview', label: 'TradingView', title: 'Free TradingView widget' },
           ]}
         />
@@ -141,11 +151,9 @@ export function TradeChart({ trade }: { trade: TradeDetail }) {
         />
       </div>
 
-      {provider === 'local' ? (
-        <LocalReplay trade={trade} timeframe={timeframe} />
-      ) : (
-        <TradingViewChart trade={trade} timeframe={timeframe} />
-      )}
+      {provider === 'local' && <LocalReplay trade={trade} timeframe={timeframe} />}
+      {provider === 'studio' && <KLineReplay trade={trade} timeframe={timeframe} />}
+      {provider === 'tradingview' && <TradingViewChart trade={trade} timeframe={timeframe} />}
     </div>
   )
 }
