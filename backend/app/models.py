@@ -104,6 +104,11 @@ class Account(Base):
     symbol_suffix: Mapped[str] = mapped_column(String(16), default="")
     symbol_prefix: Mapped[str] = mapped_column(String(16), default="")
     symbol_map: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    # Master symbol -> this broker's name for it, as worked out on the way past.
+    # Not the user's: symbol_map is theirs and always wins. Kept so the search
+    # runs once per instrument rather than on every position change, and so
+    # what the copier decided is something you can look at.
+    symbol_learned: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     # Equity at the start of the current trading day, for the daily guards.
     day_start_equity: Mapped[float] = mapped_column(Float, default=0.0)
     day_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)

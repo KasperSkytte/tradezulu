@@ -106,6 +106,7 @@ def symbol_rules_from(
     suffix: str,
     overrides: dict[str, Any] | None,
     available: list[str] | None = None,
+    learned: dict[str, Any] | None = None,
 ) -> SymbolRules:
     """Naming rules for one slave, detected unless they were set by hand.
 
@@ -125,7 +126,14 @@ def symbol_rules_from(
     if not prefix and not suffix and available:
         prefix, suffix = detect_affixes(available)
 
-    return SymbolRules(overrides=clean, prefix=prefix, suffix=suffix)
+    remembered = {
+        str(key): str(value)
+        for key, value in (learned or {}).items()
+        if str(key).strip() and str(value).strip()
+    }
+    return SymbolRules(
+        overrides=clean, prefix=prefix, suffix=suffix, learned=remembered
+    )
 
 
 def mirror_stops_enabled(settings: dict[str, Any] | None) -> bool:

@@ -95,6 +95,47 @@ class TestSymbolResolution:
         assert candidates("EURUSD", SymbolRules(suffix=".r"))[0] == "EURUSD.r"
 
 
+class TestTheMasterIsTheDecoratedOne:
+    """The master's own prefix and suffix have to come off too.
+
+    Every step before this one strips the *slave's* affixes, which is the wrong
+    end of the problem when it is the master that decorates its names. A live
+    Vantage account trades ``XAUUSD+``; a slave carrying plain ``XAUUSD`` was
+    told "this broker has no symbol matching XAUUSD+", because nothing was ever
+    taking the ``+`` off.
+    """
+
+    def test_a_plain_slave_takes_a_decorated_master(self):
+        assert resolve("XAUUSD+", SymbolRules(), ["EURUSD", "XAUUSD"]) == "XAUUSD"
+
+    def test_both_sides_decorated_differently(self):
+        rules = SymbolRules(suffix=".r")
+        assert resolve("XAUUSD+", rules, ["EURUSD.r", "XAUUSD.r"]) == "XAUUSD.r"
+
+    def test_a_prefixed_slave(self):
+        rules = SymbolRules(prefix="FX_")
+        assert resolve("XAUUSD+", rules, ["FX_EURUSD", "FX_XAUUSD"]) == "FX_XAUUSD"
+
+    def test_the_longest_instrument_wins(self):
+        """A broker listing both XAU and XAUUSD means the pair, not the metal."""
+        assert resolve("XAUUSD+", SymbolRules(), ["XAU", "XAUUSD"]) == "XAUUSD"
+
+    def test_it_does_not_reach_for_a_different_instrument(self):
+        assert resolve("XAUUSD+", SymbolRules(), ["EURUSD", "GBPUSD"]) is None
+
+    def test_too_short_to_be_sure_is_not_a_match(self):
+        """Three letters inside a longer name is a coincidence, not a mapping."""
+        assert resolve("XAUUSD+", SymbolRules(), ["XAU"]) is None
+
+    def test_two_symbols_for_one_instrument_are_refused(self):
+        """Real money on the wrong instrument is worse than a skipped copy."""
+        assert resolve("XAUUSD+", SymbolRules(suffix="!"), ["XAUUSD!", "XAUUSD"]) is None
+
+    def test_an_override_still_wins(self):
+        rules = SymbolRules(overrides={"XAUUSD+": "GOLD"})
+        assert resolve("XAUUSD+", rules, ["GOLD", "XAUUSD"]) == "GOLD"
+
+
 class TestOpening:
     def test_a_new_master_trade_is_copied(self):
         actions = plan([master_position()], MASTER_ACCOUNT, context(), TODAY)
@@ -374,3 +415,24 @@ class TestAffixDetection:
 
         rules = symbol_rules_from("", ".r", {}, ["EURUSD+", "GBPUSD+", "USDJPY+"])
         assert rules.suffix == ".r"
+
+
+class TestRememberingWhatWasResolved:
+    """The search is only worth doing once per instrument.
+
+    Resolution walks the broker's whole symbol list -- a couple of thousand
+    names at some brokers -- and it ran for every position on every heartbeat.
+    """
+
+    def test_a_remembered_name_is_used(self):
+        rules = SymbolRules(learned={"XAUUSD+": "XAUUSD.r"})
+        assert resolve("XAUUSD+", rules, ["XAUUSD.r", "XAUUSD"]) == "XAUUSD.r"
+
+    def test_a_name_the_broker_no_longer_lists_is_re_resolved(self):
+        """A delisted or renamed instrument must not strand the copier."""
+        rules = SymbolRules(learned={"XAUUSD+": "XAUUSD.old"})
+        assert resolve("XAUUSD+", rules, ["XAUUSD"]) == "XAUUSD"
+
+    def test_the_users_own_mapping_still_wins(self):
+        rules = SymbolRules(overrides={"XAUUSD+": "GOLD"}, learned={"XAUUSD+": "XAUUSD"})
+        assert resolve("XAUUSD+", rules, ["GOLD", "XAUUSD"]) == "GOLD"

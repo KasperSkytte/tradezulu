@@ -192,6 +192,8 @@ def commands_for(db: Session, account: Account, payload: Any) -> list[dict[str, 
         mirror_stops=mirror_stops_enabled(account.copy_settings or {}),
     )
 
+    _remember_symbols(account, actions)
+
     commands: list[dict[str, Any]] = []
     for action in actions:
         if action.type is ActionType.SKIP:
@@ -338,12 +340,34 @@ def _context_for(
             account.symbol_suffix,
             account.symbol_map,
             [s["symbol"] for s in symbols],
+            account.symbol_learned,
         ),
         available_symbols=[s["symbol"] for s in symbols],
         specs=specs,
         copied=copied,
         halted=account.copy_halted,
     )
+
+
+def _remember_symbols(account: Account, actions: list[Any]) -> None:
+    """Keep what the search worked out, so it is only worked out once.
+
+    Resolution walks the broker's whole symbol list -- a couple of thousand
+    names at some brokers -- and it was doing that for every position on every
+    heartbeat. Writing the answer down turns all but the first into a lookup.
+
+    Only what was actually resolved is kept. A symbol that could not be matched
+    is not recorded as unmatchable: the instrument may simply not have been
+    trading yet, and a remembered failure would outlive the reason for it.
+    """
+    learned = dict(account.symbol_learned or {})
+    for action in actions:
+        if action.type is ActionType.SKIP or not action.symbol or not action.slave_symbol:
+            continue
+        if learned.get(action.symbol) != action.slave_symbol:
+            learned[action.symbol] = action.slave_symbol
+    if learned != (account.symbol_learned or {}):
+        account.symbol_learned = learned
 
 
 def _realised_by_day(db: Session, account: Account) -> dict[date, float]:

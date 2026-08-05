@@ -19,6 +19,11 @@ class SymbolRules:
     overrides: dict[str, str] = field(default_factory=dict)
     prefix: str = ""
     suffix: str = ""
+    #: What was worked out last time, by master symbol. Not the user's --
+    #: theirs are ``overrides`` and always win -- and never trusted blindly:
+    #: a remembered name still has to be one the broker currently lists, so a
+    #: renamed or delisted instrument re-resolves instead of failing to trade.
+    learned: dict[str, str] = field(default_factory=dict)
 
 
 #: Instruments almost every retail broker carries, used to read the naming
@@ -120,6 +125,15 @@ def resolve(master_symbol: str, rules: SymbolRules, available: list[str]) -> str
 
     by_upper = {name.upper(): name for name in available}
 
+    # What this resolved to last time, if the broker still lists it. Ahead of
+    # the search purely because it is the same answer for less work; behind the
+    # overrides, because those are the user's word on it.
+    remembered = rules.learned.get(master_symbol) or rules.learned.get(master_symbol.upper())
+    if remembered and not rules.overrides.get(master_symbol.upper()):
+        exact = by_upper.get(remembered.upper())
+        if exact:
+            return exact
+
     for candidate in candidates(master_symbol, rules):
         exact = by_upper.get(candidate.upper())
         if exact:
@@ -133,4 +147,46 @@ def resolve(master_symbol: str, rules: SymbolRules, available: list[str]) -> str
         if len(matches) == 1:
             return matches[0]
 
-    return None
+    return by_core(master_symbol, rules, available)
+
+
+#: How much of an instrument name has to match before it is believed. Five
+#: characters clears the shortest thing anyone trades (``XAU``, ``WTI``) with
+#: room to spare, and stops a three-letter core matching half the symbol list.
+_MIN_CORE = 5
+
+
+def by_core(master_symbol: str, rules: SymbolRules, available: list[str]) -> str | None:
+    """Match on the instrument inside the names, ignoring both decorations.
+
+    ``candidates`` strips the *slave's* prefix and suffix, which is the wrong
+    end of the problem when the master is the decorated one: a Vantage account
+    trades ``XAUUSD+`` and a slave carrying plain ``XAUUSD`` was told there was
+    no symbol matching it -- the ``+`` belongs to the master and nothing was
+    ever taking it off.
+
+    So the slave's own names are reduced instead. Whatever is left after its
+    prefix and suffix come off is the instrument, and if that instrument is
+    written inside the master's name, they are the same thing. The longest
+    match wins, so ``XAUUSD`` beats ``XAU`` on a broker that lists both.
+
+    Two different symbols reducing to the same instrument is refused rather
+    than guessed at. A wrong symbol here is not a missed trade -- it is real
+    money on an instrument nobody chose.
+    """
+    wanted = master_symbol.strip().upper()
+    if not wanted:
+        return None
+
+    best: list[str] = []
+    best_len = 0
+    for name in available:
+        core = strip_affixes(name.strip(), rules).upper()
+        if len(core) < _MIN_CORE or core not in wanted:
+            continue
+        if len(core) > best_len:
+            best, best_len = [name], len(core)
+        elif len(core) == best_len:
+            best.append(name)
+
+    return best[0] if len(best) == 1 else None
