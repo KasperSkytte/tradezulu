@@ -255,7 +255,10 @@ export function KLineReplay({ trade, timeframe }: { trade: TradeDetail; timefram
             upBorderColor: gain, downBorderColor: loss, noChangeBorderColor: text,
             upWickColor: gain, downWickColor: loss, noChangeWickColor: text,
           },
-          priceMark: { last: { text: { color: '#ffffff', family } } },
+          // No last-price line. It marks where the instrument is *now*, which
+          // has nothing to do with a trade taken in the past, and it draws
+          // straight across the position it is meant to be showing.
+          priceMark: { last: { show: false } },
           tooltip: {
             title: { color: text, family, size: 12 },
             legend: { color: text, family, size: 12 },
