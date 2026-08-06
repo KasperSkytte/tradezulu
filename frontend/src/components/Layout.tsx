@@ -58,6 +58,13 @@ export function Layout() {
   const showPeriod = !['/settings', '/calendar', '/news'].some((path) =>
     location.pathname.startsWith(path),
   )
+  // Which account, though, means something everywhere trades are shown -- and
+  // the calendar not offering it was how a newly added slave started counting
+  // towards the master's trading days with no control anywhere to say
+  // otherwise.
+  const showAccount = !['/settings', '/news'].some((path) =>
+    location.pathname.startsWith(path),
+  )
 
   return (
     <div className="flex min-h-full">
@@ -117,7 +124,7 @@ export function Layout() {
             <h1 className="mr-auto truncate text-base font-semibold tracking-tight sm:text-lg">
               {title}
             </h1>
-            {showPeriod && <AccountPicker />}
+            {showAccount && <AccountPicker />}
             {showPeriod && <PeriodPicker />}
             <SyncButton />
           </div>

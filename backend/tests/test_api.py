@@ -452,6 +452,45 @@ class TestAccountScope:
         db.commit()
         return auth_client, first.id, other.id
 
+    def test_the_calendar_is_scoped_to_one_account(self, two_accounts):
+        """A slave added on Tuesday must not join the master's trading days.
+
+        The calendar was the one view asking for every account, and it has no
+        account picker of its own to explain why -- so adding a second account
+        silently changed what every past day was worth.
+        """
+        client, first, other = two_accounts
+
+        mine = client.get("/api/stats/calendar", params={"month": "2026-06", "account_id": first}).json()
+        theirs = client.get("/api/stats/calendar", params={"month": "2026-06", "account_id": other}).json()
+        both = client.get("/api/stats/calendar", params={"month": "2026-06"}).json()
+
+        def trades_on(payload, day):
+            return next((d["trades"] for d in payload["days"] if d["date"] == day), 0)
+
+        assert trades_on(theirs, "2026-06-02") == 1
+        assert trades_on(mine, "2026-06-02") == 1, "its own trade that day, not the other's"
+        assert trades_on(both, "2026-06-02") == 2
+
+    def test_a_day_is_scoped_too(self, two_accounts):
+        client, first, other = two_accounts
+
+        mine = client.get("/api/stats/day/2026-06-02", params={"account_id": first}).json()
+        theirs = client.get("/api/stats/day/2026-06-02", params={"account_id": other}).json()
+
+        assert len(mine["trade_ids"]) == 1
+        assert len(theirs["trade_ids"]) == 1
+        assert mine["trade_ids"] != theirs["trade_ids"]
+        assert mine["summary"]["net_pnl"] != theirs["summary"]["net_pnl"]
+
+    def test_the_symbol_filter_offers_this_accounts_symbols(self, two_accounts):
+        """A filter listing instruments the account never traded empties the page."""
+        client, first, other = two_accounts
+
+        assert client.get("/api/trades/symbols", params={"account_id": other}).json() == ["GBPUSD"]
+        assert "GBPUSD" not in client.get("/api/trades/symbols", params={"account_id": first}).json()
+        assert "GBPUSD" in client.get("/api/trades/symbols").json()
+
     def _summary(self, client, **params):
         return client.get(
             "/api/stats/summary",

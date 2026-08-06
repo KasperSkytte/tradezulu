@@ -42,6 +42,8 @@ interface FiltersState {
   /** Query-string parameters for the statistics and trades endpoints. */
   params: Record<string, QueryValue>
   accounts: Account[]
+  /** Only the account scope, for views that take nothing else. */
+  accountParams: Record<string, QueryValue>
   setAccount: (scope: AccountScope) => void
   setPeriod: (period: string) => void
   setRange: (start: string, end: string) => void
@@ -172,6 +174,20 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
     })
   }, [write])
 
+  /** Just the account, for the views that scope by it and nothing else.
+   *
+   *  The calendar and the day behind it are about a month, not about the date
+   *  range or the symbol filters, and neither of those is even on screen
+   *  there. They still belong to one account: a slave added on Tuesday
+   *  otherwise starts contributing to the master's trading days on Tuesday,
+   *  silently, with no control anywhere to say otherwise. */
+  const accountParams = useMemo<Record<string, QueryValue>>(
+    () => ({
+      account_id: typeof filters.accountId === 'number' ? filters.accountId : undefined,
+    }),
+    [filters.accountId],
+  )
+
   const params = useMemo<Record<string, QueryValue>>(
     () => ({
       account_id: typeof filters.accountId === 'number' ? filters.accountId : undefined,
@@ -199,8 +215,14 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
     (filters.maxR ? 1 : 0)
 
   const value = useMemo<FiltersState>(
-    () => ({ filters, params, accounts, setAccount, setPeriod, setRange, update, reset, activeCount }),
-    [filters, params, accounts, setAccount, setPeriod, setRange, update, reset, activeCount],
+    () => ({
+      filters, params, accountParams, accounts,
+      setAccount, setPeriod, setRange, update, reset, activeCount,
+    }),
+    [
+      filters, params, accountParams, accounts,
+      setAccount, setPeriod, setRange, update, reset, activeCount,
+    ],
   )
 
   return <FiltersContext value={value}>{children}</FiltersContext>

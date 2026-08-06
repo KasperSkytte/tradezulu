@@ -87,8 +87,20 @@ def list_trades(
 
 
 @router.get("/symbols")
-def list_symbols(_user: CurrentUser, db: DbSession) -> list[str]:
-    return [s for s in db.scalars(select(distinct(Trade.symbol)).order_by(Trade.symbol)).all() if s]
+def list_symbols(
+    _user: CurrentUser,
+    db: DbSession,
+    account_id: Annotated[int | None, Query()] = None,
+) -> list[str]:
+    """Symbols that have been traded, on this account or on all of them.
+
+    Scoped because the filter built from it is: offering instruments the
+    account in view has never touched is a list of ways to empty the page.
+    """
+    stmt = select(distinct(Trade.symbol)).order_by(Trade.symbol)
+    if account_id is not None:
+        stmt = stmt.where(Trade.account_id == account_id)
+    return [s for s in db.scalars(stmt).all() if s]
 
 
 @router.get("/setups")

@@ -16,6 +16,7 @@ import {
 import clsx from 'clsx'
 import { api } from '../lib/api'
 import { define } from '../lib/glossary'
+import { useFilters } from '../lib/filters'
 import { useSettings } from '../lib/settings'
 import { dateOnly, isoDate, money, num, percent, pnlClass, profitFactor } from '../lib/format'
 import type { CalendarResponse, DayDetail, DailyPoint, Trade } from '../lib/types'
@@ -25,13 +26,17 @@ import { Button, Card, CardHeader, ErrorState, Hint, Skeleton } from '../compone
 export function CalendarPage() {
   const { currency, weekStartsOn } = useSettings()
   const queryClient = useQueryClient()
+  const { accountParams } = useFilters()
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()))
   const [openDay, setOpenDay] = useState<string | null>(null)
 
   const month = format(cursor, 'yyyy-MM')
   const query = useQuery({
-    queryKey: ['calendar', month],
-    queryFn: () => api.get<CalendarResponse>('/stats/calendar', { month }),
+    // Scoped to the account like every other figure in the journal. It was the
+    // one view that asked for all of them, so adding a slave quietly changed
+    // the master's trading days.
+    queryKey: ['calendar', month, accountParams],
+    queryFn: () => api.get<CalendarResponse>('/stats/calendar', { month, ...accountParams }),
   })
 
   const days = useMemo(() => {
@@ -295,21 +300,23 @@ function DayDialog({
   onSaved: () => void
 }) {
   const { currency } = useSettings()
+  const { accountParams } = useFilters()
   const [note, setNote] = useState<string | null>(null)
 
   const query = useQuery({
-    queryKey: ['day', day],
-    queryFn: () => api.get<DayDetail>(`/stats/day/${day}`),
+    queryKey: ['day', day, accountParams],
+    queryFn: () => api.get<DayDetail>(`/stats/day/${day}`, accountParams),
   })
 
   const tradesQuery = useQuery({
-    queryKey: ['day-trades', day],
+    queryKey: ['day-trades', day, accountParams],
     queryFn: () =>
       api.get<{ items: Trade[] }>('/trades', {
         start: day,
         end: day,
         include_open: true,
         page_size: 100,
+        ...accountParams,
       }),
   })
 

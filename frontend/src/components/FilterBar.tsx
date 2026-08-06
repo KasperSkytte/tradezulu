@@ -19,14 +19,17 @@ const OUTCOMES = [
 ]
 
 export function FilterBar() {
-  const { filters, update, reset, activeCount } = useFilters()
+  const { filters, update, reset, activeCount, accountParams } = useFilters()
   const [open, setOpen] = useState(false)
   const [searchDraft, setSearchDraft] = useState(filters.search)
   const panel = useRef<HTMLDivElement>(null)
 
+  // Symbols this account has traded, not every symbol in the database: a
+  // filter offering instruments the account in view has never touched is a
+  // list of ways to empty the page.
   const { data: symbols = [] } = useQuery({
-    queryKey: ['symbols'],
-    queryFn: () => api.get<string[]>('/trades/symbols'),
+    queryKey: ['symbols', accountParams],
+    queryFn: () => api.get<string[]>('/trades/symbols', accountParams),
     staleTime: 300_000,
   })
   const { data: tags = [] } = useQuery({
