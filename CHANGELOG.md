@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.24.0](https://github.com/KasperSkytte/tradezulu/compare/v1.23.2...v1.24.0) (2026-08-06)
+
+
+### Features
+
+* **chart:** the high/low labels can be switched off, from the chart ([06cd0a3](https://github.com/KasperSkytte/tradezulu/commit/06cd0a31b9aa94c967e42016a84557431ad43c69))
+
+
+### Bug fixes
+
+* **chart:** no current-price line on the Studio chart ([9ca20f5](https://github.com/KasperSkytte/tradezulu/commit/9ca20f5edb8f192e8ca5d04e75d7a25b493a40ed))
+
+
+### Refactoring
+
+* **chart:** one stored-candle chart, named after what draws it ([96e6131](https://github.com/KasperSkytte/tradezulu/commit/96e613132cfd3e7241774ee8fcff3a233ba9c742))
+
 ## [1.23.2](https://github.com/KasperSkytte/tradezulu/compare/v1.23.1...v1.23.2) (2026-08-06)
 
 
