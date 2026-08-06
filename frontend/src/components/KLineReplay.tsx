@@ -19,7 +19,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { dispose, init, registerOverlay } from 'klinecharts'
 import type { Chart, KLineData, Period } from 'klinecharts'
-import { CandlestickChart, Eraser } from 'lucide-react'
+import { CandlestickChart, Eraser, Eye, EyeOff } from 'lucide-react'
 import { api } from '../lib/api'
 import { useIsDark, useSettings } from '../lib/settings'
 import type { Account, CandleResponse, TradeDetail } from '../lib/types'
@@ -189,9 +189,11 @@ registerOverlay<{ label: string; color: string; above: boolean; family: string }
 export function KLineReplay({ trade, timeframe }: { trade: TradeDetail; timeframe: string }) {
   const container = useRef<HTMLDivElement>(null)
   const chartRef = useRef<Chart | null>(null)
-  const { settings, hour12 } = useSettings()
+  const { settings, hour12, save } = useSettings()
   const dark = useIsDark()
   const [tool, setTool] = useState('')
+
+  const showHighLow = settings.charts.show_high_low ?? true
 
   // Same query key as the other replay, so switching tabs re-uses the bars
   // rather than asking for them again.
@@ -256,7 +258,7 @@ export function KLineReplay({ trade, timeframe }: { trade: TradeDetail; timefram
           // No last-price line. It marks where the instrument is *now*, which
           // has nothing to do with a trade taken in the past, and it draws
           // straight across the position it is meant to be showing.
-          priceMark: { last: { show: false } },
+          priceMark: { last: { show: false }, high: { show: showHighLow }, low: { show: showHighLow } },
           tooltip: {
             title: { color: text, family, size: 12 },
             legend: { color: text, family, size: 12 },
@@ -392,6 +394,14 @@ export function KLineReplay({ trade, timeframe }: { trade: TradeDetail; timefram
     // alternative is patching six things back into agreement by hand.
   }, [bars, trade, timeframe, dark, hour12, shiftMinutes, zone, settings.charts.zoom_hours])
 
+  // Applied rather than passed to init: rebuilding the chart to hide two
+  // labels would throw away whatever has been drawn on it.
+  useEffect(() => {
+    chartRef.current?.setStyles({
+      candle: { priceMark: { high: { show: showHighLow }, low: { show: showHighLow } } },
+    })
+  }, [showHighLow])
+
   const start = (name: string) => {
     setTool(name)
     if (name) chartRef.current?.createOverlay(name)
@@ -455,12 +465,26 @@ export function KLineReplay({ trade, timeframe }: { trade: TradeDetail; timefram
 
       {/* No price list here: entry, exit, stop and target are on the Execution
           and Plan cards beside the chart, and they are drawn on it. */}
-      {hasCandles && (
-        <div className="mt-2 text-right text-xs text-[var(--tz-text-muted)]">
-          {bars.length} candles ·{' '}
-          {local ? settings.general.timezone.replace(/_/g, ' ') : 'broker time'}
-        </div>
-      )}
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--tz-text-muted)]">
+        <button
+          type="button"
+          className="flex items-center gap-1.5 hover:text-[var(--tz-text)]"
+          title={
+            showHighLow
+              ? 'Hide the labels on the highest and lowest bar in view'
+              : 'Label the highest and lowest bar in view'
+          }
+          onClick={() => void save({ charts: { show_high_low: !showHighLow } })}
+        >
+          {showHighLow ? <Eye size={13} /> : <EyeOff size={13} />} High / low
+        </button>
+        {hasCandles && (
+          <span className="ml-auto">
+            {bars.length} candles ·{' '}
+            {local ? settings.general.timezone.replace(/_/g, ' ') : 'broker time'}
+          </span>
+        )}
+      </div>
     </div>
   )
 }

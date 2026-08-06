@@ -69,6 +69,7 @@ const FALLBACK: AppSettings = {
     history_days_before: 1,
     history_days_after: 1,
     zoom_hours: 2,
+    show_high_low: true,
     tradingview_prefix: '',
     symbol_map: {},
   },

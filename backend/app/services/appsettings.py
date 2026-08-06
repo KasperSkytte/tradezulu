@@ -184,6 +184,11 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         # position. The whole position is always on screen -- this is the
         # context around it -- so a trade held longer than this still fits.
         "zoom_hours": 2.0,
+        # The little labels marking the highest and lowest bar on screen.
+        # Remembered here rather than in the browser so the choice follows you,
+        # but the switch for it lives under the chart: it is a thing you decide
+        # while looking at one, not something to go to a settings page for.
+        "show_high_low": True,
         # Maps broker symbols to TradingView tickers, e.g. {"EURUSD": "OANDA:EURUSD"}
         "tradingview_prefix": "",
         "symbol_map": {},

@@ -353,6 +353,8 @@ export interface AppSettings {
     history_days_after: number
     /** Context either side of the position when a chart first opens. */
     zoom_hours: number
+    /** The high/low markers on the visible window. Toggled under the chart. */
+    show_high_low: boolean
     tradingview_prefix: string
     symbol_map: Record<string, string>
   }
