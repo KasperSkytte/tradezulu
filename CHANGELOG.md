@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.23.2](https://github.com/KasperSkytte/tradezulu/compare/v1.23.1...v1.23.2) (2026-08-06)
+
+
+### Bug fixes
+
+* **calendar:** scope it to the selected account like everything else ([8d46e46](https://github.com/KasperSkytte/tradezulu/commit/8d46e46042b55ab208176512299d2fefc9c570f2))
+
 ## [1.23.1](https://github.com/KasperSkytte/tradezulu/compare/v1.23.0...v1.23.1) (2026-08-05)
 
 
