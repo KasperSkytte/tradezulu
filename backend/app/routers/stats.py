@@ -231,25 +231,51 @@ def calendar(
         day["note"] = note.content
         day["mood"] = note.mood
 
+    # Days first: each one carries the balance it opened with, and a week opens
+    # with whatever its earliest day did.
+    dated = attach_daily_returns(
+        db, account_id, sorted(days.values(), key=lambda d: str(d["date"]))
+    )
+
     week_start_monday = config["general"].get("week_starts_on", "monday") == "monday"
     weeks: dict[str, dict[str, Any]] = {}
-    for day in days.values():
+    for day in dated:
         d: date = day["date"] if isinstance(day["date"], date) else date.fromisoformat(day["date"])
         offset = d.weekday() if week_start_monday else (d.weekday() + 1) % 7
         week_key = str(d - timedelta(days=offset))
         bucket = weeks.setdefault(
             week_key,
-            {"week_start": week_key, "net_pnl": 0.0, "trades": 0, "days": 0, "r": 0.0},
+            {
+                "week_start": week_key,
+                "net_pnl": 0.0,
+                "trades": 0,
+                "days": 0,
+                "r": 0.0,
+                "start_balance": None,
+            },
         )
         bucket["net_pnl"] += day["net_pnl"]
         bucket["trades"] += day["trades"]
         bucket["r"] += day.get("r") or 0.0
         if day["trades"]:
             bucket["days"] += 1
+        # The earliest day in the week that has one, since `dated` is sorted.
+        if bucket["start_balance"] is None and day.get("start_balance"):
+            bucket["start_balance"] = day["start_balance"]
 
     for bucket in weeks.values():
         bucket["net_pnl"] = round(bucket["net_pnl"], 2)
         bucket["r"] = round(bucket["r"], 2)
+        # The week measured against the money it started with, the same way a
+        # day is measured against the previous close. Compounding follows on
+        # its own: a good week makes the next one a smaller percentage.
+        #
+        # Deliberately not named `opening`: that is the month's, and is still
+        # wanted below.
+        week_opening = bucket["start_balance"]
+        bucket["return_pct"] = (
+            round(bucket["net_pnl"] / week_opening * 100.0, 4) if week_opening else None
+        )
 
     return {
         "month": f"{year:04d}-{mon:02d}",
@@ -261,9 +287,7 @@ def calendar(
         "account_size": _account_size(db, config, filters.account_id) if single else None,
         "opening_balance": round(opening, 2) if single else None,
         "single_account": single,
-        "days": attach_daily_returns(
-            db, account_id, sorted(days.values(), key=lambda d: str(d["date"]))
-        ),
+        "days": dated,
         "weeks": sorted(weeks.values(), key=lambda w: w["week_start"]),
         "summary": {
             key: stats[key]

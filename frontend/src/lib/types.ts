@@ -256,6 +256,9 @@ export interface CalendarWeek {
   trades: number
   days: number
   r: number
+  /** The balance the week opened with, and the week measured against it. */
+  start_balance: number | null
+  return_pct: number | null
 }
 
 export interface CalendarResponse {

@@ -59,9 +59,17 @@ export function CalendarPage() {
   }, [weekStartsOn])
 
   const weekTotals = useMemo(() => {
-    const map = new Map<string, { net: number; trades: number; days: number }>()
+    const map = new Map<
+      string,
+      { net: number; trades: number; days: number; pct: number | null }
+    >()
     for (const week of query.data?.weeks ?? []) {
-      map.set(week.week_start, { net: week.net_pnl, trades: week.trades, days: week.days })
+      map.set(week.week_start, {
+        net: week.net_pnl,
+        trades: week.trades,
+        days: week.days,
+        pct: week.return_pct,
+      })
     }
     return map
   }, [query.data])
@@ -247,7 +255,25 @@ export function CalendarPage() {
                         >
                           {money(total.net, currency, { sign: true, decimals: 0, compact: true })}
                         </p>
-                        <p className="text-[0.65rem] text-[var(--tz-text-faint)]">
+                        {/* The week against the balance it opened with, under
+                            the money and at the same weight as a day's -- the
+                            same question asked of a week. */}
+                        <p
+                          className={clsx(
+                            'tabular text-xs font-semibold leading-tight',
+                            pnlClass(total.net),
+                          )}
+                        >
+                          {total.pct != null ? (
+                            <>
+                              {total.pct > 0 ? '+' : ''}
+                              {num(total.pct, 2)}%
+                            </>
+                          ) : (
+                            <span className="text-[var(--tz-text-faint)]">—</span>
+                          )}
+                        </p>
+                        <p className="mt-0.5 text-[0.65rem] text-[var(--tz-text-faint)]">
                           {total.days} day{total.days === 1 ? '' : 's'} · {total.trades}t
                         </p>
                       </>
