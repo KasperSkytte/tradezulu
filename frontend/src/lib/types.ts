@@ -315,6 +315,8 @@ export interface AppSettings {
     trading_days_per_year: number
     sharpe_basis: 'daily' | 'trade'
     min_trades_for_score: number
+    /** Whether a typical figure is the middle trade or the mean. */
+    averages: 'median' | 'mean'
   }
   zulu_score: {
     weights: Record<string, number>

@@ -626,6 +626,20 @@ function RiskSection() {
               onCommit={(value) => void apply({ stats: { trading_days_per_year: value } })}
             />
           </Field>
+          <Field
+            label="Typical figures"
+            hint="How the dashboard answers 'what does a trade usually risk, and what does a loss usually cost'. Risk and loss sizes have a long tail: one mistyped stop can move the mean across hundreds of trades while the middle trade does not move at all. The mean is still the right answer to 'what did all of this cost, divided by how many'."
+            className="sm:col-span-2"
+          >
+            <SegmentedControl
+              value={stats.averages ?? 'median'}
+              onChange={(value) => void apply({ stats: { averages: value } })}
+              options={[
+                { value: 'median', label: 'Median', title: 'The middle trade' },
+                { value: 'mean', label: 'Mean', title: 'The arithmetic average' },
+              ]}
+            />
+          </Field>
           <Field label="Sharpe basis">
             <SegmentedControl
               value={stats.sharpe_basis}

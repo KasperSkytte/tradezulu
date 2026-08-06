@@ -79,6 +79,14 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "trading_days_per_year": 252,
         "sharpe_basis": "daily",  # daily | trade
         "min_trades_for_score": 10,
+        # Whether a "typical" figure is the middle trade or the arithmetic
+        # mean. The median by default: risk and loss sizes have a long tail,
+        # and one mistyped stop -- 407 on an instrument trading at 4,011 --
+        # moved the mean risk across four hundred trades from 6 to 24 while
+        # the middle trade did not move at all. The mean is the honest answer
+        # to "what did all of this cost in total, divided by how many", which
+        # is a different question and sometimes the one being asked.
+        "averages": "median",  # median | mean
     },
     "zulu_score": {
         # A weight of 0 switches a component off, and every one of them can be

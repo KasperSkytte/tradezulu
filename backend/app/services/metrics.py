@@ -586,7 +586,7 @@ def summarize(
         # gap between them is whether the stops held: a typical loss bigger
         # than a typical planned risk is slippage, a widened stop, or a trade
         # that had no stop to begin with.
-        "typical_loss": _r(_median([abs(t.net_pnl) for t in losses if t.net_pnl < 0])),
+        "typical_loss": _r(_median(loss_pnls)),
         # The same comparison in R, where -1 is a loss that cost exactly what
         # it was supposed to. Nearer zero means they were cut early; past -1
         # means they ran further than planned.

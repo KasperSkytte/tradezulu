@@ -24,7 +24,7 @@ import { Card, CardHeader, DirectionBadge, EmptyState, ErrorState, Hint, Skeleto
 
 export function DashboardPage() {
   const { params, filters, accounts } = useFilters()
-  const { currency, showAmounts } = useSettings()
+  const { currency, showAmounts, settings } = useSettings()
 
   // What the account is actually worth, which the rest of this page carefully
   // never says: every other figure is about performance. Shown only when
@@ -99,6 +99,11 @@ export function DashboardPage() {
   // performance and nothing about size. Falls back to the money when there is
   // no opening balance to divide by -- several accounts in scope, say -- rather
   // than printing a percentage of nothing.
+  // Median or mean, as configured. Both are computed server-side, so this is
+  // only a choice about which to put on the page -- see stats.averages.
+  const median = (settings.stats?.averages ?? 'median') === 'median'
+  const typical = median ? 'Typical' : 'Average'
+
   const base = summary.opening_balance ?? 0
   const cash = (value: number | null | undefined, options?: { sign?: boolean }) => {
     if (value == null) return '—'
@@ -279,7 +284,7 @@ export function DashboardPage() {
           // instrument trading at 4,011 -- moved the average across four
           // hundred trades from six to twenty-four, and "what do I usually
           // risk" is a question about the middle of the distribution.
-          sub={`Typical risk ${cash(summary.typical_risk)}`}
+          sub={`${typical} risk ${cash(median ? summary.typical_risk : summary.avg_risk)}`}
           className="col-span-2 xl:col-span-1"
         />
       </div>
@@ -478,19 +483,19 @@ export function DashboardPage() {
                 actually cost. Medians, so a single mistyped stop does not
                 decide either figure. */}
             <Row
-              label="Typical planned risk"
-              hint="The middle trade's risk, from its stop. What you set out to lose if it went against you."
-              value={cash(summary.typical_risk)}
+              label={`${typical} planned risk`}
+              hint="What you set out to lose if the trade went against you, from its stop."
+              value={cash(median ? summary.typical_risk : summary.avg_risk)}
             />
             <Row
-              label="Typical realised risk"
-              hint="What a losing trade actually cost, as the middle one. Bigger than the planned figure means stops widened, slipped, or were never there."
-              value={cash(summary.typical_loss)}
+              label={`${typical} realised risk`}
+              hint="What a losing trade actually cost. Bigger than the planned figure means stops widened, slipped, or were never there."
+              value={cash(median ? summary.typical_loss : summary.avg_loss)}
             />
             <Row
               label="Realised risk in R"
               hint="-1.00R is a loss that cost exactly what it was planned to. Nearer zero means losses were cut early; past -1 means they ran further than planned."
-              value={rMultiple(summary.typical_loss_r)}
+              value={rMultiple(median ? summary.typical_loss_r : summary.avg_loss_r)}
             />
             <Row label="Average planned R" value={rMultiple(summary.avg_planned_r)} />
             <Row label="Average realised R" value={rMultiple(summary.avg_realized_r)} />

@@ -37,6 +37,7 @@ const FALLBACK: AppSettings = {
     trading_days_per_year: 252,
     sharpe_basis: 'daily',
     min_trades_for_score: 10,
+    averages: 'median',
   },
   zulu_score: { weights: {}, targets: {} },
   news: {
