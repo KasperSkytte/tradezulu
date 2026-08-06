@@ -3,10 +3,11 @@ import { useState } from 'react'
 import { BarChart3 } from 'lucide-react'
 import clsx from 'clsx'
 import { api } from '../lib/api'
+import { BoxPlot } from '../components/BoxPlot'
 import { useFilters } from '../lib/filters'
 import { useSettings } from '../lib/settings'
-import { dateOnly, money, num, percent, pnlClass, profitFactor } from '../lib/format'
-import type { BreakdownRow, Breakdowns, Summary } from '../lib/types'
+import { dateOnly, money, num, percent, pnlClass, profitFactor, rMultiple } from '../lib/format'
+import type { BreakdownRow, Breakdowns, Distribution, Summary } from '../lib/types'
 import { FilterBar } from '../components/FilterBar'
 import { DrawdownChart, SignedBarChart, WinRateLine } from '../components/charts'
 import { Card, CardHeader, EmptyState, ErrorState, SegmentedControl, Skeleton } from '../components/ui'
@@ -57,6 +58,11 @@ export function ReportsPage() {
   const breakdownQuery = useQuery({
     queryKey: ['stats', 'breakdowns', params],
     queryFn: () => api.get<Breakdowns>('/stats/breakdowns', params),
+  })
+
+  const shapeQuery = useQuery({
+    queryKey: ['stats', 'distributions', params],
+    queryFn: () => api.get<{ series: Distribution[] }>('/stats/distributions', params),
   })
 
   const rollingQuery = useQuery({
@@ -161,6 +167,54 @@ export function ReportsPage() {
         </Card>
       ) : (
         <>
+          {/* Shape before summary: an average is one number standing in for a
+              distribution, and which distribution it stands in for is what
+              decides whether the average is worth having. */}
+          {shapeQuery.data?.series?.length ? (
+            <Card>
+              <CardHeader
+                title="What you planned against what came back"
+                hint="Each box holds the middle half of the trades, the line inside it the median, and the whiskers reach to the furthest trade that is not an outlier. Dots past them are the trades that did something unusual."
+              />
+              {/* Two scales, not one. Planned R:R lives at 2R to 14R and the
+                  realised series live between -2R and +4R; on a shared axis
+                  the eleven planned trades squash nineteen hundred realised
+                  ones into a sliver. Comparability matters within each group,
+                  and the numbers underneath carry the comparison across. */}
+              {(() => {
+                const planned = shapeQuery.data.series.filter((e) => e.key === 'planned')
+                const realised = shapeQuery.data.series.filter((e) => e.key !== 'planned')
+                return (
+                  <>
+                    {realised.length > 0 && <BoxPlot series={realised} />}
+                    {planned.length > 0 && (
+                      <div className="mt-4 border-t border-[var(--tz-border)] pt-3">
+                        <BoxPlot series={planned} />
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
+              <dl className="mt-3 grid gap-x-6 gap-y-1 text-xs text-[var(--tz-text-muted)] sm:grid-cols-2">
+                {shapeQuery.data.series.map((entry) => (
+                  <div key={entry.key} className="flex justify-between gap-3">
+                    <dt>{entry.label}</dt>
+                    <dd className="tabular text-[var(--tz-text)]">
+                      median {rMultiple(entry.median)} · middle half {rMultiple(entry.q1)} to{' '}
+                      {rMultiple(entry.q3)}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="mt-3 text-xs text-[var(--tz-text-faint)]">
+                The comparison to read: whether the winners box sits far enough right of zero to
+                pay for the losers box at the rate losers actually arrive. Planned R:R above them
+                is the trade you set out to take — a wide gap between it and Realised is the plan
+                not surviving contact.
+              </p>
+            </Card>
+          ) : null}
+
           <div className="grid gap-4 lg:grid-cols-2">
             <Card>
               <CardHeader
