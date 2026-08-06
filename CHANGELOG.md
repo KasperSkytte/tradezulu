@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.25.0](https://github.com/KasperSkytte/tradezulu/compare/v1.24.0...v1.25.0) (2026-08-06)
+
+
+### Features
+
+* **calendar:** show what a week made as a percentage ([372ca7a](https://github.com/KasperSkytte/tradezulu/commit/372ca7a0d22edb9924b72eb6d60244a092e9d469))
+* **journal:** tag a loss that ran past its stop ([c8a652f](https://github.com/KasperSkytte/tradezulu/commit/c8a652fb2df24046d353fd5713044d735dd2ba3b))
+* **journal:** tag a trade that went on without a stop ([c720c5e](https://github.com/KasperSkytte/tradezulu/commit/c720c5ec0037196bab37e8db8e9754ee8ffede42))
+* **reports:** box plots of what was planned against what came back ([3ea48ae](https://github.com/KasperSkytte/tradezulu/commit/3ea48aee7a668d9c25d0557013e8ac8907bf99d8))
+* **reports:** the box plots answer in whichever unit is selected ([568f557](https://github.com/KasperSkytte/tradezulu/commit/568f5577e852dea0a8c901ac186ade3f584d2501))
+* **settings:** choose whether typical figures are the median or the mean ([dc3824b](https://github.com/KasperSkytte/tradezulu/commit/dc3824b4060464b2285bc0fcc45a38f6deda0dfd))
+* **stats:** show how often losses ran past the stop ([3227cae](https://github.com/KasperSkytte/tradezulu/commit/3227cae840d4caa00bc6292269e68a5ae84d8322))
+* **stats:** the win rate this payoff needs to break even ([7830701](https://github.com/KasperSkytte/tradezulu/commit/7830701721f98ea4d2e64e86a96f9990b789763d))
+
+
+### Bug fixes
+
+* **agent:** a terminal that is not logged in must not erase the balance ([2b05af3](https://github.com/KasperSkytte/tradezulu/commit/2b05af3cddccaae288d3ae573b3aeb97fb3cf2da))
+* **stats:** a typical risk figure that one bad stop cannot decide ([dc1b28f](https://github.com/KasperSkytte/tradezulu/commit/dc1b28fa747baf394b15ea9d341d1da78c3acc27))
+
+
+### Documentation
+
+* **dashboard:** say what the risk rows are measuring ([f6076e2](https://github.com/KasperSkytte/tradezulu/commit/f6076e26fc5102401bfed4c1168f60b2ac6d723f))
+
 ## [1.24.0](https://github.com/KasperSkytte/tradezulu/compare/v1.23.2...v1.24.0) (2026-08-06)
 
 
