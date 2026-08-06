@@ -188,6 +188,8 @@ export interface Summary {
   /** Losses that ran past the stop meant to end them. */
   slipped_losses: number
   slipped_share: number | null
+  /** The win rate this payoff needs before the account stops going backwards. */
+  breakeven_win_rate: number | null
   typical_slip_r: number | null
   max_drawdown: number | null
   max_drawdown_pct: number | null
@@ -248,6 +250,20 @@ export interface Breakdowns {
   by_r_multiple: BreakdownRow[]
   by_setup: BreakdownRow[]
   by_tag: BreakdownRow[]
+}
+
+export interface Distribution {
+  key: string
+  label: string
+  hint: string
+  count: number
+  min: number
+  q1: number
+  median: number
+  q3: number
+  max: number
+  mean: number | null
+  outliers: number[]
 }
 
 export interface CalendarWeek {

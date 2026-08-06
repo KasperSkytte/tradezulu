@@ -91,6 +91,40 @@ def _mean(values: Sequence[float]) -> float | None:
     return sum(values) / len(values) if values else None
 
 
+def five_number(values: Sequence[float]) -> dict[str, Any] | None:
+    """A box plot's worth of a distribution, and the points outside it.
+
+    An average is one number standing in for a shape, and the shape is the
+    part worth seeing: whether the winners cluster or come from three lucky
+    trades, whether the losses are tight against the stop or scattered past
+    it. The quartiles say that in a way no single figure can.
+
+    Whiskers reach to the furthest value within 1.5 interquartile ranges --
+    Tukey's rule -- and anything beyond is listed separately rather than
+    stretching the box until it says nothing.
+    """
+    if len(values) < 4:
+        return None
+
+    ordered = sorted(values)
+    q1, median, q3 = (float(q) for q in statistics.quantiles(ordered, n=4))
+    reach = 1.5 * (q3 - q1)
+    inside = [v for v in ordered if q1 - reach <= v <= q3 + reach] or ordered
+
+    return {
+        "count": len(ordered),
+        "min": _r(inside[0], 3),
+        "q1": _r(q1, 3),
+        "median": _r(median, 3),
+        "q3": _r(q3, 3),
+        "max": _r(inside[-1], 3),
+        "mean": _r(_mean(ordered), 3),
+        # Capped: a hundred dots is a smear, and the count above says how many
+        # trades there were in total anyway.
+        "outliers": [_r(v, 3) for v in ordered if v < inside[0] or v > inside[-1]][:24],
+    }
+
+
 def _median(values: Sequence[float]) -> float | None:
     """The middle value, for figures with a tail that a mean cannot survive.
 
@@ -597,6 +631,11 @@ def summarize(
         # slippage -- a stop widened by hand, a weekend gap and a fill through
         # a thin book look identical from here -- but the same thing to an
         # account, and the ones worth going back to look at.
+        # The win rate this payoff needs before the account stops going
+        # backwards. Beside the real one it says whether an edge exists at
+        # all: a 40% win rate is excellent at 2:1 and ruinous at 1:2, and the
+        # number on its own never says which.
+        "breakeven_win_rate": _r(100.0 / (1.0 + payoff) if payoff else None, 1),
         "slipped_losses": len(slipped),
         "slipped_share": _r(len(slipped) / len(losses) * 100 if losses else None, 1),
         "typical_slip_r": _r(_median([t.realized_r for t in slipped]), 2),
@@ -746,6 +785,43 @@ def _group_stats(trades: Sequence[Trade], breakeven_handling: str) -> dict[str, 
         "avg_r": _r(_mean(rs), 3),
         "volume": _r(sum(t.volume for t in sets.all_closed), 2),
     }
+
+
+def distributions(trades: Sequence[Trade], breakeven_handling: str) -> list[dict[str, Any]]:
+    """The shape of what was planned and what came back, as box plots.
+
+    Four series, and the comparison between them is the point:
+
+    * **Planned** is the reward you set out for, in units of the risk you
+      accepted -- the R:R of the trades you actually took, rather than the one
+      you would give as an answer.
+    * **Realised** is what came back, over every closed trade.
+    * **Winners** and **Losers** split that, because a single distribution of
+      both is bimodal by construction and its median lands in the gap between
+      the two humps, describing a trade nobody took.
+
+    Read together they answer the question an average cannot: whether the
+    winners are big enough to pay for the losers at the rate the losers
+    actually arrive.
+    """
+    sets = split_trades(trades, breakeven_handling)
+    planned = [t.planned_r for t in sets.all_closed if t.planned_r]
+    realised = [t.realized_r for t in sets.all_closed if t.realized_r is not None]
+    won = [t.realized_r for t in sets.wins if t.realized_r is not None]
+    lost = [t.realized_r for t in sets.losses if t.realized_r is not None]
+
+    series = [
+        ("planned", "Planned R:R", "What the stop and target were set up to pay", planned),
+        ("realised", "Realised R", "What every closed trade actually returned", realised),
+        ("winners", "Winners", "Realised R of the trades that paid", won),
+        ("losers", "Losers", "Realised R of the trades that did not", lost),
+    ]
+    out = []
+    for key, label, hint, values in series:
+        summary = five_number(values)
+        if summary:
+            out.append({"key": key, "label": label, "hint": hint, **summary})
+    return out
 
 
 def breakdowns(

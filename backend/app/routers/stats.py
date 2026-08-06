@@ -13,7 +13,7 @@ from ..deps import AppConfig, CurrentUser, DateRangeDep, DbSession, get_default_
 from ..models import DayNote, EquityPoint, Trade
 from ..services.aggregation import resolve_account_size
 from ..services.balances import attach_daily_returns, opening_balance
-from ..services.metrics import breakdowns, rolling_metrics, summarize
+from ..services.metrics import breakdowns, distributions, rolling_metrics, summarize
 from ..services.queries import TradeFilters, TradeFiltersDep, fetch_trades
 
 router = APIRouter(prefix="/stats", tags=["stats"])
@@ -149,6 +149,22 @@ def get_breakdowns(
     # to leave the percentage out rather than divide by it.
     out["account_size"] = _account_size(db, config, filters.account_id)
     return out
+
+
+@router.get("/distributions")
+def get_distributions(
+    _user: CurrentUser,
+    db: DbSession,
+    config: AppConfig,
+    range_: DateRangeDep,
+    filters: TradeFiltersDep,
+) -> dict[str, Any]:
+    """The shape of planned and realised R, as box plots."""
+    filters.start, filters.end = range_.start, range_.end
+    trades = fetch_trades(db, filters)
+    return {
+        "series": distributions(trades, config["risk"].get("breakeven_handling", "excluded"))
+    }
 
 
 @router.get("/rolling")
