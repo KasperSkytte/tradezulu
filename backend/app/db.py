@@ -118,12 +118,17 @@ def _refile_trading_days(db: Session) -> None:
         log.info("Refiled %d trades onto the corrected trading day", count)
 
 
-#: Set once trades already stored have been checked for a missing stop.
-STOP_TAG_KEY = "unprotected_trades_tagged"
+#: Set once trades already stored have been checked for the automatic tags.
+#: Named for the pass rather than for one tag: adding another means a new key,
+#: so the existing journal is swept again for it.
+STOP_TAG_KEY = "auto_tags_applied_v2"
 
 
 def _tag_unprotected_trades(db: Session) -> None:
-    """Put the no-stop tag on trades that arrived before it existed, once.
+    """Tag trades that arrived before the tags existed, once.
+
+    Two of them: a position opened with no stop, and a loss that ran past the
+    stop meant to end it.
 
     New trades are tagged as they are folded, but a journal is mostly history
     by the time anybody wants to search it, and going back through several
@@ -131,7 +136,7 @@ def _tag_unprotected_trades(db: Session) -> None:
     is meant to save.
     """
     from .models import Setting, Trade
-    from .services.aggregation import tag_if_unprotected
+    from .services.aggregation import tag_if_slipped, tag_if_unprotected
 
     if db.get(Setting, STOP_TAG_KEY) is not None:
         return
@@ -140,12 +145,13 @@ def _tag_unprotected_trades(db: Session) -> None:
     before = sum(len(trade.tags) for trade in trades)
     for trade in trades:
         tag_if_unprotected(db, trade)
+        tag_if_slipped(db, trade)
     tagged = sum(len(trade.tags) for trade in trades) - before
 
     db.add(Setting(key=STOP_TAG_KEY, value={"tagged": tagged}))
     db.commit()
     if tagged:
-        log.info("Tagged %d trade(s) that were opened without a stop", tagged)
+        log.info("Tagged %d trade(s) with no stop or a loss past their stop", tagged)
 
 
 def init_db() -> None:

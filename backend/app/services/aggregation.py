@@ -488,6 +488,7 @@ def rebuild_trades(
     for agg in aggregated:
         trade = existing.get(agg.position_id)
         first_sight = trade is None
+        was_open = trade is None or trade.closed_at is None
         if trade is None:
             trade = Trade(account_id=account_id, position_id=agg.position_id, source="mt5")
             db.add(trade)
@@ -527,8 +528,12 @@ def rebuild_trades(
             broker_offset_minutes=account.broker_utc_offset_minutes if account else None,
         )
         _sync_executions(db, trade, agg.executions)
-        if first_sight:
+        # On first sight, and again when it closes: a position seen while it
+        # was still running had no result to judge, and would otherwise never
+        # be looked at again.
+        if first_sight or (was_open and trade.closed_at is not None):
             tag_if_unprotected(db, trade)
+            tag_if_slipped(db, trade)
         count += 1
 
     db.flush()
@@ -539,6 +544,41 @@ def rebuild_trades(
 #: defaults, in the "mistake" category, so it groups with the rest of them in
 #: Reports without any special handling.
 NO_STOP_TAG = "No stop loss"
+
+
+#: A loss is only called slipped once it is a tenth past the stop. Commission
+#: and a tick of spread routinely push a loss a few percent beyond its planned
+#: risk, and tagging that would put the label on nearly every loss and so on
+#: none of them.
+SLIPPAGE_R = -1.10
+
+#: The tag for a loss that cost more than the stop said it would.
+SLIPPAGE_TAG = "Slippage"
+
+
+def _tag(db: Session, trade: Trade, name: str, color: str) -> None:
+    tag = db.scalar(select(Tag).where(func.lower(Tag.name) == name.lower()))
+    if tag is None:
+        tag = Tag(name=name, color=color, category="mistake")
+        db.add(tag)
+        db.flush()
+    if tag not in trade.tags:
+        trade.tags.append(tag)
+
+
+def tag_if_slipped(db: Session, trade: Trade) -> None:
+    """Tag a loss that ran past the stop that was supposed to end it.
+
+    The stop said what the trade could cost; this is the record of it costing
+    more. The cause is not always slippage -- a stop widened by hand, a gap
+    over the weekend and a fill through a thin book all look the same from
+    here -- but they are the same thing to an account, and the ones worth
+    going back to look at.
+
+    Only losses, and only past a threshold: see SLIPPAGE_R.
+    """
+    if trade.realized_r is not None and trade.realized_r <= SLIPPAGE_R:
+        _tag(db, trade, SLIPPAGE_TAG, "#e11d48")
 
 
 def tag_if_unprotected(db: Session, trade: Trade) -> None:
@@ -556,14 +596,7 @@ def tag_if_unprotected(db: Session, trade: Trade) -> None:
     """
     if trade.initial_stop:
         return
-
-    tag = db.scalar(select(Tag).where(func.lower(Tag.name) == NO_STOP_TAG.lower()))
-    if tag is None:
-        tag = Tag(name=NO_STOP_TAG, color="#b91c1c", category="mistake")
-        db.add(tag)
-        db.flush()
-    if tag not in trade.tags:
-        trade.tags.append(tag)
+    _tag(db, trade, NO_STOP_TAG, "#b91c1c")
 
 
 def _sync_executions(db: Session, trade: Trade, executions: list[dict[str, Any]]) -> None:
