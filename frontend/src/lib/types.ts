@@ -179,6 +179,12 @@ export interface Summary {
   avg_realized_r: number | null
   plan_adherence: number | null
   avg_risk: number | null
+  /** The middle trade's risk, which one mistyped stop cannot move. */
+  typical_risk: number | null
+  /** What a losing trade actually cost, as the middle one; and in R, where
+   *  -1 is a loss that cost exactly what it was planned to. */
+  typical_loss: number | null
+  typical_loss_r: number | null
   max_drawdown: number | null
   max_drawdown_pct: number | null
   /** How far the worst loss ran past a typical one. 1 means every loss was the

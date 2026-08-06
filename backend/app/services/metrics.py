@@ -90,6 +90,20 @@ def _mean(values: Sequence[float]) -> float | None:
     return sum(values) / len(values) if values else None
 
 
+def _median(values: Sequence[float]) -> float | None:
+    """The middle value, for figures with a tail that a mean cannot survive.
+
+    Risk per trade is one of them. A single mistyped stop -- 407 on an
+    instrument trading at 4,011 -- makes one trade look like it risked 7,200,
+    which on its own moved the average across four hundred trades from six to
+    twenty-four. "What do I usually risk" is a question about the middle of the
+    distribution, and the middle is not moved by how wrong the worst entry is.
+    """
+    if not values:
+        return None
+    return float(statistics.median(values))
+
+
 def compute_drawdown(
     pnls: Sequence[float], account_size: float
 ) -> tuple[float, float | None, list[float]]:
@@ -193,6 +207,7 @@ def compute_streaks(trades: Sequence[Trade]) -> dict[str, Any]:
             run_win = 0
             max_loss = max(max_loss, run_loss)
             current = -run_loss
+
     return {
         "max_win_streak": max_win,
         "max_loss_streak": max_loss,
@@ -502,6 +517,8 @@ def summarize(
 
     consistency = consistency_score(daily)
 
+    risks = [t.risk_amount for t in sets.all_closed if t.risk_amount]
+
     summary: dict[str, Any] = {
         "period": {
             "start": period_start,
@@ -560,7 +577,20 @@ def summarize(
             else None,
             1,
         ),
-        "avg_risk": _r(_mean([t.risk_amount for t in sets.all_closed if t.risk_amount])),
+        # The typical trade, not the average one: see _median. The mean is
+        # kept beside it, because the gap between them is itself worth seeing
+        # -- it is how much of your risk lives in a handful of trades.
+        "typical_risk": _r(_median(risks)),
+        "avg_risk": _r(_mean(risks)),
+        # What a loss actually cost, against what one was meant to cost. The
+        # gap between them is whether the stops held: a typical loss bigger
+        # than a typical planned risk is slippage, a widened stop, or a trade
+        # that had no stop to begin with.
+        "typical_loss": _r(_median([abs(t.net_pnl) for t in losses if t.net_pnl < 0])),
+        # The same comparison in R, where -1 is a loss that cost exactly what
+        # it was supposed to. Nearer zero means they were cut early; past -1
+        # means they ran further than planned.
+        "typical_loss_r": _r(_median(loss_rs), 2),
         "max_drawdown": _r(max_dd),
         "max_drawdown_pct": _r(max_dd_pct, 2),
         # What the closed-trade record can actually say about risk taken: how

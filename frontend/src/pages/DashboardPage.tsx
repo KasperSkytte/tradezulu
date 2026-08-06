@@ -275,7 +275,11 @@ export function DashboardPage() {
                 ? 'var(--tz-gain-text)'
                 : 'var(--tz-loss-text)'
           }
-          sub={`Avg risk ${cash(summary.avg_risk)}`}
+          // The median, not the mean: one mistyped stop -- 407 on an
+          // instrument trading at 4,011 -- moved the average across four
+          // hundred trades from six to twenty-four, and "what do I usually
+          // risk" is a question about the middle of the distribution.
+          sub={`Typical risk ${cash(summary.typical_risk)}`}
           className="col-span-2 xl:col-span-1"
         />
       </div>
@@ -467,9 +471,27 @@ export function DashboardPage() {
         <Card>
           <CardHeader
             title="Plan vs execution"
-            hint="How the R multiple you planned compares with what you actually banked."
+            hint="What you meant to risk against what it cost, and the R multiple you planned against what you actually banked."
           />
           <dl className="space-y-2.5 text-sm">
+            {/* Risk first: what a trade was meant to cost, and what one
+                actually cost. Medians, so a single mistyped stop does not
+                decide either figure. */}
+            <Row
+              label="Typical planned risk"
+              hint="The middle trade's risk, from its stop. What you set out to lose if it went against you."
+              value={cash(summary.typical_risk)}
+            />
+            <Row
+              label="Typical realised risk"
+              hint="What a losing trade actually cost, as the middle one. Bigger than the planned figure means stops widened, slipped, or were never there."
+              value={cash(summary.typical_loss)}
+            />
+            <Row
+              label="Realised risk in R"
+              hint="-1.00R is a loss that cost exactly what it was planned to. Nearer zero means losses were cut early; past -1 means they ran further than planned."
+              value={rMultiple(summary.typical_loss_r)}
+            />
             <Row label="Average planned R" value={rMultiple(summary.avg_planned_r)} />
             <Row label="Average realised R" value={rMultiple(summary.avg_realized_r)} />
             <Row
