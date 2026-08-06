@@ -6,7 +6,7 @@ import { api } from '../lib/api'
 import { BoxPlot } from '../components/BoxPlot'
 import { useFilters } from '../lib/filters'
 import { useSettings } from '../lib/settings'
-import { dateOnly, money, num, percent, pnlClass, profitFactor, rMultiple } from '../lib/format'
+import { dateOnly, money, num, percent, pnlClass, profitFactor } from '../lib/format'
 import type { BreakdownRow, Breakdowns, Distribution, Summary } from '../lib/types'
 import { FilterBar } from '../components/FilterBar'
 import { DrawdownChart, SignedBarChart, WinRateLine } from '../components/charts'
@@ -45,23 +45,48 @@ const SECTIONS: { key: BreakdownKey; title: string; hint: string }[] = [
   { key: 'by_direction', title: 'Long vs short', hint: 'Directional bias in your results.' },
 ]
 
-/** One box plot and the medians under it, for the series named. */
-function Shape({ series, keys }: { series: Distribution[]; keys: string[] }) {
-  const chosen = keys
+/** One box plot and the medians under it, for the series named.
+ *
+ *  The unit follows the selector at the top of the page: the same distribution
+ *  answers "was the risk worth taking" in R and "how much of the account did
+ *  it move" in percent, and they are different questions.
+ */
+function Shape({
+  series,
+  keys,
+  metric,
+  format,
+}: {
+  series: Distribution[]
+  keys: string[]
+  metric: Metric
+  format: (value: number) => string
+}) {
+  const rows = keys
     .map((key) => series.find((entry) => entry.key === key))
     .filter((entry): entry is Distribution => Boolean(entry))
-  if (!chosen.length) return null
+    // In money or percent a series is only shown if it has a money form:
+    // planned R:R on trades whose risk was never defined has none.
+    .map((entry) =>
+      metric === 'total_r'
+        ? { ...entry, key: entry.key, label: entry.label }
+        : entry.money && { ...entry.money, key: entry.key, label: entry.label },
+    )
+    .filter((row): row is NonNullable<typeof row> => Boolean(row))
+
+  if (!rows.length) return null
 
   return (
     <div className="mt-1 first:mt-0 [&+&]:mt-3 [&+&]:border-t [&+&]:border-[var(--tz-border)] [&+&]:pt-3">
-      <BoxPlot series={chosen} />
-      <dl className="mt-1.5 space-y-0.5 text-xs text-[var(--tz-text-muted)]">
-        {chosen.map((entry) => (
-          <div key={entry.key} className="flex justify-between gap-3">
-            <dt>{entry.label}</dt>
+      <BoxPlot series={rows} format={format} />
+      {/* Figures only: the chart beside them is already labelled, and repeating
+          the name here said it twice and told nobody anything twice. */}
+      <dl className="mt-1.5 space-y-0.5 text-right text-xs text-[var(--tz-text-muted)]">
+        {rows.map((row) => (
+          <div key={row.key}>
+            <dt className="sr-only">{row.label}</dt>
             <dd className="tabular text-[var(--tz-text)]">
-              median {rMultiple(entry.median)} · middle half {rMultiple(entry.q1)} to{' '}
-              {rMultiple(entry.q3)}
+              median {format(row.median)} · middle half {format(row.q1)} to {format(row.q3)}
             </dd>
           </div>
         ))}
@@ -204,8 +229,18 @@ export function ReportsPage() {
                     between -2R and +1R, so one axis turns the larger sample
                     into a sliver. The medians underneath carry the
                     comparison. */}
-                <Shape series={shapeQuery.data.series} keys={['planned']} />
-                <Shape series={shapeQuery.data.series} keys={['realised']} />
+                <Shape
+                  series={shapeQuery.data.series}
+                  keys={['planned']}
+                  metric={metric}
+                  format={formatMetric}
+                />
+                <Shape
+                  series={shapeQuery.data.series}
+                  keys={['realised']}
+                  metric={metric}
+                  format={formatMetric}
+                />
               </Card>
 
               <Card>
@@ -213,7 +248,12 @@ export function ReportsPage() {
                   title="Winners against losers"
                   hint="Whether the winners sit far enough right of zero to pay for the losers at the rate losers actually arrive. One scale, because these two are the comparison."
                 />
-                <Shape series={shapeQuery.data.series} keys={['winners', 'losers']} />
+                <Shape
+                  series={shapeQuery.data.series}
+                  keys={['winners', 'losers']}
+                  metric={metric}
+                  format={formatMetric}
+                />
               </Card>
             </div>
           ) : null}

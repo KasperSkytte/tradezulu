@@ -252,10 +252,7 @@ export interface Breakdowns {
   by_tag: BreakdownRow[]
 }
 
-export interface Distribution {
-  key: string
-  label: string
-  hint: string
+export interface FiveNumber {
   count: number
   min: number
   q1: number
@@ -264,6 +261,14 @@ export interface Distribution {
   max: number
   mean: number | null
   outliers: number[]
+}
+
+export interface Distribution extends FiveNumber {
+  key: string
+  label: string
+  hint: string
+  /** The same distribution in account currency, when it has one. */
+  money: FiveNumber | null
 }
 
 export interface CalendarWeek {

@@ -810,17 +810,40 @@ def distributions(trades: Sequence[Trade], breakeven_handling: str) -> list[dict
     won = [t.realized_r for t in sets.wins if t.realized_r is not None]
     lost = [t.realized_r for t in sets.losses if t.realized_r is not None]
 
+    # The same four distributions in money, so the page can answer in whichever
+    # unit is selected. Planned in money is what the target was set up to pay --
+    # the risk accepted multiplied by the reward planned on it -- which is the
+    # money question the R:R ratio is the ratio form of.
+    planned_cash = [
+        t.risk_amount * t.planned_r
+        for t in sets.all_closed
+        if t.planned_r and t.risk_amount
+    ]
+    realised_cash = [t.net_pnl for t in sets.all_closed]
+    won_cash = [t.net_pnl for t in sets.wins]
+    lost_cash = [t.net_pnl for t in sets.losses]
+
     series = [
-        ("planned", "Planned R:R", "What the stop and target were set up to pay", planned),
-        ("realised", "Realised R", "What every closed trade actually returned", realised),
-        ("winners", "Winners", "Realised R of the trades that paid", won),
-        ("losers", "Losers", "Realised R of the trades that did not", lost),
+        ("planned", "Planned", "What the stop and target were set up to pay", planned, planned_cash),
+        ("realised", "Realised", "What every closed trade actually returned", realised, realised_cash),
+        ("winners", "Winners", "The trades that paid", won, won_cash),
+        ("losers", "Losers", "The trades that did not", lost, lost_cash),
     ]
     out = []
-    for key, label, hint, values in series:
-        summary = five_number(values)
+    for key, label, hint, r_values, cash_values in series:
+        summary = five_number(r_values)
         if summary:
-            out.append({"key": key, "label": label, "hint": hint, **summary})
+            out.append(
+                {
+                    "key": key,
+                    "label": label,
+                    "hint": hint,
+                    **summary,
+                    # Null when there is nothing to say in money: a planned R:R
+                    # on a trade whose risk was never defined has no cash form.
+                    "money": five_number(cash_values),
+                }
+            )
     return out
 
 

@@ -12,21 +12,10 @@
  * with invisible segments, which is more code than the SVG and harder to read.
  */
 
-import { num } from '../lib/format'
+import type { FiveNumber } from '../lib/types'
 
-export type Distribution = {
-  key: string
-  label: string
-  hint: string
-  count: number
-  min: number
-  q1: number
-  median: number
-  q3: number
-  max: number
-  mean: number | null
-  outliers: number[]
-}
+/** One row: a distribution, what to call it, and how to write its numbers. */
+export type BoxRow = FiveNumber & { key: string; label: string }
 
 /** A plain pixel-ish coordinate space, scaled to the card by the viewBox.
  *  Everything below is in these units: a row's height, the axis strip under
@@ -36,7 +25,14 @@ const ROW = 46
 const AXIS = 24
 const LABELS = 104
 
-export function BoxPlot({ series }: { series: Distribution[] }) {
+export function BoxPlot({
+  series,
+  format,
+}: {
+  series: BoxRow[]
+  /** Whatever unit the page is currently answering in -- R, money, percent. */
+  format: (value: number) => string
+}) {
   if (!series.length) return null
 
   // One scale across every row, or the boxes cannot be compared -- which is
@@ -91,7 +87,7 @@ export function BoxPlot({ series }: { series: Distribution[] }) {
             fill="var(--tz-text-faint)"
             style={{ fontSize: 11 }}
           >
-            {tick}R
+            {format(tick)}
           </text>
         </g>
       ))}
@@ -167,8 +163,8 @@ export function BoxPlot({ series }: { series: Distribution[] }) {
             })}
 
             <title>
-              {`${s.label}: median ${num(s.median, 2)}R, middle half ${num(s.q1, 2)}R to ` +
-                `${num(s.q3, 2)}R, reaching ${num(s.min, 2)}R to ${num(s.max, 2)}R` +
+              {`${s.label}: median ${format(s.median)}, middle half ${format(s.q1)} to ` +
+                `${format(s.q3)}, reaching ${format(s.min)} to ${format(s.max)}` +
                 (s.outliers.length ? `, ${s.outliers.length} beyond that` : '')}
             </title>
           </g>

@@ -163,7 +163,10 @@ def get_distributions(
     filters.start, filters.end = range_.start, range_.end
     trades = fetch_trades(db, filters)
     return {
-        "series": distributions(trades, config["risk"].get("breakeven_handling", "excluded"))
+        "series": distributions(trades, config["risk"].get("breakeven_handling", "excluded")),
+        # Lets the page express a distribution as a share of the account as
+        # well as in money or R. Sent rather than assumed: 0 means "unknown".
+        "account_size": _account_size(db, config, filters.account_id),
     }
 
 
