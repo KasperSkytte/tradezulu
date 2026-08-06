@@ -185,6 +185,10 @@ export interface Summary {
    *  -1 is a loss that cost exactly what it was planned to. */
   typical_loss: number | null
   typical_loss_r: number | null
+  /** Losses that ran past the stop meant to end them. */
+  slipped_losses: number
+  slipped_share: number | null
+  typical_slip_r: number | null
   max_drawdown: number | null
   max_drawdown_pct: number | null
   /** How far the worst loss ran past a typical one. 1 means every loss was the

@@ -497,6 +497,15 @@ export function DashboardPage() {
               hint="-1.00R is a loss that cost exactly what it was planned to. Nearer zero means losses were cut early; past -1 means they ran further than planned."
               value={rMultiple(median ? summary.typical_loss_r : summary.avg_loss_r)}
             />
+            <Row
+              label="Losses past the stop"
+              hint="Losses that cost more than the stop said they would — slippage, a gap, or a stop that was widened. The R figure is the typical one among them, against -1.00R for a loss that cost exactly what was planned."
+              value={
+                summary.slipped_losses > 0
+                  ? `${summary.slipped_losses} · ${percent(summary.slipped_share)} · ${rMultiple(summary.typical_slip_r)}`
+                  : 'none'
+              }
+            />
             <Row label="Average planned R" value={rMultiple(summary.avg_planned_r)} />
             <Row label="Average realised R" value={rMultiple(summary.avg_realized_r)} />
             <Row

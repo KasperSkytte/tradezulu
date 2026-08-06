@@ -16,6 +16,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from ..models import Trade
+from .aggregation import SLIPPAGE_R
 
 # Sentinel used when profit factor is infinite (losses == 0).
 PF_INFINITE = 999.0
@@ -518,6 +519,7 @@ def summarize(
     consistency = consistency_score(daily)
 
     risks = [t.risk_amount for t in sets.all_closed if t.risk_amount]
+    slipped = [t for t in losses if t.realized_r is not None and t.realized_r <= SLIPPAGE_R]
 
     summary: dict[str, Any] = {
         "period": {
@@ -591,6 +593,13 @@ def summarize(
         # it was supposed to. Nearer zero means they were cut early; past -1
         # means they ran further than planned.
         "typical_loss_r": _r(_median(loss_rs), 2),
+        # Losses that ran past the stop meant to end them. Not always
+        # slippage -- a stop widened by hand, a weekend gap and a fill through
+        # a thin book look identical from here -- but the same thing to an
+        # account, and the ones worth going back to look at.
+        "slipped_losses": len(slipped),
+        "slipped_share": _r(len(slipped) / len(losses) * 100 if losses else None, 1),
+        "typical_slip_r": _r(_median([t.realized_r for t in slipped]), 2),
         "max_drawdown": _r(max_dd),
         "max_drawdown_pct": _r(max_dd_pct, 2),
         # What the closed-trade record can actually say about risk taken: how
