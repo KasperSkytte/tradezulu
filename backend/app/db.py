@@ -118,6 +118,36 @@ def _refile_trading_days(db: Session) -> None:
         log.info("Refiled %d trades onto the corrected trading day", count)
 
 
+#: Set once trades already stored have been checked for a missing stop.
+STOP_TAG_KEY = "unprotected_trades_tagged"
+
+
+def _tag_unprotected_trades(db: Session) -> None:
+    """Put the no-stop tag on trades that arrived before it existed, once.
+
+    New trades are tagged as they are folded, but a journal is mostly history
+    by the time anybody wants to search it, and going back through several
+    hundred trades looking for an empty stop field is exactly the work the tag
+    is meant to save.
+    """
+    from .models import Setting, Trade
+    from .services.aggregation import tag_if_unprotected
+
+    if db.get(Setting, STOP_TAG_KEY) is not None:
+        return
+
+    trades = list(db.scalars(select(Trade).where(Trade.closed_at.is_not(None))).all())
+    before = sum(len(trade.tags) for trade in trades)
+    for trade in trades:
+        tag_if_unprotected(db, trade)
+    tagged = sum(len(trade.tags) for trade in trades) - before
+
+    db.add(Setting(key=STOP_TAG_KEY, value={"tagged": tagged}))
+    db.commit()
+    if tagged:
+        log.info("Tagged %d trade(s) that were opened without a stop", tagged)
+
+
 def init_db() -> None:
     """Create tables and seed the first user, default account and tag list."""
     sqlite_path = settings.sqlite_path
@@ -171,3 +201,4 @@ def init_db() -> None:
 
         db.commit()
         _refile_trading_days(db)
+        _tag_unprotected_trades(db)

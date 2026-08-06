@@ -452,3 +452,56 @@ class TestPersistence:
         db.commit()
         trade = db.query(Trade).filter_by(position_id=99).one()
         assert [e.kind for e in trade.executions] == ["in", "out"]
+
+
+class TestTaggingUnprotectedTrades:
+    """A position opened with no stop is the one trade nothing can measure.
+
+    No R, no risk, nothing to judge the result against -- and finding them
+    later means tagging them as they arrive, because nobody goes back through
+    four hundred trades looking for an empty stop field.
+    """
+
+    def test_a_trade_with_no_stop_is_tagged(self, db):
+        from app.models import Trade
+        from app.services.aggregation import NO_STOP_TAG, tag_if_unprotected
+
+        trade = Trade(account_id=1, position_id=1, symbol="EURUSD", direction="long",
+                      opened_at=datetime(2026, 8, 1, 9), closed_at=datetime(2026, 8, 1, 10),
+                      volume=1.0, entry_price=1.1, initial_stop=None)
+        db.add(trade)
+        db.flush()
+
+        tag_if_unprotected(db, trade)
+
+        assert [t.name for t in trade.tags] == [NO_STOP_TAG]
+        # It groups with the other mistakes in Reports without special handling.
+        assert trade.tags[0].category == "mistake"
+
+    def test_a_trade_with_a_stop_is_left_alone(self, db):
+        from app.models import Trade
+        from app.services.aggregation import tag_if_unprotected
+
+        trade = Trade(account_id=1, position_id=2, symbol="EURUSD", direction="long",
+                      opened_at=datetime(2026, 8, 1, 9), volume=1.0, entry_price=1.1,
+                      initial_stop=1.09)
+        db.add(trade)
+        db.flush()
+
+        tag_if_unprotected(db, trade)
+
+        assert trade.tags == []
+
+    def test_tagging_twice_does_not_double_it(self, db):
+        from app.models import Trade
+        from app.services.aggregation import tag_if_unprotected
+
+        trade = Trade(account_id=1, position_id=3, symbol="EURUSD", direction="long",
+                      opened_at=datetime(2026, 8, 1, 9), volume=1.0, entry_price=1.1)
+        db.add(trade)
+        db.flush()
+
+        tag_if_unprotected(db, trade)
+        tag_if_unprotected(db, trade)
+
+        assert len(trade.tags) == 1

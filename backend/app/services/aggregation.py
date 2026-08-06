@@ -16,10 +16,10 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..models import Account, Deal, Execution, Trade
+from ..models import Account, Deal, Execution, Tag, Trade
 
 log = logging.getLogger(__name__)
 
@@ -487,6 +487,7 @@ def rebuild_trades(
     count = 0
     for agg in aggregated:
         trade = existing.get(agg.position_id)
+        first_sight = trade is None
         if trade is None:
             trade = Trade(account_id=account_id, position_id=agg.position_id, source="mt5")
             db.add(trade)
@@ -526,10 +527,43 @@ def rebuild_trades(
             broker_offset_minutes=account.broker_utc_offset_minutes if account else None,
         )
         _sync_executions(db, trade, agg.executions)
+        if first_sight:
+            tag_if_unprotected(db, trade)
         count += 1
 
     db.flush()
     return count
+
+
+#: The tag put on a trade that was opened without a stop. It is one of the
+#: defaults, in the "mistake" category, so it groups with the rest of them in
+#: Reports without any special handling.
+NO_STOP_TAG = "No stop loss"
+
+
+def tag_if_unprotected(db: Session, trade: Trade) -> None:
+    """Tag a trade that went on with nothing defining its risk.
+
+    A position opened without a stop is the one kind of trade the journal
+    cannot say anything about: no R, no risk, nothing to measure the result
+    against. It is worth finding later, and finding it means it has to be
+    tagged as it arrives -- nobody goes back through four hundred trades
+    looking for the ones with an empty stop field.
+
+    Only ever added, and only to a trade being seen for the first time.
+    Removing it when a stop appears would fight a user who put it there by
+    hand, and re-adding it every rebuild would fight one who took it off.
+    """
+    if trade.initial_stop:
+        return
+
+    tag = db.scalar(select(Tag).where(func.lower(Tag.name) == NO_STOP_TAG.lower()))
+    if tag is None:
+        tag = Tag(name=NO_STOP_TAG, color="#b91c1c", category="mistake")
+        db.add(tag)
+        db.flush()
+    if tag not in trade.tags:
+        trade.tags.append(tag)
 
 
 def _sync_executions(db: Session, trade: Trade, executions: list[dict[str, Any]]) -> None:
