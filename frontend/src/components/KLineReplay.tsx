@@ -20,6 +20,7 @@ import { useQuery } from '@tanstack/react-query'
 import { dispose, init, registerOverlay } from 'klinecharts'
 import type { Chart, KLineData, Period } from 'klinecharts'
 import { CandlestickChart, Eraser, Eye, EyeOff } from 'lucide-react'
+import clsx from 'clsx'
 import { api } from '../lib/api'
 import { useIsDark, useSettings } from '../lib/settings'
 import type { Account, CandleResponse, TradeDetail } from '../lib/types'
@@ -468,15 +469,18 @@ export function KLineReplay({ trade, timeframe }: { trade: TradeDetail; timefram
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--tz-text-muted)]">
         <button
           type="button"
-          className="flex items-center gap-1.5 hover:text-[var(--tz-text)]"
-          title={
-            showHighLow
-              ? 'Hide the labels on the highest and lowest bar in view'
-              : 'Label the highest and lowest bar in view'
-          }
+          // Named for what it switches on rather than for what it marks, and
+          // lit when it is on: a button reading "High / low" says what the
+          // labels are, not whether you are getting them.
+          className={clsx(
+            'flex items-center gap-1.5 hover:text-[var(--tz-text)]',
+            showHighLow && 'text-[var(--tz-text)]',
+          )}
+          aria-pressed={showHighLow}
+          title="Label the highest and lowest bar in the window on screen"
           onClick={() => void save({ charts: { show_high_low: !showHighLow } })}
         >
-          {showHighLow ? <Eye size={13} /> : <EyeOff size={13} />} High / low
+          {showHighLow ? <Eye size={13} /> : <EyeOff size={13} />} Show window high/low
         </button>
         {hasCandles && (
           <span className="ml-auto">
