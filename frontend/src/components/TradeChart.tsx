@@ -1,43 +1,29 @@
 /**
  * Trade replay.
  *
- * Three providers, all free:
- *  - "local" draws candles TradeZulu already holds (pushed by the Expert
- *    Advisor) with the real entry, exit, stop and target marked on the price
- *    scale. This is the one that can show *your* fills, so it is the default.
- *  - "studio" draws the same candles with the position itself on them -- a box
- *    from entry to exit, the risk shaded below and the target above -- plus
- *    drawing tools. See KLineReplay.
+ * Two providers, both free:
+ *  - "klinecharts" draws the candles TradeZulu already holds -- pushed by the
+ *    Expert Advisor -- with the position itself on them: a line from entry to
+ *    exit, the risk shaded below and the target above, every fill on the
+ *    minute it filled, and drawing tools on top. See KLineReplay.
  *  - "tradingview" embeds the free Advanced Chart widget, which has every
- *    drawing tool but no knowledge of your trade; entry and exit are listed
- *    beside it so you can find them on the chart.
+ *    drawing tool and no knowledge of your trade.
+ *
+ * There was a third, drawing the same stored candles with lightweight-charts.
+ * It did strictly less than the first -- price lines running the width of the
+ * chart instead of the position, fills snapped to the nearest bar, no drawing
+ * tools -- so it was two charts to maintain for one job.
  */
 
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import {
-  CandlestickSeries,
-  ColorType,
-  CrosshairMode,
-  LineStyle,
-  TickMarkType,
-  createChart,
-  createSeriesMarkers,
-} from 'lightweight-charts'
-import type {
-  IChartApi,
-  IPriceLine,
-  ISeriesApi,
-  ISeriesMarkersPluginApi,
-  Time,
-} from 'lightweight-charts'
-import { CandlestickChart, ExternalLink } from 'lucide-react'
+import { ExternalLink } from 'lucide-react'
 import { api } from '../lib/api'
 import { KLineReplay } from './KLineReplay'
 import { useIsDark, useSettings } from '../lib/settings'
-import { dateTime, price } from '../lib/format'
+import { dateTime } from '../lib/format'
 import type { Account, BrokerList, CandleResponse, TradeDetail } from '../lib/types'
-import { EmptyState, SegmentedControl, Skeleton } from './ui'
+import { SegmentedControl } from './ui'
 
 const TIMEFRAMES = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1']
 
@@ -68,25 +54,6 @@ function rangeCovering(when: string | null): string {
   return found ? found[1] : 'ALL'
 }
 
-/**
- * Seconds since the epoch for a timestamp the API returned.
- *
- * Every time in the journal is the broker's server clock -- MetaTrader has no
- * other -- but they do not all come back written the same way: candles are
- * marked UTC, executions are not. `Date.parse` reads an unmarked timestamp as
- * the *viewer's* local time, so the entry arrow was placed an hour or two from
- * the candle it belongs to, in whichever direction the reader happened to be
- * sitting, and by a different amount in summer than in winter.
- *
- * Both are put on one clock here instead. The chart is then internally
- * consistent wherever it is read from, and the axis reads the same as the
- * terminal the trade was taken in.
- */
-function brokerTime(value: string): Time {
-  const marked = /Z$|[+-]\d\d:?\d\d$/.test(value)
-  return (Date.parse(marked ? value : `${value}Z`) / 1000) as Time
-}
-
 const TV_INTERVAL: Record<string, string> = {
   M1: '1',
   M5: '5',
@@ -97,7 +64,7 @@ const TV_INTERVAL: Record<string, string> = {
   D1: 'D',
 }
 
-type Provider = 'local' | 'studio' | 'tradingview'
+type Provider = 'klinecharts' | 'tradingview'
 
 export function TradeChart({ trade }: { trade: TradeDetail }) {
   const { settings } = useSettings()
@@ -134,11 +101,10 @@ export function TradeChart({ trade }: { trade: TradeDetail }) {
           value={provider}
           onChange={setProvider}
           options={[
-            { value: 'local', label: 'Replay', title: 'Candles stored by TradeZulu' },
             {
-              value: 'studio',
-              label: 'Studio',
-              title: 'The same candles, with the position drawn on them and drawing tools',
+              value: 'klinecharts',
+              label: 'KLineCharts',
+              title: 'Candles TradeZulu stored, with the position drawn on them',
             },
             { value: 'tradingview', label: 'TradingView', title: 'Free TradingView widget' },
           ]}
@@ -151,357 +117,12 @@ export function TradeChart({ trade }: { trade: TradeDetail }) {
         />
       </div>
 
-      {provider === 'local' && <LocalReplay trade={trade} timeframe={timeframe} />}
-      {provider === 'studio' && <KLineReplay trade={trade} timeframe={timeframe} />}
-      {provider === 'tradingview' && <TradingViewChart trade={trade} timeframe={timeframe} />}
+      {provider === 'klinecharts' ? (
+        <KLineReplay trade={trade} timeframe={timeframe} />
+      ) : (
+        <TradingViewChart trade={trade} timeframe={timeframe} />
+      )}
     </div>
-  )
-}
-
-/* --------------------------------------------------------------------- */
-
-/**
- * Which clock the axis is labelled with.
- *
- * The candles are never moved. A bar belongs to the minute the broker matched
- * it in, and rewriting that to suit the reader would mean the chart no longer
- * agreed with the terminal, the trade ticket, or the next person's screenshot.
- * Only the labels change -- the same instants, read off a different clock.
- *
- * ``offsetMinutes`` is how far the broker's clock runs from UTC, so subtracting
- * it turns a broker wall-clock stamp back into the real moment; ``timeZone``
- * then says how to write that moment down. Staying on the broker's clock is
- * the pair (0, UTC), because that is exactly what the stored timestamps
- * already are.
- */
-type Clock = { hour12: boolean; offsetMinutes: number; timeZone: string }
-
-function axisLabels({ hour12, offsetMinutes, timeZone }: Clock) {
-  const at = (value: Time) => new Date((Number(value) - offsetMinutes * 60) * 1000)
-  const time = (date: Date) =>
-    date.toLocaleTimeString(hour12 ? 'en-US' : 'en-GB', {
-      hour: hour12 ? 'numeric' : '2-digit',
-      minute: '2-digit',
-      hour12,
-      timeZone,
-    })
-  const day = (date: Date) =>
-    date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone })
-
-  return {
-    localization: { timeFormatter: (value: Time) => `${day(at(value))} ${time(at(value))}` },
-    tickMarkFormatter: (value: Time, type: TickMarkType) => {
-      const date = at(value)
-      switch (type) {
-        case TickMarkType.Year:
-          return date.toLocaleDateString('en-GB', { year: 'numeric', timeZone })
-        case TickMarkType.Month:
-          return date.toLocaleDateString('en-GB', { month: 'short', timeZone })
-        case TickMarkType.DayOfMonth:
-          return day(date)
-        default:
-          return time(date)
-      }
-    },
-  }
-}
-
-/** Written the way a broker offset is usually spoken: UTC+3, UTC-4:30. */
-function utcOffsetLabel(minutes: number): string {
-  const sign = minutes < 0 ? '-' : '+'
-  const hours = Math.floor(Math.abs(minutes) / 60)
-  const rest = Math.abs(minutes) % 60
-  return `UTC${sign}${hours}${rest ? `:${String(rest).padStart(2, '0')}` : ''}`
-}
-
-function LocalReplay({ trade, timeframe }: { trade: TradeDetail; timeframe: string }) {
-  const { settings, hour12 } = useSettings()
-  const container = useRef<HTMLDivElement>(null)
-  const chartRef = useRef<IChartApi | null>(null)
-  const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
-  const priceLines = useRef<IPriceLine[]>([])
-  const markers = useRef<ISeriesMarkersPluginApi<Time> | null>(null)
-
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ['candles', trade.id, timeframe],
-    queryFn: () =>
-      api.get<CandleResponse>('/mt5/candles', { trade_id: trade.id, timeframe }),
-  })
-
-  // Which clock to label the axis with. Reading the trade in the user's own
-  // timezone needs the broker's offset, and until a terminal has reported one
-  // there is nothing to convert *from*: guessing would put every label an hour
-  // or three out while looking authoritative, so the broker's clock stands.
-  const { data: accounts = [] } = useQuery({
-    queryKey: ['accounts'],
-    queryFn: () => api.get<Account[]>('/accounts'),
-    staleTime: 300_000,
-  })
-  const brokerOffset = accounts.find((a) => a.id === trade.account_id)
-    ?.broker_utc_offset_minutes
-  const wantsLocal = settings.general.times === 'local'
-  const local = wantsLocal && brokerOffset !== null && brokerOffset !== undefined
-  const clock: Clock = local
-    ? { hour12, offsetMinutes: brokerOffset, timeZone: settings.general.timezone }
-    : { hour12, offsetMinutes: 0, timeZone: 'UTC' }
-
-  useEffect(() => {
-    if (!container.current) return
-
-    const styles = getComputedStyle(document.documentElement)
-    const token = (name: string, fallback: string) =>
-      styles.getPropertyValue(name).trim() || fallback
-
-    const chart = createChart(container.current, {
-      autoSize: true,
-      layout: {
-        background: { type: ColorType.Solid, color: 'transparent' },
-        textColor: token('--tz-text-muted', '#98a1b8'),
-        fontFamily: styles.getPropertyValue('font-family') || 'Inter, sans-serif',
-        attributionLogo: false,
-      },
-      grid: {
-        vertLines: { color: token('--tz-grid', '#1f2532') },
-        horzLines: { color: token('--tz-grid', '#1f2532') },
-      },
-      rightPriceScale: { borderColor: token('--tz-border', '#232939') },
-      timeScale: {
-        borderColor: token('--tz-border', '#232939'),
-        timeVisible: true,
-        secondsVisible: false,
-      },
-      crosshair: { mode: CrosshairMode.Normal },
-      // Both axes drag. The price one used to be pinned, which keeps the
-      // candles filling the pane but leaves no way to stretch a quiet stretch
-      // of the chart open far enough to see where a stop actually sat.
-      // Double-clicking the price axis puts it back on auto.
-      handleScale: { axisPressedMouseMove: { time: true, price: true } },
-      handleScroll: { vertTouchDrag: true },
-    })
-
-    const series = chart.addSeries(CandlestickSeries, {
-      upColor: token('--tz-gain', '#12b06f'),
-      downColor: token('--tz-loss', '#c93a48'),
-      borderUpColor: token('--tz-gain', '#12b06f'),
-      borderDownColor: token('--tz-loss', '#c93a48'),
-      wickUpColor: token('--tz-gain', '#12b06f'),
-      wickDownColor: token('--tz-loss', '#c93a48'),
-      priceFormat: { type: 'price', precision: trade.digits, minMove: 10 ** -trade.digits },
-    })
-
-    chartRef.current = chart
-    seriesRef.current = series
-    return () => {
-      chart.remove()
-      chartRef.current = null
-      seriesRef.current = null
-    }
-  }, [trade.digits])
-
-  // Applied rather than passed to createChart, so flipping the clock relabels
-  // the axis in place: rebuilding the chart would drop the candles with it.
-  useEffect(() => {
-    const labels = axisLabels(clock)
-    chartRef.current?.applyOptions({
-      localization: labels.localization,
-      timeScale: { tickMarkFormatter: labels.tickMarkFormatter },
-    })
-  }, [clock.hour12, clock.offsetMinutes, clock.timeZone, trade.digits])
-
-  useEffect(() => {
-    const series = seriesRef.current
-    const chart = chartRef.current
-    if (!series || !chart || !data?.candles.length) return
-
-    // The chart paints to a canvas, so CSS custom properties have to be
-    // resolved to real colours before they are handed over.
-    const styles = getComputedStyle(document.documentElement)
-    const token = (name: string, fallback: string) =>
-      styles.getPropertyValue(name).trim() || fallback
-    const gain = token('--tz-gain', '#12b06f')
-    const loss = token('--tz-loss', '#c93a48')
-    // Entry is deliberately not the brand colour: with a green accent it
-    // would be indistinguishable from the exit line on a winning trade.
-    const entry = token('--tz-entry', '#4593e8')
-
-    for (const line of priceLines.current) series.removePriceLine(line)
-    priceLines.current = []
-    markers.current?.setMarkers([])
-
-    series.setData(
-      data.candles.map((candle) => ({
-        time: brokerTime(candle.time),
-        open: candle.open,
-        high: candle.high,
-        low: candle.low,
-        close: candle.close,
-      })),
-    )
-
-    // Entry, exit, stop and target as price lines.
-    priceLines.current.push(series.createPriceLine({
-      price: trade.entry_price,
-      color: entry,
-      lineWidth: 2,
-      lineStyle: LineStyle.Solid,
-      axisLabelVisible: true,
-      title: 'Entry',
-    }))
-    if (trade.exit_price !== null) {
-      priceLines.current.push(series.createPriceLine({
-        price: trade.exit_price,
-        color: trade.net_pnl >= 0 ? gain : loss,
-        lineWidth: 2,
-        lineStyle: LineStyle.Solid,
-        axisLabelVisible: true,
-        title: 'Exit',
-      }))
-    }
-    if (trade.initial_stop) {
-      priceLines.current.push(series.createPriceLine({
-        price: trade.initial_stop,
-        color: loss,
-        lineWidth: 1,
-        lineStyle: LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: 'Stop',
-      }))
-    }
-    if (trade.initial_target) {
-      priceLines.current.push(series.createPriceLine({
-        price: trade.initial_target,
-        color: gain,
-        lineWidth: 1,
-        lineStyle: LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: 'Target',
-      }))
-    }
-
-    // Every individual fill gets an arrow so scale-ins are visible.
-    markers.current = createSeriesMarkers(
-      series,
-      trade.executions
-        .map((execution) => ({
-          time: brokerTime(execution.time),
-          position: execution.side === 'buy' ? ('belowBar' as const) : ('aboveBar' as const),
-          color: execution.kind === 'in' ? entry : execution.profit >= 0 ? gain : loss,
-          shape: execution.side === 'buy' ? ('arrowUp' as const) : ('arrowDown' as const),
-          text: `${execution.kind === 'in' ? 'In' : 'Out'} ${execution.volume}`,
-        }))
-        .sort((a, b) => Number(a.time) - Number(b.time)),
-    )
-
-    // Open on the position plus the configured context, not on everything
-    // fetched: with several days of history stored, fitContent drew the trade
-    // as a couple of pixels in the middle of a week.
-    const context = Math.max(0, settings.charts.zoom_hours ?? 2) * 3600
-    const opened = brokerTime(trade.opened_at)
-    const closed = trade.closed_at ? brokerTime(trade.closed_at) : opened
-    const first = data.candles[0] ? brokerTime(data.candles[0].time) : opened
-    const last = data.candles[data.candles.length - 1]
-      ? brokerTime(data.candles[data.candles.length - 1].time)
-      : closed
-    chart.timeScale().setVisibleRange({
-      from: (Math.max(Number(first), Number(opened) - context) as Time),
-      to: (Math.min(Number(last), Number(closed) + context) as Time),
-    })
-  }, [data, trade, settings.charts.zoom_hours])
-
-  const hasCandles = Boolean(data?.candles.length)
-  // Asked for something shorter than what was collected, which is the one
-  // gap that cannot be filled by folding bars together.
-  const tooShort = data?.source === 'none' && Boolean(data?.available?.length)
-
-  return (
-    <div>
-      <div className="relative h-[440px] w-full">
-        {/* Always mounted: lightweight-charts needs a live element to attach
-            to, and the states below sit on top of it rather than replacing it. */}
-        <div ref={container} className="h-full w-full" />
-
-        {isLoading && <Skeleton className="absolute inset-0" />}
-
-        {!isLoading && (isError || !hasCandles) && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-lg border border-dashed border-[var(--tz-border-strong)] bg-[var(--tz-surface)]">
-            <EmptyState
-              icon={<CandlestickChart size={32} strokeWidth={1.4} />}
-              title={
-                tooShort
-                  ? `${timeframe} is shorter than the bars collected`
-                  : 'No candles stored for this window'
-              }
-              description={
-                tooShort ? (
-                  <>
-                    Longer timeframes are built from the {data?.available?.[0]} bars the terminal
-                    sends; a shorter one cannot be, so it is left out rather than invented. Pick{' '}
-                    {data?.available?.[0]} or longer.
-                  </>
-                ) : (
-                  <>
-                    The TradeZulu Expert Advisor uploads candles around each closed trade — set
-                    <code className="mx-1 rounded bg-[var(--tz-surface-2)] px-1 py-0.5 text-xs">
-                      UploadCandles = true
-                    </code>
-                    on it, or switch to the TradingView tab above.
-                  </>
-                )
-              }
-            />
-          </div>
-        )}
-      </div>
-
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--tz-text-muted)]">
-        <Legend color="var(--tz-entry)" label={`Entry ${price(trade.entry_price, trade.digits)}`} />
-        {trade.exit_price !== null && (
-          <Legend
-            color={trade.net_pnl >= 0 ? 'var(--tz-gain)' : 'var(--tz-loss)'}
-            label={`Exit ${price(trade.exit_price, trade.digits)}`}
-          />
-        )}
-        {trade.initial_stop && (
-          <Legend color="var(--tz-loss)" label={`Stop ${price(trade.initial_stop, trade.digits)}`} />
-        )}
-        {trade.initial_target && (
-          <Legend
-            color="var(--tz-gain)"
-            label={`Target ${price(trade.initial_target, trade.digits)}`}
-          />
-        )}
-        {hasCandles && (
-          <span className="ml-auto">
-            {data?.candles.length} candles ·{' '}
-            {data?.source === 'local' ? 'as recorded' : `built from ${data?.source}`} ·{' '}
-            <span
-              title={
-                local
-                  ? `The broker's clock runs ${utcOffsetLabel(brokerOffset)}; times are ` +
-                    'converted to your timezone. The candles themselves are untouched.'
-                  : brokerOffset === null || brokerOffset === undefined
-                    ? 'Times are the broker’s own clock. No terminal has reported how ' +
-                      'far it runs from UTC yet, so it cannot be converted.'
-                    : `Times are the broker’s own clock (${utcOffsetLabel(brokerOffset)}), ` +
-                      'the same as in MetaTrader.'
-              }
-            >
-              {local ? settings.general.timezone.replace(/_/g, ' ') : 'broker time'}
-              {!local && wantsLocal && ' (offset unknown)'}
-            </span>
-          </span>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function Legend({ color, label }: { color: string; label: string }) {
-  return (
-    <span className="flex items-center gap-1.5">
-      <span className="h-0.5 w-3.5 rounded" style={{ backgroundColor: color }} />
-      {label}
-    </span>
   )
 }
 
@@ -600,16 +221,10 @@ function TradingViewChart({ trade, timeframe }: { trade: TradeDetail; timeframe:
       <p className="mt-2 text-xs text-[var(--tz-text-faint)]">
         TradingView's embed always ends at the current price and cannot be moved to a date from
         outside it, so the window is widened until your trade falls inside it:{' '}
-        <strong>{dateTime(trade.closed_at ?? trade.opened_at, undefined, trade.account_id)}</strong>. Replay
-        opens on the trade itself, with your fills marked.
+        <strong>{dateTime(trade.closed_at ?? trade.opened_at, undefined, trade.account_id)}</strong>.
+        KLineCharts opens on the trade itself, with your fills marked.
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--tz-text-muted)]">
-        <span>
-          Entry {price(trade.entry_price, trade.digits)}
-          {trade.exit_price !== null && ` → exit ${price(trade.exit_price, trade.digits)}`}
-        </span>
-        {trade.initial_stop && <span>Stop {price(trade.initial_stop, trade.digits)}</span>}
-        {trade.initial_target && <span>Target {price(trade.initial_target, trade.digits)}</span>}
         <a
           className="ml-auto flex items-center gap-1 hover:text-[var(--tz-text)]"
           href={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(symbol)}`}

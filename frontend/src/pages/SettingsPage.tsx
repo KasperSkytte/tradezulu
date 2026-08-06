@@ -843,18 +843,16 @@ function ChartsSection() {
         <div className="grid gap-4 sm:grid-cols-2">
           <Field
             label="Default chart"
-            hint="Replay and Studio both draw candles TradeZulu stores, so they know your actual fills; Studio also draws the position itself and brings drawing tools. TradingView has the full toolset but knows nothing about your trade."
-            className="sm:col-span-2"
+            hint="KLineCharts draws the candles TradeZulu stores, so it knows your actual fills and draws the position on them, with drawing tools on top. TradingView has the full toolset but knows nothing about your trade."
           >
             <SegmentedControl
               value={settings.charts.provider}
               onChange={(value) => void apply({ charts: { provider: value } })}
               options={[
-                { value: 'local', label: 'Replay', title: 'Your fills marked on stored candles' },
                 {
-                  value: 'studio',
-                  label: 'Studio',
-                  title: 'The position drawn on the candles, plus drawing tools',
+                  value: 'klinecharts',
+                  label: 'KLineCharts',
+                  title: 'The position drawn on your stored candles, plus drawing tools',
                 },
                 { value: 'tradingview', label: 'TradingView', title: 'The free embedded widget' },
               ]}

@@ -1,16 +1,15 @@
 /**
  * The replay, drawn on your trade rather than beside it.
  *
- * The other two tabs each give up one half of what a replay is for. Replay
- * knows the trade and marks it, but has no drawing tools. The TradingView
- * embed has every tool and no idea a trade happened -- which, as the point of
- * a replay is to look at *your* entry, makes the tools academic.
+ * The TradingView embed has every drawing tool and no idea a trade happened --
+ * which, as the point of a replay is to look at *your* entry, makes the tools
+ * academic. This has both.
  *
- * This is both. KLineChart (Apache-2.0, no dependencies) anchors overlays to an
- * exact timestamp and price rather than to a bar, so the position is drawn
- * where it actually happened: a box from entry to exit, the risk you took
- * shaded below it, the target above, and every fill on the minute it filled.
- * Its own drawing tools sit on top of that, on the same canvas.
+ * KLineCharts (Apache-2.0, no dependencies) anchors overlays to an exact
+ * timestamp and price rather than to a bar, so the position is drawn where it
+ * actually happened: a line from entry to exit, the risk you took shaded below
+ * it, the target above, and every fill on the minute it filled. Its own
+ * drawing tools sit on top of that, on the same canvas.
  *
  * The candles are the ones TradeZulu already holds, so this needs no third
  * party to have heard of your broker's symbol.
@@ -23,7 +22,6 @@ import type { Chart, KLineData, Period } from 'klinecharts'
 import { CandlestickChart, Eraser } from 'lucide-react'
 import { api } from '../lib/api'
 import { useIsDark, useSettings } from '../lib/settings'
-import { price as formatPrice } from '../lib/format'
 import type { Account, CandleResponse, TradeDetail } from '../lib/types'
 import { EmptyState, SegmentedControl, Skeleton } from './ui'
 
@@ -455,21 +453,14 @@ export function KLineReplay({ trade, timeframe }: { trade: TradeDetail; timefram
         )}
       </div>
 
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--tz-text-muted)]">
-        <span>
-          Entry {formatPrice(trade.entry_price, trade.digits)}
-          {trade.exit_price !== null && ` → exit ${formatPrice(trade.exit_price, trade.digits)}`}
-        </span>
-        {trade.initial_stop && <span>Stop {formatPrice(trade.initial_stop, trade.digits)}</span>}
-        {trade.initial_target && (
-          <span>Target {formatPrice(trade.initial_target, trade.digits)}</span>
-        )}
-        {hasCandles && (
-          <span className="ml-auto">
-            {bars.length} candles · {local ? settings.general.timezone.replace(/_/g, ' ') : 'broker time'}
-          </span>
-        )}
-      </div>
+      {/* No price list here: entry, exit, stop and target are on the Execution
+          and Plan cards beside the chart, and they are drawn on it. */}
+      {hasCandles && (
+        <div className="mt-2 text-right text-xs text-[var(--tz-text-muted)]">
+          {bars.length} candles ·{' '}
+          {local ? settings.general.timezone.replace(/_/g, ' ') : 'broker time'}
+        </div>
+      )}
     </div>
   )
 }

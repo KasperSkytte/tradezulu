@@ -15,7 +15,6 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
     "klinecharts": "^10.0.1",
-    "lightweight-charts": "^5.2.0",
     "lucide-react": "^1.27.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

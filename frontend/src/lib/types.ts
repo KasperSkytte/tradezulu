@@ -344,7 +344,7 @@ export interface AppSettings {
     history_days_on_full_sync: number
   }
   charts: {
-    provider: 'local' | 'studio' | 'tradingview'
+    provider: 'klinecharts' | 'tradingview'
     default_timeframe: string
     /** Which timeframe the terminal collects. Nothing shorter can be shown. */
     collect_timeframe: string

@@ -63,7 +63,7 @@ const FALLBACK: AppSettings = {
     history_days_on_full_sync: 730,
   },
   charts: {
-    provider: 'local',
+    provider: 'klinecharts',
     default_timeframe: 'M15',
     collect_timeframe: 'M5',
     history_days_before: 1,

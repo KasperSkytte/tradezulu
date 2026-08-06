@@ -153,11 +153,10 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "history_days_on_full_sync": 730,
     },
     "charts": {
-        # local       -> replay from candles stored by the Expert Advisor
-        # studio      -> the same candles with the position drawn on them,
-        #                plus drawing tools
+        # klinecharts -> the candles the Expert Advisor stored, with the
+        #                position drawn on them and drawing tools
         # tradingview -> free TradingView Advanced Chart widget
-        "provider": "local",
+        "provider": "klinecharts",
         "default_timeframe": "M5",
         # Which timeframe the terminal actually collects. Everything longer is
         # arithmetic on it -- the server folds M15, H1 and the rest out of
@@ -246,7 +245,25 @@ def get_app_settings(db: Session) -> dict[str, Any]:
         merged["mt5"]["sync_mode"] = RETIRED_SYNC_MODES[mode]
     _migrate_score_weights(stored, merged)
     _migrate_times(stored, merged)
+    _migrate_chart_provider(merged)
     return merged
+
+
+#: What the chart providers used to be called. "local" was a second chart over
+#: the same stored candles, drawn with a different library; "studio" is what
+#: the surviving one was called before it was named after the library it uses.
+RETIRED_CHART_PROVIDERS = {"local": "klinecharts", "studio": "klinecharts"}
+
+
+def _migrate_chart_provider(merged: dict[str, Any]) -> None:
+    """Point a retired chart choice at the one that replaced it.
+
+    Left alone it would name a provider nothing implements, and the trade page
+    would open on neither tab.
+    """
+    provider = merged.get("charts", {}).get("provider")
+    if provider in RETIRED_CHART_PROVIDERS:
+        merged["charts"]["provider"] = RETIRED_CHART_PROVIDERS[provider]
 
 
 def _migrate_times(stored: dict[str, Any], merged: dict[str, Any]) -> None:

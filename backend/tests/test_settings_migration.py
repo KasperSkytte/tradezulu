@@ -101,3 +101,32 @@ class TestTheChartWindowInDays:
         charts = get_app_settings(db)["charts"]
         assert charts["history_days_before"] == 5
         assert charts["zoom_hours"] == 4
+
+
+class TestTheRetiredChartProvider:
+    """One of the two stored-candle charts was removed.
+
+    "local" drew the same bars with a different library and did strictly less
+    with them -- price lines across the whole chart instead of the position,
+    fills snapped to the nearest bar, no drawing tools. Anyone whose setting
+    still names it, or names "studio" from before the survivor was renamed
+    after the library it uses, must land on the chart that replaced it rather
+    than on a provider nothing implements.
+    """
+
+    def test_the_default_is_klinecharts(self, db):
+        assert get_app_settings(db)["charts"]["provider"] == "klinecharts"
+
+    def test_the_old_replay_chart_maps_across(self, db):
+        db.add(Setting(key=SETTINGS_KEY, value={"charts": {"provider": "local"}}))
+        db.flush()
+        assert get_app_settings(db)["charts"]["provider"] == "klinecharts"
+
+    def test_so_does_its_old_name(self, db):
+        db.add(Setting(key=SETTINGS_KEY, value={"charts": {"provider": "studio"}}))
+        db.flush()
+        assert get_app_settings(db)["charts"]["provider"] == "klinecharts"
+
+    def test_tradingview_is_left_alone(self, db):
+        save_app_settings(db, {"charts": {"provider": "tradingview"}})
+        assert get_app_settings(db)["charts"]["provider"] == "tradingview"
