@@ -46,8 +46,21 @@ def _aware(value: datetime | None) -> datetime:
 
 def update_account_state(db: Session, account: Account, payload: Any) -> None:
     """Record what the terminal just told us about itself."""
-    account.balance = float(payload.balance or 0.0)
-    account.equity = float(payload.equity or 0.0)
+    balance = float(payload.balance or 0.0)
+    equity = float(payload.equity or 0.0)
+
+    # A terminal that is running but not logged in reports nothing at all --
+    # zero balance, zero equity -- and it reports it every few seconds. Taken
+    # at face value it erases what the account is worth, and with it every
+    # percentage in the journal: the daily and weekly returns, Net ROI, the
+    # equity curve. An account really worth nothing does not poll, so nothing
+    # is lost by disbelieving this one.
+    if balance == 0.0 and equity == 0.0 and (account.balance or account.equity):
+        log.debug("account %s reported nothing; keeping what it was worth", account.login)
+        return
+
+    account.balance = balance
+    account.equity = equity
     if payload.currency:
         account.currency = payload.currency
     if payload.name and not account.name:

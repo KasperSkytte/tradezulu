@@ -776,3 +776,44 @@ class TestReportingWhatATerminalIsDoing:
     def test_an_account_nothing_has_been_said_about_has_no_state(self, slave, auth_client):
         listed = auth_client.get("/api/accounts").json()
         assert next(a for a in listed if a["id"] == slave.id)["terminal_state"] == {}
+
+
+class TestATerminalThatIsNotLoggedIn:
+    """It reports zero for everything, every few seconds.
+
+    Believed, it erases what the account is worth -- and with it every
+    percentage in the journal, since they all divide by a balance: the daily
+    and weekly returns, Net ROI, the equity curve. An account genuinely worth
+    nothing does not poll, so nothing is lost by disbelieving this one.
+    """
+
+    def test_a_zero_report_does_not_erase_the_balance(self, auth_client, db, master):
+        master.balance, master.equity = 5_000.0, 5_050.0
+        db.commit()
+
+        payload = account_payload("5000", "Master-Server")
+        payload["balance"] = payload["equity"] = 0.0
+        auth_client.post("/api/agent/poll", json=payload)
+
+        db.expire_all()
+        assert db.get(Account, master.id).balance == 5_000.0
+
+    def test_a_real_figure_is_still_recorded(self, auth_client, db, master):
+        master.balance = 5_000.0
+        db.commit()
+
+        payload = account_payload("5000", "Master-Server")
+        payload["balance"] = payload["equity"] = 4_800.0
+        auth_client.post("/api/agent/poll", json=payload)
+
+        db.expire_all()
+        assert db.get(Account, master.id).balance == 4_800.0
+
+    def test_an_account_that_never_had_a_balance_takes_the_zero(self, auth_client, db, master):
+        """Nothing to protect, and it is the honest starting state."""
+        master.balance = master.equity = 0.0
+        db.commit()
+
+        payload = account_payload("5000", "Master-Server")
+        payload["balance"] = payload["equity"] = 0.0
+        assert auth_client.post("/api/agent/poll", json=payload).status_code == 200
