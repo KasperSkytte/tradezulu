@@ -493,17 +493,40 @@ export function DashboardPage() {
               value={cash(median ? summary.typical_loss : summary.avg_loss)}
             />
             <Row
-              label="Realised risk in R"
-              hint="-1.00R is a loss that cost exactly what it was planned to. Nearer zero means losses were cut early; past -1 means they ran further than planned."
+              label={`${typical} loss, in R`}
+              hint={`What a losing trade cost as a multiple of what it was meant to cost — the ${
+                median ? 'middle losing trade' : 'mean across losing trades'
+              }. -1.00R is a loss that ended exactly at its stop. Nearer zero means losses were cut before the stop; past -1.00R means they ran through it.`}
               value={rMultiple(median ? summary.typical_loss_r : summary.avg_loss_r)}
             />
             <Row
-              label="Losses past the stop"
-              hint="Losses that cost more than the stop said they would — slippage, a gap, or a stop that was widened. The R figure is the typical one among them, against -1.00R for a loss that cost exactly what was planned."
+              label="Losses bigger than the initial stop"
+              hint={`Three figures: how many losing trades cost more than their stop said they would, what share of all losing trades that is, and how much the ${
+                median ? 'middle' : 'average'
+              } one of them cost as a multiple of its planned risk. -1.00R would be a loss that ended exactly at its stop, so -1.34R means it cost a third more than planned. The cause can be slippage, a weekend gap, or a stop that was widened by hand — they are indistinguishable from the record, but identical to the account.`}
               value={
                 summary.slipped_losses > 0
                   ? `${summary.slipped_losses} · ${percent(summary.slipped_share)} · ${rMultiple(summary.typical_slip_r)}`
                   : 'none'
+              }
+            />
+            <Row
+              label="Win rate needed to break even"
+              hint="At this payoff, the share of trades that must win before the account stops going backwards. Beside your actual win rate it says whether an edge exists at all: 40% is excellent at 2:1 and ruinous at 1:2, and the win rate alone never says which."
+              value={
+                summary.breakeven_win_rate != null ? (
+                  <span
+                    className={
+                      (summary.win_rate ?? 0) >= summary.breakeven_win_rate
+                        ? 'text-[var(--tz-gain-text)]'
+                        : 'text-[var(--tz-loss-text)]'
+                    }
+                  >
+                    {percent(summary.breakeven_win_rate)} · you are at {percent(summary.win_rate)}
+                  </span>
+                ) : (
+                  '—'
+                )
               }
             />
             <Row label="Average planned R" value={rMultiple(summary.avg_planned_r)} />
