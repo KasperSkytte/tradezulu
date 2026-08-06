@@ -32,16 +32,22 @@ export type Distribution = {
  *  Everything below is in these units: a row's height, the axis strip under
  *  the last one, and the label column down the left. */
 const WIDTH = 640
-const ROW = 58
-const AXIS = 26
-const LABELS = 118
+const ROW = 46
+const AXIS = 24
+const LABELS = 104
 
 export function BoxPlot({ series }: { series: Distribution[] }) {
   if (!series.length) return null
 
   // One scale across every row, or the boxes cannot be compared -- which is
   // the entire reason they are stacked on top of each other.
-  const all = series.flatMap((s) => [s.min, s.max, ...s.outliers])
+  //
+  // Whiskers only. A single trade at 15R is why the outliers are separated
+  // from the box in the first place, and letting one set the axis squashes
+  // every box into the left tenth of the card -- hiding the distribution to
+  // make room for the exception to it. The ones that fall outside are drawn
+  // against the edge instead, and the count in the tooltip still has them.
+  const all = series.flatMap((s) => [s.min, s.max])
   const low = Math.min(...all, 0)
   const high = Math.max(...all, 0)
   const pad = (high - low) * 0.06 || 1
@@ -92,7 +98,7 @@ export function BoxPlot({ series }: { series: Distribution[] }) {
 
       {series.map((s, index) => {
         const mid = index * ROW + ROW / 2
-        const box = 22
+        const box = 17
         // Losers sit left of zero and winners right of it, so colouring by
         // where the median falls matches what the eye already read.
         const colour =
@@ -100,10 +106,10 @@ export function BoxPlot({ series }: { series: Distribution[] }) {
 
         return (
           <g key={s.key}>
-            <text x={0} y={mid - 2} fill="var(--tz-text)" style={{ fontSize: 13 }}>
+            <text x={0} y={mid - 1} fill="var(--tz-text)" style={{ fontSize: 12 }}>
               {s.label}
             </text>
-            <text x={0} y={mid + 14} fill="var(--tz-text-faint)" style={{ fontSize: 11 }}>
+            <text x={0} y={mid + 12} fill="var(--tz-text-faint)" style={{ fontSize: 10 }}>
               {s.count} trades
             </text>
 
@@ -141,9 +147,24 @@ export function BoxPlot({ series }: { series: Distribution[] }) {
               strokeWidth={2.6}
             />
 
-            {s.outliers.map((value, at) => (
-              <circle key={at} cx={x(value)} cy={mid} r={2.4} fill={colour} fillOpacity={0.55} />
-            ))}
+            {/* Anything past the axis is pinned to its edge and drawn hollow,
+                so "there are trades out this way" survives without the scale
+                being handed over to them. */}
+            {s.outliers.map((value, at) => {
+              const beyond = value < from || value > to
+              return (
+                <circle
+                  key={at}
+                  cx={x(Math.min(Math.max(value, from), to))}
+                  cy={mid}
+                  r={2.4}
+                  fill={beyond ? 'none' : colour}
+                  stroke={colour}
+                  strokeWidth={beyond ? 1.2 : 0}
+                  fillOpacity={0.55}
+                />
+              )
+            })}
 
             <title>
               {`${s.label}: median ${num(s.median, 2)}R, middle half ${num(s.q1, 2)}R to ` +

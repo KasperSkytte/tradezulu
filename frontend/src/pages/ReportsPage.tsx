@@ -45,6 +45,31 @@ const SECTIONS: { key: BreakdownKey; title: string; hint: string }[] = [
   { key: 'by_direction', title: 'Long vs short', hint: 'Directional bias in your results.' },
 ]
 
+/** One box plot and the medians under it, for the series named. */
+function Shape({ series, keys }: { series: Distribution[]; keys: string[] }) {
+  const chosen = keys
+    .map((key) => series.find((entry) => entry.key === key))
+    .filter((entry): entry is Distribution => Boolean(entry))
+  if (!chosen.length) return null
+
+  return (
+    <div className="mt-1 first:mt-0 [&+&]:mt-3 [&+&]:border-t [&+&]:border-[var(--tz-border)] [&+&]:pt-3">
+      <BoxPlot series={chosen} />
+      <dl className="mt-1.5 space-y-0.5 text-xs text-[var(--tz-text-muted)]">
+        {chosen.map((entry) => (
+          <div key={entry.key} className="flex justify-between gap-3">
+            <dt>{entry.label}</dt>
+            <dd className="tabular text-[var(--tz-text)]">
+              median {rMultiple(entry.median)} · middle half {rMultiple(entry.q1)} to{' '}
+              {rMultiple(entry.q3)}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  )
+}
+
 export function ReportsPage() {
   const { params } = useFilters()
   const { currency, showAmounts, hour12 } = useSettings()
@@ -167,52 +192,30 @@ export function ReportsPage() {
         </Card>
       ) : (
         <>
-          {/* Shape before summary: an average is one number standing in for a
-              distribution, and which distribution it stands in for is what
-              decides whether the average is worth having. */}
           {shapeQuery.data?.series?.length ? (
-            <Card>
-              <CardHeader
-                title="What you planned against what came back"
-                hint="Each box holds the middle half of the trades, the line inside it the median, and the whiskers reach to the furthest trade that is not an outlier. Dots past them are the trades that did something unusual."
-              />
-              {/* Two scales, not one. Planned R:R lives at 2R to 14R and the
-                  realised series live between -2R and +4R; on a shared axis
-                  the eleven planned trades squash nineteen hundred realised
-                  ones into a sliver. Comparability matters within each group,
-                  and the numbers underneath carry the comparison across. */}
-              {(() => {
-                const planned = shapeQuery.data.series.filter((e) => e.key === 'planned')
-                const realised = shapeQuery.data.series.filter((e) => e.key !== 'planned')
-                return (
-                  <>
-                    {realised.length > 0 && <BoxPlot series={realised} />}
-                    {planned.length > 0 && (
-                      <div className="mt-4 border-t border-[var(--tz-border)] pt-3">
-                        <BoxPlot series={planned} />
-                      </div>
-                    )}
-                  </>
-                )
-              })()}
-              <dl className="mt-3 grid gap-x-6 gap-y-1 text-xs text-[var(--tz-text-muted)] sm:grid-cols-2">
-                {shapeQuery.data.series.map((entry) => (
-                  <div key={entry.key} className="flex justify-between gap-3">
-                    <dt>{entry.label}</dt>
-                    <dd className="tabular text-[var(--tz-text)]">
-                      median {rMultiple(entry.median)} · middle half {rMultiple(entry.q1)} to{' '}
-                      {rMultiple(entry.q3)}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-              <p className="mt-3 text-xs text-[var(--tz-text-faint)]">
-                The comparison to read: whether the winners box sits far enough right of zero to
-                pay for the losers box at the rate losers actually arrive. Planned R:R above them
-                is the trade you set out to take — a wide gap between it and Realised is the plan
-                not surviving contact.
-              </p>
-            </Card>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Card>
+                <CardHeader
+                  title="Planned against realised"
+                  hint="The reward each trade was set up to pay, in units of the risk accepted, against what actually came back. A wide gap is the plan not surviving contact."
+                />
+                {/* Separate scales, and they have to be: the planned trades
+                    live between 2R and 14R while the realised ones live
+                    between -2R and +1R, so one axis turns the larger sample
+                    into a sliver. The medians underneath carry the
+                    comparison. */}
+                <Shape series={shapeQuery.data.series} keys={['planned']} />
+                <Shape series={shapeQuery.data.series} keys={['realised']} />
+              </Card>
+
+              <Card>
+                <CardHeader
+                  title="Winners against losers"
+                  hint="Whether the winners sit far enough right of zero to pay for the losers at the rate losers actually arrive. One scale, because these two are the comparison."
+                />
+                <Shape series={shapeQuery.data.series} keys={['winners', 'losers']} />
+              </Card>
+            </div>
           ) : null}
 
           <div className="grid gap-4 lg:grid-cols-2">
