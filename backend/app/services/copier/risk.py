@@ -222,6 +222,22 @@ def check_trade_gates(
 
     if config.max_risk_percent_per_trade > 0:
         risk = money_at_risk(volume, master.entry_price, master.stop_loss, spec)
+        # A trade with no stop has no measurable risk either, but that is a
+        # choice the user already has a setting for -- require_stop_loss -- and
+        # this cap deliberately stays out of it.
+        #
+        # An unreported contract value is not a choice. It means the terminal
+        # never said what a lot of this instrument is worth, so nothing here
+        # can tell 0.1 lots from 10, and the cap that would have caught the
+        # difference used to fall past the check entirely. That is the one case
+        # where sizing is least trustworthy and the guard did least.
+        if risk is None and master.stop_loss and spec.value_per_unit <= 0:
+            return Decision(
+                Verdict.SKIP,
+                f"the broker has not reported what a {spec.symbol} lot is worth, so "
+                f"the {config.max_risk_percent_per_trade:g}% per-trade cap cannot be applied",
+                "contract_value_unknown",
+            )
         if risk is not None and snapshot.equity > 0:
             share = risk / snapshot.equity * 100.0
             # A trade sitting exactly on the limit is not over it. Without the

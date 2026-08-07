@@ -306,3 +306,47 @@ class TestBreachAction:
     @pytest.mark.parametrize("action", list(BreachAction))
     def test_every_action_is_a_valid_setting(self, action):
         assert RiskConfig(breach_action=action).breach_action is action
+
+
+class TestAnUnknownContractValue:
+    """The cap cannot be applied, so the trade does not go.
+
+    money_at_risk returns None when the terminal never reported what a lot of
+    the instrument is worth, and the per-trade cap used to fall straight past
+    the check -- so the one rule standing between a mis-sized order and the
+    account stopped applying in exactly the case where sizing is least
+    trustworthy. Nothing here can tell 0.1 lots from 10 without that number.
+
+    A missing stop is a different matter: require_stop_loss is the setting for
+    that, and this cap deliberately stays out of it.
+    """
+
+    NO_VALUE = SymbolSpec("XAUUSD+", value_per_unit=0.0, digits=2)
+
+    def test_it_is_refused_when_a_cap_is_set(self):
+        config = RiskConfig(max_risk_percent_per_trade=1.0)
+        trade = MasterTrade("XAUUSD+", "long", 1.0, 4000.0, 3990.0)
+
+        result = check_trade_gates(trade, 1.0, self.NO_VALUE, snapshot(), config)
+
+        assert result.verdict is Verdict.SKIP
+        assert result.rule == "contract_value_unknown"
+        assert "worth" in result.reason
+
+    def test_no_cap_means_no_opinion(self):
+        """Nothing was asked for, so nothing is enforced."""
+        config = RiskConfig(max_risk_percent_per_trade=0)
+        trade = MasterTrade("XAUUSD+", "long", 1.0, 4000.0, 3990.0)
+
+        assert check_trade_gates(trade, 1.0, self.NO_VALUE, snapshot(), config).allowed
+
+    def test_a_known_value_is_measured_as_before(self):
+        config = RiskConfig(max_risk_percent_per_trade=1.0)
+        spec = SymbolSpec("XAUUSD+", value_per_unit=100.0, digits=2)
+        trade = MasterTrade("XAUUSD+", "long", 1.0, 4000.0, 3990.0)
+
+        # 10 points x 100 per unit x 1 lot = 1,000 against 10,000 equity = 10%.
+        result = check_trade_gates(trade, 1.0, spec, snapshot(), config)
+
+        assert result.verdict is Verdict.SKIP
+        assert result.rule == "max_risk_percent_per_trade"
