@@ -1,7 +1,7 @@
 /** The date range and trade filters shared by the dashboard, trades list and
  *  reports. Kept in the URL so a view can be bookmarked or shared. */
 
-import { createContext, use, useCallback, useMemo } from 'react'
+import { createContext, use, useCallback, useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
@@ -58,9 +58,60 @@ function parseList(value: string | null): string[] {
   return value ? value.split(',').filter(Boolean) : []
 }
 
+/** Everything the filter bar and the pickers own, and nothing else.
+ *
+ *  Listed rather than "every parameter" so a page's own state -- the month the
+ *  calendar is showing, the section the settings page is on -- is never
+ *  dragged onto a different page.
+ */
+const FILTER_KEYS = [
+  'period', 'start', 'end', 'account', 'symbols', 'tags',
+  'directions', 'outcomes', 'q', 'minR', 'maxR', 'excluded',
+] as const
+
+const REMEMBERED = 'tz-filters'
+
+/**
+ * Carry the filters across a navigation.
+ *
+ * They live in the URL, which is right -- a link to a filtered view is worth
+ * having -- but the sidebar links are plain paths, so choosing "this week" on
+ * the dashboard and clicking Trades landed on the default period again, and
+ * the same for whichever account was being looked at. Nobody means "show me
+ * a different fortnight now" by clicking Trades.
+ *
+ * The URL still wins wherever it says anything: a shared or bookmarked link
+ * opens on what it describes, and only a page arriving with no filters at all
+ * takes the remembered ones.
+ */
+function useStickyFilters(
+  searchParams: URLSearchParams,
+  setSearchParams: ReturnType<typeof useSearchParams>[1],
+) {
+  useEffect(() => {
+    const kept = new URLSearchParams()
+    for (const key of FILTER_KEYS) {
+      const value = searchParams.get(key)
+      if (value) kept.set(key, value)
+    }
+    if ([...kept.keys()].length) localStorage.setItem(REMEMBERED, kept.toString())
+  }, [searchParams])
+
+  useEffect(() => {
+    if (FILTER_KEYS.some((key) => searchParams.has(key))) return
+    const kept = localStorage.getItem(REMEMBERED)
+    if (!kept) return
+    // Replaced rather than pushed: this is the same view arriving with what it
+    // was already showing, not somewhere the back button should return to.
+    setSearchParams(new URLSearchParams(kept), { replace: true })
+  }, [searchParams, setSearchParams])
+}
+
 export function FiltersProvider({ children }: { children: ReactNode }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const { settings, weekStartsOn } = useSettings()
+
+  useStickyFilters(searchParams, setSearchParams)
 
   const { data: accounts = [] } = useQuery({
     queryKey: ['accounts'],
