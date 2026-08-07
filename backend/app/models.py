@@ -115,6 +115,12 @@ class Account(Base):
     # runs once per instrument rather than on every position change, and so
     # what the copier decided is something you can look at.
     symbol_learned: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    # What this broker offers, as the terminal last reported it: name, volume
+    # limits, tick value, digits. Kept because the list is thousands of entries
+    # and arrives on its own slow cadence rather than with every heartbeat --
+    # a poll that does not carry it is not a broker that has stopped offering
+    # anything.
+    symbols: Mapped[list[Any]] = mapped_column(JSON, default=list)
     # Equity at the start of the current trading day, for the daily guards.
     day_start_equity: Mapped[float] = mapped_column(Float, default=0.0)
     day_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)

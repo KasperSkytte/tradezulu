@@ -78,6 +78,21 @@ def update_account_state(db: Session, account: Account, payload: Any) -> None:
         account.day_start_equity = account.equity
     account.peak_equity = max(account.peak_equity or 0.0, account.equity)
 
+    # What the broker offers. Recorded here rather than while planning a copy,
+    # because it describes the account rather than the copying: an account that
+    # has never been armed still has to be able to say what it can trade, and
+    # the mapping the copier works out is checked against this list.
+    #
+    # It arrives on its own slow cadence -- thousands of entries that change
+    # about never -- so a heartbeat without one is not a broker that has
+    # stopped offering anything, and the last list stands until replaced.
+    reported = [
+        entry.model_dump() if hasattr(entry, "model_dump") else dict(entry)
+        for entry in (getattr(payload, "symbols", None) or [])
+    ]
+    if reported:
+        account.symbols = reported
+
     record_equity_point(db, account, len(getattr(payload, "positions", []) or []))
 
 
@@ -288,10 +303,7 @@ def _context_for(
             )
         )
 
-    symbols = [
-        s.model_dump() if hasattr(s, "model_dump") else dict(s)
-        for s in (payload.symbols or [])
-    ]
+    symbols = list(account.symbols or [])
     specs = {s["symbol"].upper(): _spec_from(s) for s in symbols}
     settings = account.copy_settings or {}
 

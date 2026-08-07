@@ -817,3 +817,39 @@ class TestATerminalThatIsNotLoggedIn:
         payload = account_payload("5000", "Master-Server")
         payload["balance"] = payload["equity"] = 0.0
         assert auth_client.post("/api/agent/poll", json=payload).status_code == 200
+
+
+class TestTheBrokersSymbolList:
+    """It arrives on its own cadence, and has to survive the polls between.
+
+    The list is thousands of entries and changes about never, so the terminal
+    sends it every few minutes rather than every two seconds. A heartbeat
+    without one is not a broker that has stopped offering anything -- and if it
+    were read that way, every copy between two of those polls would be refused
+    with "this broker has no symbol matching ...".
+    """
+
+    def _poll(self, auth_client, symbols):
+        payload = account_payload("9001", "Slave-Server")
+        payload["symbols"] = symbols
+        return auth_client.post("/api/agent/poll", json=payload)
+
+    def test_a_reported_list_is_kept(self, auth_client, db, slave):
+        self._poll(auth_client, [{"symbol": "XAUUSD+", "volume_min": 0.01}])
+
+        db.expire_all()
+        assert [s["symbol"] for s in db.get(Account, slave.id).symbols] == ["XAUUSD+"]
+
+    def test_a_poll_without_one_does_not_forget_it(self, auth_client, db, slave):
+        self._poll(auth_client, [{"symbol": "XAUUSD+", "volume_min": 0.01}])
+        self._poll(auth_client, [])
+
+        db.expire_all()
+        assert [s["symbol"] for s in db.get(Account, slave.id).symbols] == ["XAUUSD+"]
+
+    def test_a_new_list_replaces_the_old(self, auth_client, db, slave):
+        self._poll(auth_client, [{"symbol": "XAUUSD+", "volume_min": 0.01}])
+        self._poll(auth_client, [{"symbol": "EURUSD+", "volume_min": 0.01}])
+
+        db.expire_all()
+        assert [s["symbol"] for s in db.get(Account, slave.id).symbols] == ["EURUSD+"]

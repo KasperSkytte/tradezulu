@@ -36,6 +36,7 @@ input bool   Verbose          = true;  // Log every command to the Experts tab
 input group "Journal"
 input bool   SendHistory      = true;  // Send closed deals so the journal fills itself
 input int    HistorySeconds   = 60;    // How often to look for new ones
+input int    SymbolsSeconds   = 300;   // How often to send the broker's symbol list
 input int    FirstSyncDays    = 730;   // How far back to go the first time
 input int    DealsPerRequest  = 200;   // Batch size; a long history is sent in pieces
 input bool   UploadCandles    = true;  // Send bars around each trade, so charts have something to draw
@@ -62,6 +63,7 @@ int    g_poll_seconds = 0;
 ulong    g_last_ticket  = 0;      // highest deal the server already has
 bool     g_cursor_known = false;
 datetime g_next_history = 0;
+datetime g_next_symbols = 0;   // the broker's symbol list, sent occasionally
 int      g_sent_deals   = 0;
 bool     g_candles_done = false;   // the one-off backfill for trades already journalled
 // How much chart history to send around each trade, in seconds either side.
@@ -272,13 +274,24 @@ string PositionsJson()
 
 // Only the symbols that matter: what is open here, plus what Market Watch
 // shows. Sending the broker's entire catalogue would be a megabyte a tick.
+// Every symbol the broker offers, not only the ones in Market Watch.
+//
+// Market Watch on a fresh terminal is whatever default the broker ships --
+// a handful of majors -- and the journal can only copy onto a symbol it has
+// been told exists. A Vantage master trading XAUUSD+ onto a Vantage slave was
+// refused with "this broker has no symbol matching XAUUSD+" for no better
+// reason than that nobody had opened the symbol on the slave, and an explicit
+// mapping did not help because that is checked against the same list.
+//
+// Trading one is already handled: DoOpen calls SymbolSelect before ordering,
+// which is what puts it in Market Watch.
 string SymbolsJson()
 {
    string out = "";
-   int total = SymbolsTotal(true);
-   for(int i = 0; i < total && i < 200; i++)
+   int total = SymbolsTotal(false);
+   for(int i = 0; i < total && i < 5000; i++)
    {
-      string name = SymbolName(i, true);
+      string name = SymbolName(i, false);
       if(StringLen(name) == 0)
          continue;
       double tick_size  = SymbolInfoDouble(name, SYMBOL_TRADE_TICK_SIZE);
@@ -311,7 +324,16 @@ string PollBody()
    body += "," + JInt("server_time", (long)TimeCurrent());
    body += "," + JBool("trade_allowed", TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) != 0);
    body += ",\"positions\":" + PositionsJson();
-   body += ",\"symbols\":" + SymbolsJson();
+   // A broker's whole symbol list is thousands of entries and changes about
+   // never, so it goes at a slow cadence of its own rather than with every
+   // heartbeat. The server keeps the last one it was sent.
+   if(TimeCurrent() >= g_next_symbols)
+   {
+      g_next_symbols = TimeCurrent() + (datetime)MathMax(60, SymbolsSeconds);
+      body += ",\"symbols\":" + SymbolsJson();
+   }
+   else
+      body += ",\"symbols\":[]";
    body += ",\"results\":[" + g_pending + "]";
    body += "}";
    return body;
