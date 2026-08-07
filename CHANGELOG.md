@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.25.1](https://github.com/KasperSkytte/tradezulu/compare/v1.25.0...v1.25.1) (2026-08-07)
+
+
+### Bug fixes
+
+* **filters:** the period and account survive changing page ([a475d41](https://github.com/KasperSkytte/tradezulu/commit/a475d41c8e33eef10f40b6a76ca887a69c0d37bd))
+
 ## [1.25.0](https://github.com/KasperSkytte/tradezulu/compare/v1.24.0...v1.25.0) (2026-08-06)
 
 
