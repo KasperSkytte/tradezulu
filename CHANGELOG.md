@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.25.2](https://github.com/KasperSkytte/tradezulu/compare/v1.25.1...v1.25.2) (2026-08-07)
+
+
+### Bug fixes
+
+* **copier:** clearing a halt moves the day's baseline with it ([86df7ea](https://github.com/KasperSkytte/tradezulu/commit/86df7ead6955a73af63d554e8059d40af0b2242e))
+* **copier:** refuse a trade whose size cannot be checked against the cap ([76a7304](https://github.com/KasperSkytte/tradezulu/commit/76a73040f5a913690712ca16df3f07a666bc272a))
+* **copier:** the terminal reports every symbol, not just Market Watch ([bd5a0f1](https://github.com/KasperSkytte/tradezulu/commit/bd5a0f1c11faa8afde317a5e7e965ae4d0501667))
+
 ## [1.25.1](https://github.com/KasperSkytte/tradezulu/compare/v1.25.0...v1.25.1) (2026-08-07)
 
 
