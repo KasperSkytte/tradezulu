@@ -223,10 +223,16 @@ def arm(account_id: int, payload: SlaveArmIn, db: Session = Depends(get_db)) -> 
     account.copy_enabled = payload.enabled
     account.copy_dry_run = payload.dry_run
     if payload.enabled:
-        # Arming clears a previous halt: the point is to start again.
+        # Arming clears a previous halt: the point is to start again. And it
+        # moves the day's baseline with it, or the guard that tripped is still
+        # measuring from this morning and halts the account on the next
+        # heartbeat -- see _rebaseline_day.
+        was_halted = account.copy_halted
         account.copy_halted = False
         account.copy_halt_reason = ""
         account.copy_halted_at = None
+        if was_halted:
+            _rebaseline_day(account)
 
     if going_live:
         # A dry-run link records a position that was never actually opened. Left
@@ -271,6 +277,26 @@ def arm(account_id: int, payload: SlaveArmIn, db: Session = Depends(get_db)) -> 
     return _as_out(account, db)
 
 
+def _rebaseline_day(account: Account) -> str:
+    """Measure the day's guards from here rather than from this morning.
+
+    A daily drawdown guard compares equity against what the account opened the
+    day with. Clearing the halt without moving that baseline clears a flag that
+    the very next heartbeat sets again -- the loss is still in the past, and the
+    morning's equity is still the morning's equity -- so the button appeared to
+    do nothing at all.
+
+    Moving it is what "carry on from here" means, and it is the user's to
+    decide: they are looking at the loss when they press it. The peak is left
+    alone, because that guard is about the account's high-water mark rather
+    than about today, and rewriting it would quietly forgive a drawdown nobody
+    acknowledged.
+    """
+    account.day_start_date = datetime.now(timezone.utc).date()
+    previous, account.day_start_equity = account.day_start_equity, account.equity
+    return f"the day's guards now measure from {account.equity:,.2f}, not {previous:,.2f}"
+
+
 @router.post("/{account_id}/resume", response_model=SlaveAccountOut)
 def clear_halt(account_id: int, db: Session = Depends(get_db)) -> SlaveAccountOut:
     """Clear a tripped guard so the account can copy again."""
@@ -278,12 +304,13 @@ def clear_halt(account_id: int, db: Session = Depends(get_db)) -> SlaveAccountOu
     account.copy_halted = False
     account.copy_halt_reason = ""
     account.copy_halted_at = None
+    rebased = _rebaseline_day(account)
     db.add(
         CopyEvent(
             slave_account_id=account.id,
             action="resume",
             outcome="ok",
-            message="halt cleared by hand",
+            message=f"halt cleared by hand; {rebased}",
         )
     )
     db.commit()

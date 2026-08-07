@@ -371,3 +371,66 @@ class TestSymbolMappings:
             json={"overrides": {"XAUUSD+": "GOLD", "": "", "  ": "X"}},
         )
         assert response.json()["symbol_map"] == {"XAUUSD+": "GOLD"}
+
+
+class TestClearingAHalt:
+    """A daily guard measures against what the account opened the day with.
+
+    Clearing the halt without moving that baseline clears a flag the very next
+    heartbeat sets again -- the loss is still in the past and the morning's
+    equity is still the morning's equity -- so the button appeared to do
+    nothing at all.
+    """
+
+    def _halted(self, db, slave, *, opened_at: float, now: float):
+        account = db.get(Account, slave["id"])
+        account.copy_halted = True
+        account.copy_halt_reason = "down 5% from the day's opening equity"
+        account.day_start_equity = opened_at
+        account.balance = account.equity = now
+        db.commit()
+        return account
+
+    def test_clearing_moves_the_days_baseline(self, auth_client, db, slave):
+        self._halted(db, slave, opened_at=10_000.0, now=9_400.0)
+
+        auth_client.post(f"/api/accounts/{slave['id']}/resume", json={})
+
+        db.expire_all()
+        account = db.get(Account, slave["id"])
+        assert account.copy_halted is False
+        assert account.day_start_equity == 9_400.0, "or the guard trips again at once"
+
+    def test_it_says_so_rather_than_moving_it_silently(self, auth_client, db, slave):
+        self._halted(db, slave, opened_at=10_000.0, now=9_400.0)
+
+        auth_client.post(f"/api/accounts/{slave['id']}/resume", json={})
+
+        events = db.scalars(
+            select(CopyEvent).where(CopyEvent.slave_account_id == slave["id"])
+        ).all()
+        assert any("9,400" in event.message and "10,000" in event.message for event in events)
+
+    def test_the_peak_is_left_alone(self, auth_client, db, slave):
+        """That guard is about the high-water mark, not about today.
+
+        Rewriting it here would quietly forgive a drawdown nobody acknowledged.
+        """
+        account = self._halted(db, slave, opened_at=10_000.0, now=9_400.0)
+        account.peak_equity = 12_000.0
+        db.commit()
+
+        auth_client.post(f"/api/accounts/{slave['id']}/resume", json={})
+
+        db.expire_all()
+        assert db.get(Account, slave["id"]).peak_equity == 12_000.0
+
+    def test_arming_a_halted_account_rebaselines_too(self, auth_client, db, slave):
+        self._halted(db, slave, opened_at=10_000.0, now=9_400.0)
+
+        auth_client.post(
+            f"/api/accounts/{slave['id']}/arm", json={"enabled": True, "dry_run": True}
+        )
+
+        db.expire_all()
+        assert db.get(Account, slave["id"]).day_start_equity == 9_400.0
