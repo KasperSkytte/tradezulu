@@ -2,7 +2,7 @@
 
 # TradeZulu
 
-**A trade copier and trading journal for MetaTrader 5, in one.**
+**A trade copier and trading journal for MetaTrader 5 - in one!**
 
 Copy trades across any number of accounts under your own risk rules,
 and journal every one of them. Self-hosted, free, and yours.
