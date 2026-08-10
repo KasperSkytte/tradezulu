@@ -54,15 +54,18 @@ export function BoxPlot({
   const x = (value: number) => LABELS + ((value - from) / (to - from)) * plot
 
   const height = series.length * ROW + AXIS
-  // Whole numbers of R read better than a computed scale, but not every whole
+  // Round numbers of R read better than a computed scale, but not every round
   // number: across a wide range they collide into a smear, so the step grows
-  // until about eight labels fit.
-  const step = [1, 2, 5, 10, 20, 50].find((n) => (to - from) / n <= 8) ?? 100
+  // until about eight labels fit. It shrinks below 1 as well, or a card whose
+  // whole range is half an R gets one tick, at the edge, and no ruler at all.
+  const step = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50].find((n) => (to - from) / n <= 8) ?? 100
+  // Counted out rather than accumulated, so the zero tick is exactly zero.
+  // Adding the step repeatedly drifts (-1.4e-16 after a few tenths), and
+  // Math.ceil returns negative zero for anything in (-1, 0) -- both of which
+  // Intl spells "-0.00", labelling the one gridline that means something, the
+  // line between a trade that paid and one that did not, as a small loss.
   const ticks: number[] = []
-  // The first tick of an axis that starts just below zero is negative zero,
-  // which Intl spells "-0.00" -- so the one gridline that means something was
-  // labelled as a small loss.
-  for (let t = Math.ceil(from / step) * step; t <= to; t += step) ticks.push(t === 0 ? 0 : t)
+  for (let i = Math.ceil(from / step); i * step <= to; i += 1) ticks.push(i === 0 ? 0 : i * step)
 
   return (
     <svg
