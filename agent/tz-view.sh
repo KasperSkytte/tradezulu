@@ -9,11 +9,14 @@
 #   ./tz-view.sh list             # which terminals are up, and their windows
 #   ./tz-view.sh shot             # a PNG of the whole display
 #   ./tz-view.sh shot 22609000    # just that account's window
+#   ./tz-view.sh front 22609000   # bring that account's window to the front
 #   ./tz-view.sh watch            # a live view over VNC, with the SSH command
 #
 # The display is :77 unless TZ_DISPLAY says otherwise, matching the
-# provisioner. Nothing here changes anything -- it only reads the screen -- so
-# it is safe to run against terminals that are trading.
+# provisioner. Reading the screen never changes anything, but naming a window
+# does: every terminal is stacked in the same place, and X11 hands out the
+# pixels that are on the screen rather than the window's own, so a window has
+# to come to the front before it can be photographed.
 #
 set -euo pipefail
 
@@ -72,6 +75,40 @@ is_terminal_pid() {
     terminal64.exe|Terminal64.exe) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+# Which window an account means. MetaTrader titles its main window
+# "<login> - <server>: ..." and names every dialog after itself, so a login
+# matches one main window and however many message boxes it has open; the main
+# window is the one worth looking at. Prints "id<TAB>title", nothing if there
+# is no match.
+find_window() {
+  local match="$1" id name main="" other=""
+  for id in $(windows); do
+    name="$(DISPLAY="${DISPLAY_ID}" xdotool getwindowname "$id" 2>/dev/null || true)"
+    is_noise "${name}" && continue
+    case "${name}" in *"${match}"*) ;; *) continue ;; esac
+    case "${name}" in
+      [0-9]*\ -\ *) [ -n "${main}" ] || main="${id}	${name}" ;;
+      *)            [ -n "${other}" ] || other="${id}	${name}" ;;
+    esac
+  done
+  printf '%s' "${main:-${other}}"
+}
+
+# X11 has no memory of what is underneath. Ask the server for the pixels of a
+# window that another window covers and it hands back whatever is on top --
+# which, with every terminal stacked in the same place on the display, meant
+# two different accounts photographed as the same picture, or as a black
+# rectangle. Raising is the only cure short of a compositing manager.
+#
+# windowraise and not windowactivate: raising leaves the keyboard where it is,
+# and the provisioner types into whatever holds focus.
+raise_window() {
+  DISPLAY="${DISPLAY_ID}" xdotool windowraise "$1" 2>/dev/null || true
+  # Nothing is drawn until the application answers the expose event, and
+  # MetaTrader under Wine takes a moment about it.
+  sleep "${TZ_RAISE_WAIT:-0.6}"
 }
 
 cmd_list() {
@@ -141,27 +178,55 @@ cmd_shot() {
   check_display
   need import "apt install imagemagick"
 
-  local match="${1:-}" target="root" label="display" id name
+  local match="${1:-}" target="root" label="display" hit="" name=""
   if [ -n "${match}" ]; then
-    for id in $(windows); do
-      name="$(DISPLAY="${DISPLAY_ID}" xdotool getwindowname "$id" 2>/dev/null || true)"
-      case "${name}" in
-        *"${match}"*) target="$id"; label="${match}"; break ;;
-      esac
-    done
-    [ "${target}" != "root" ] || die "no window matching '${match}'. Try: $0 list"
+    hit="$(find_window "${match}")"
+    [ -n "${hit}" ] || die "no window matching '${match}'. Try: $0 list"
+    target="${hit%%	*}"
+    name="${hit#*	}"
+    label="${match}"
+    raise_window "${target}"
   fi
 
   local file
   file="${OUT_DIR}/tz-${label//[^A-Za-z0-9._-]/_}-$(date +%H%M%S).png"
   DISPLAY="${DISPLAY_ID}" import -window "${target}" "${file}"
+  # Say which window it was. Two terminals logged into the same account have
+  # the same title, and the shot is of one of them; better to name what was
+  # photographed than to let the file name imply more than it knows.
+  [ -n "${name}" ] && say "window ${target}: ${name}"
   say "wrote ${file}"
   say "copy it back with:  scp ${WHO}@${HOSTNAME_FQDN}:${file} ."
 }
 
+# Bringing a terminal to the front is worth a command of its own: with a
+# viewer already connected, this is how you change which account you are
+# looking at without restarting anything.
+cmd_front() {
+  check_display
+  local match="${1:-}" hit
+  [ -n "${match}" ] || die "which window? e.g. $0 front 22609000"
+  hit="$(find_window "${match}")"
+  [ -n "${hit}" ] || die "no window matching '${match}'. Try: $0 list"
+  raise_window "${hit%%	*}"
+  say "raised ${hit%%	*}: ${hit#*	}"
+}
+
 cmd_watch() {
+  local match="${1:-}"
   check_display
   need x11vnc "apt install x11vnc"
+
+  # A viewer shows the whole display, and the terminals sit on top of each
+  # other, so the one you want is not necessarily the one you would see.
+  if [ -n "${match}" ]; then
+    local hit
+    hit="$(find_window "${match}")"
+    [ -n "${hit}" ] || die "no window matching '${match}'. Try: $0 list"
+    raise_window "${hit%%	*}"
+    say "raised ${hit#*	}"
+    say ""
+  fi
 
   say "Serving ${DISPLAY_ID} on localhost:${PORT}."
   say ""
@@ -169,6 +234,7 @@ cmd_watch() {
   say "  ssh -N -L ${PORT}:localhost:${PORT} ${WHO}@${HOSTNAME_FQDN}"
   say "then point a VNC viewer at localhost:${PORT}."
   say ""
+
   say "Ctrl-C here when you are done."
   say ""
   # -localhost so this is only reachable through the SSH tunnel: the display
@@ -181,7 +247,8 @@ cmd_watch() {
 case "${1:-list}" in
   list)         cmd_list ;;
   shot)         shift; cmd_shot "${1:-}" ;;
-  watch|vnc)    cmd_watch ;;
-  -h|--help)    sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//' ;;
-  *)            die "unknown command: $1 (try: list, shot, watch)" ;;
+  front|raise)  shift; cmd_front "${1:-}" ;;
+  watch|vnc)    shift; cmd_watch "$@" ;;
+  -h|--help)    sed -n '2,${/^#/!q;s/^# \{0,1\}//;p}' "$0" ;;
+  *)            die "unknown command: $1 (try: list, shot, front, watch)" ;;
 esac

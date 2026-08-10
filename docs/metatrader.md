@@ -51,8 +51,8 @@ trusted:
   Until then it retries, then rebuilds the terminal, then stops and says what
   to check by hand.
 - You can look at exactly what the terminals are showing, at any time, with
-  [`agent/tz-view.sh`](#looking-at-a-terminal) — it only reads the display, so
-  it is safe against a terminal that is trading.
+  [`agent/tz-view.sh`](#looking-at-a-terminal) — including which one of them is
+  showing it, when several are stacked on the same display.
 
 The alternative was asking every user to install MetaTrader themselves, attach
 an Expert Advisor to a chart, and paste a URL and a token into its inputs. That
@@ -331,13 +331,13 @@ until something goes wrong: a login that failed, a dialog waiting for an answer,
 an Expert Advisor that never attached. All of those are visible on screen and
 invisible in the logs.
 
-`agent/tz-view.sh` reads that display. It only reads it, so it is safe to run
-against terminals that are trading.
+`agent/tz-view.sh` reads that display.
 
 ```bash
 ./agent/tz-view.sh list             # which terminals are up, and their windows
 ./agent/tz-view.sh shot             # a PNG of the whole display
 ./agent/tz-view.sh shot 22609000    # just that account's window
+./agent/tz-view.sh front 22609000   # bring that account's window to the front
 ./agent/tz-view.sh watch            # a live view over VNC
 ```
 
@@ -362,3 +362,20 @@ package when you reach for it. `watch` binds to loopback only and serves
 view-only, so it is reachable through an SSH tunnel and not from the network:
 the display holds logged-in trading terminals, and x11vnc's own authentication
 is not worth relying on. It prints the `ssh -L` command to paste.
+
+### Which window you get
+
+Every terminal is opened in the same place, so they sit on top of one another,
+and X11 hands out the pixels that are *on the screen* where a window is rather
+than the window's own — ask for a covered one and you get whatever is above it,
+or a black rectangle. There is no compositing manager on the virtual display to
+keep a copy. So naming a window brings it to the front first: `shot 22609000`
+raises that terminal before it photographs it and prints the title it caught,
+and `front` does the raising on its own, which is how you change what you are
+looking at while a viewer is connected.
+
+Raising leaves the keyboard where it is, so the provisioner goes on typing into
+whatever it was typing into; the one thing it can disturb is a click the
+provisioner is aiming at a dialog in that same second, and it re-raises the
+window it wants before clicking anyway. `list` and an unqualified `shot` touch
+nothing at all.
