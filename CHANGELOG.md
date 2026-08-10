@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.26.0](https://github.com/KasperSkytte/tradezulu/compare/v1.25.2...v1.26.0) (2026-08-10)
+
+
+### Features
+
+* **agent:** let a viewer drive the terminals, with watch --control ([da75e22](https://github.com/KasperSkytte/tradezulu/commit/da75e2246ad3f5ea296598495119bb03b6a0c5b0))
+
+
+### Bug fixes
+
+* **agent:** show the terminal that was asked for, not the one on top ([d3753cb](https://github.com/KasperSkytte/tradezulu/commit/d3753cb22fe9935d39d269710fd8a1f23ba8eaeb))
+* **reports:** label the zero gridline zero, not -0.00 ([308920b](https://github.com/KasperSkytte/tradezulu/commit/308920b50b1fdafc58a50535a907e26b75fac379))
+* **reports:** put planned and realised on one axis ([10a9b80](https://github.com/KasperSkytte/tradezulu/commit/10a9b80d1609b169807ac63befb197de8d161f5d))
+
 ## [1.25.2](https://github.com/KasperSkytte/tradezulu/compare/v1.25.1...v1.25.2) (2026-08-07)
 
 
