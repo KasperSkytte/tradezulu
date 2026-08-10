@@ -51,8 +51,8 @@ trusted:
   Until then it retries, then rebuilds the terminal, then stops and says what
   to check by hand.
 - You can look at exactly what the terminals are showing, at any time, with
-  [`agent/tz-view.sh`](#looking-at-a-terminal) — including which one of them is
-  showing it, when several are stacked on the same display.
+  [`agent/tz-view.sh`](#looking-at-a-terminal) — and, when looking is not
+  enough, take the mouse and use one.
 
 The alternative was asking every user to install MetaTrader themselves, attach
 an Expert Advisor to a chart, and paste a URL and a token into its inputs. That
@@ -331,7 +331,8 @@ until something goes wrong: a login that failed, a dialog waiting for an answer,
 an Expert Advisor that never attached. All of those are visible on screen and
 invisible in the logs.
 
-`agent/tz-view.sh` reads that display.
+`agent/tz-view.sh` reads that display, and — when you ask it to — lets you use
+it.
 
 ```bash
 ./agent/tz-view.sh list             # which terminals are up, and their windows
@@ -339,6 +340,7 @@ invisible in the logs.
 ./agent/tz-view.sh shot 22609000    # just that account's window
 ./agent/tz-view.sh front 22609000   # bring that account's window to the front
 ./agent/tz-view.sh watch            # a live view over VNC
+./agent/tz-view.sh watch --control  # the same, with a working mouse
 ```
 
 `list` is usually enough — MetaTrader puts the account number and server in the
@@ -358,10 +360,10 @@ terminals running, by prefix:
 
 `shot` needs ImageMagick and `watch` needs x11vnc; neither is installed by
 `install.sh`, because neither is needed to run anything — the script names the
-package when you reach for it. `watch` binds to loopback only and serves
-view-only, so it is reachable through an SSH tunnel and not from the network:
-the display holds logged-in trading terminals, and x11vnc's own authentication
-is not worth relying on. It prints the `ssh -L` command to paste.
+package when you reach for it. `watch` binds to loopback only, so it is
+reachable through an SSH tunnel and not from the network: the display holds
+logged-in trading terminals, and x11vnc's own authentication is not worth
+relying on. It prints the `ssh -L` command to paste.
 
 ### Which window you get
 
@@ -379,3 +381,18 @@ whatever it was typing into; the one thing it can disturb is a click the
 provisioner is aiming at a dialog in that same second, and it re-raises the
 window it wants before clicking anyway. `list` and an unqualified `shot` touch
 nothing at all.
+
+### Using the terminals
+
+`watch` serves the display view-only. `watch --control` serves it with the
+mouse and keyboard connected, which is the only way to drive a terminal that is
+running headless — clicking through a dialog the provisioner did not expect,
+reading a chart, checking what an Expert Advisor is actually doing. Alt-tab
+moves between terminals where a window manager is running (`install.sh` puts
+openbox on the display), and `./agent/tz-view.sh front <account>` does the same
+from a second shell.
+
+These are the real terminals, logged into real accounts: a click can place an
+order, and the provisioner may be typing into the same display at the same
+moment. The tunnel is still the only way in — `--control` changes what a viewer
+may do, not who can reach it.

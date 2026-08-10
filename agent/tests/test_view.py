@@ -134,14 +134,20 @@ class TestPicking:
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash")
 class TestWatch:
-    def test_a_viewer_cannot_touch_anything(self, run):
+    def test_a_viewer_cannot_touch_anything_by_default(self, run):
         _, log = run("watch")
         assert "-viewonly" in log[-1]
 
+    def test_control_hands_over_the_mouse(self, run):
+        done, log = run("watch", "--control")
+        assert "-viewonly" not in log[-1]
+        assert "mouse and keyboard are live" in done.stdout
+
     def test_watch_can_start_on_a_chosen_terminal(self, run):
-        _, log = run("watch", "22609000")
+        _, log = run("watch", "--control", "22609000")
         assert log[0] == "raise 300"
 
     def test_it_stays_behind_the_ssh_tunnel(self, run):
-        _, log = run("watch")
-        assert "-localhost" in log[-1]
+        for args in (["watch"], ["watch", "--control"]):
+            _, log = run(*args)
+            assert "-localhost" in log[-1]

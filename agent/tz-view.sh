@@ -11,12 +11,15 @@
 #   ./tz-view.sh shot 22609000    # just that account's window
 #   ./tz-view.sh front 22609000   # bring that account's window to the front
 #   ./tz-view.sh watch            # a live view over VNC, with the SSH command
+#   ./tz-view.sh watch --control  # the same, but the mouse and keyboard work
 #
 # The display is :77 unless TZ_DISPLAY says otherwise, matching the
 # provisioner. Reading the screen never changes anything, but naming a window
 # does: every terminal is stacked in the same place, and X11 hands out the
 # pixels that are on the screen rather than the window's own, so a window has
-# to come to the front before it can be photographed.
+# to come to the front before it can be photographed or driven. Only
+# --control puts a keyboard and mouse on the display; without it a viewer can
+# look and nothing more.
 #
 set -euo pipefail
 
@@ -213,7 +216,17 @@ cmd_front() {
 }
 
 cmd_watch() {
-  local match="${1:-}"
+  local control=0 match=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --control|--interactive|-c) control=1 ;;
+      --viewonly|--view-only)     control=0 ;;
+      -*)                         die "unknown option: $1 (try: --control)" ;;
+      *)                          match="$1" ;;
+    esac
+    shift
+  done
+
   check_display
   need x11vnc "apt install x11vnc"
 
@@ -235,13 +248,31 @@ cmd_watch() {
   say "then point a VNC viewer at localhost:${PORT}."
   say ""
 
-  say "Ctrl-C here when you are done."
-  say ""
   # -localhost so this is only reachable through the SSH tunnel: the display
   # holds logged-in trading terminals and x11vnc has no authentication worth
-  # the name. -viewonly because nothing here should be clicking on them.
-  exec x11vnc -display "${DISPLAY_ID}" -localhost -rfbport "${PORT}" \
-    -viewonly -shared -forever -nopw -quiet
+  # the name.
+  local -a opts=(
+    -display "${DISPLAY_ID}" -localhost -rfbport "${PORT}"
+    -shared -forever -nopw -quiet
+  )
+  if [ "${control}" -eq 1 ]; then
+    # The whole point of a headless terminal is that nobody touches it, so
+    # spell out what has just been handed over.
+    say "The mouse and keyboard are live. These are the real terminals: a click"
+    say "places an order, and the provisioner may be typing into the same"
+    say "display at the same time."
+    say ""
+    say "Terminals sit on top of each other. Alt-tab moves between them where a"
+    say "window manager is running, and from here:"
+    say "  $0 front <account>"
+  else
+    opts+=(-viewonly)
+    say "View only. Add --control to use the mouse and keyboard."
+  fi
+  say ""
+  say "Ctrl-C here when you are done."
+  say ""
+  exec x11vnc "${opts[@]}"
 }
 
 case "${1:-list}" in
