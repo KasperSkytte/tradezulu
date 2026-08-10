@@ -59,7 +59,10 @@ export function BoxPlot({
   // until about eight labels fit.
   const step = [1, 2, 5, 10, 20, 50].find((n) => (to - from) / n <= 8) ?? 100
   const ticks: number[] = []
-  for (let t = Math.ceil(from / step) * step; t <= to; t += step) ticks.push(t)
+  // The first tick of an axis that starts just below zero is negative zero,
+  // which Intl spells "-0.00" -- so the one gridline that means something was
+  // labelled as a small loss.
+  for (let t = Math.ceil(from / step) * step; t <= to; t += step) ticks.push(t === 0 ? 0 : t)
 
   return (
     <svg
