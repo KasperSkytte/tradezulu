@@ -28,10 +28,14 @@ const LABELS = 104
 export function BoxPlot({
   series,
   format,
+  formatTick,
 }: {
   series: BoxRow[]
   /** Whatever unit the page is currently answering in -- R, money, percent. */
   format: (value: number) => string
+  /** The same unit, written for a ruler: coarser and unsigned, because
+   *  "+$1,000.00" eight times across a card is a smear rather than a scale. */
+  formatTick?: (value: number) => string
 }) {
   if (!series.length) return null
 
@@ -54,11 +58,15 @@ export function BoxPlot({
   const x = (value: number) => LABELS + ((value - from) / (to - from)) * plot
 
   const height = series.length * ROW + AXIS
-  // Round numbers of R read better than a computed scale, but not every round
-  // number: across a wide range they collide into a smear, so the step grows
-  // until about eight labels fit. It shrinks below 1 as well, or a card whose
-  // whole range is half an R gets one tick, at the edge, and no ruler at all.
-  const step = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50].find((n) => (to - from) / n <= 8) ?? 100
+  // Round numbers read better than a computed scale, but not every round
+  // number: across a wide range they collide into a smear, so the step is the
+  // next 1, 2 or 5 of the right size up from an eighth of the range. It has to
+  // hold for half an R and for three thousand dollars, which a fixed list of
+  // steps does not -- money ran off the end of one and drew fourteen labels
+  // over each other.
+  const rough = (to - from) / 8
+  const magnitude = 10 ** Math.floor(Math.log10(rough))
+  const step = ([1, 2, 5].find((n) => n * magnitude >= rough) ?? 10) * magnitude
   // Counted out rather than accumulated, so the zero tick is exactly zero.
   // Adding the step repeatedly drifts (-1.4e-16 after a few tenths), and
   // Math.ceil returns negative zero for anything in (-1, 0) -- both of which
@@ -93,7 +101,7 @@ export function BoxPlot({
             fill="var(--tz-text-faint)"
             style={{ fontSize: 11 }}
           >
-            {format(tick)}
+            {(formatTick ?? format)(tick)}
           </text>
         </g>
       ))}

@@ -57,11 +57,13 @@ function Shape({
   keys,
   metric,
   format,
+  formatTick,
 }: {
   series: Distribution[]
   keys: string[]
   metric: Metric
   format: (value: number) => string
+  formatTick: (value: number) => string
 }) {
   const rows = keys
     .map((key) => series.find((entry) => entry.key === key))
@@ -83,7 +85,7 @@ function Shape({
 
   return (
     <div className="mt-1 first:mt-0 [&+&]:mt-3 [&+&]:border-t [&+&]:border-[var(--tz-border)] [&+&]:pt-3">
-      <BoxPlot series={rows} format={format} />
+      <BoxPlot series={rows} format={format} formatTick={formatTick} />
       {/* Figures only: the chart beside them is already labelled, and repeating
           the name here said it twice and told nobody anything twice. */}
       <dl className="mt-1.5 space-y-0.5 text-right text-xs text-[var(--tz-text-muted)]">
@@ -249,6 +251,7 @@ export function ReportsPage() {
                   keys={['planned', 'realised']}
                   metric={metric}
                   format={formatMetric}
+                  formatTick={formatAxis}
                 />
               </Card>
 
@@ -262,6 +265,7 @@ export function ReportsPage() {
                   keys={['winners', 'losers']}
                   metric={metric}
                   format={formatMetric}
+                  formatTick={formatAxis}
                 />
               </Card>
             </div>
