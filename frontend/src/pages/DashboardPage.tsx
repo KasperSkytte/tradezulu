@@ -178,7 +178,16 @@ export function DashboardPage() {
   return (
     <div className="space-y-4">
       {/* KPI row --------------------------------------------------------- */}
-      <div className={clsx('grid grid-cols-2 gap-3', showBalance ? 'xl:grid-cols-6' : 'xl:grid-cols-5')}>
+      {/* Six across needs a wide screen. On a 1440 laptop it gives each tile
+          about 200px, which is not enough for a balance and a sparkline: the
+          figure wrapped away from its own plus sign. Three and three until
+          there is room for six. */}
+      <div
+        className={clsx(
+          'grid grid-cols-2 gap-3',
+          showBalance ? 'xl:grid-cols-3 2xl:grid-cols-6' : 'xl:grid-cols-5',
+        )}
+      >
         {showBalance && (
           <StatTile
             label="Balance"
