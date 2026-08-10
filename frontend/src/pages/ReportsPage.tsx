@@ -222,22 +222,16 @@ export function ReportsPage() {
               <Card>
                 <CardHeader
                   title="Planned against realised"
-                  hint="The reward each trade was set up to pay, in units of the risk accepted, against what actually came back. A wide gap is the plan not surviving contact."
+                  hint="The reward each trade was set up to pay, in units of the risk accepted, against what actually came back. One scale, so the gap between them is a distance you can see: a wide one is the plan not surviving contact."
                 />
-                {/* Separate scales, and they have to be: the planned trades
-                    live between 2R and 14R while the realised ones live
-                    between -2R and +1R, so one axis turns the larger sample
-                    into a sliver. The medians underneath carry the
-                    comparison. */}
+                {/* One scale, like the card beside it. These two were drawn
+                    on separate axes to keep the realised box from becoming a
+                    sliver next to a planned reward several times its size --
+                    but that size difference is the finding, and an axis that
+                    hides it answers the question the card is asking. */}
                 <Shape
                   series={shapeQuery.data.series}
-                  keys={['planned']}
-                  metric={metric}
-                  format={formatMetric}
-                />
-                <Shape
-                  series={shapeQuery.data.series}
-                  keys={['realised']}
+                  keys={['planned', 'realised']}
                   metric={metric}
                   format={formatMetric}
                 />
