@@ -16,6 +16,7 @@ from app.services.metrics import (
     compute_streaks,
     consistency_score,
     daily_breakdown,
+    distributions,
     equity_curve,
     period_bounds,
     split_trades,
@@ -603,3 +604,52 @@ class TestOversizedLosses:
         from app.services.metrics import compute_oversize
 
         assert compute_oversize([trade(-100, day=1)]) == (None, 0, None)
+
+
+class TestDistributions:
+    """The box plots on the reports page.
+
+    A series used to be dropped whenever it held fewer than four trades, which
+    is right about quartiles and wrong about the card: a day with two winners
+    and seven losers drew the losers on their own, with nothing to say the
+    winners had been left out, while the win rate at the top of the same page
+    said 22%.
+    """
+
+    def _series(self, trades):
+        return {s["key"]: s for s in distributions(trades, "excluded")}
+
+    def test_two_winners_are_still_shown(self):
+        trades = [trade(200, r=2.0, day=1), trade(300, r=3.0, day=2)] + [
+            trade(-100, r=-1.0, day=d) for d in range(3, 10)
+        ]
+        series = self._series(trades)
+        assert "winners" in series
+        assert series["winners"]["count"] == 2
+        # Two trades, as the two trades they are -- not as quartiles of two.
+        assert series["winners"]["points"] == [2.0, 3.0]
+        assert "median" not in series["winners"]
+
+    def test_four_is_enough_for_a_box(self):
+        trades = [trade(100 * n, r=float(n), day=n) for n in range(1, 5)]
+        winners = self._series(trades)["winners"]
+        assert winners["count"] == 4
+        assert "points" not in winners
+        assert winners["median"] == pytest.approx(2.5)
+
+    def test_the_few_are_reported_in_money_as_well(self):
+        trades = [trade(200, r=2.0, day=1), trade(-100, r=-1.0, day=2)]
+        winners = self._series(trades)["winners"]
+        assert winners["points"] == [2.0]
+        assert winners["money"]["points"] == [200.0]
+
+    def test_a_series_survives_having_no_r_at_all(self):
+        """Realised R needs a defined risk on every trade and net profit does
+        not, so a journal kept without stops has a money form and no R one."""
+        trades = [trade(net, day=day) for day, net in enumerate((50, -20, 30, -10, 90), start=1)]
+        realised = self._series(trades)["realised"]
+        assert realised["count"] == 0
+        assert realised["money"]["count"] == 5
+
+    def test_nothing_at_all_is_no_series(self):
+        assert distributions([], "excluded") == []

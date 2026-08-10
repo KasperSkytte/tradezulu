@@ -12,10 +12,10 @@
  * with invisible segments, which is more code than the SVG and harder to read.
  */
 
-import type { FiveNumber } from '../lib/types'
+import { isFew, type Spread } from '../lib/types'
 
 /** One row: a distribution, what to call it, and how to write its numbers. */
-export type BoxRow = FiveNumber & { key: string; label: string }
+export type BoxRow = Spread & { key: string; label: string }
 
 /** A plain pixel-ish coordinate space, scaled to the card by the viewBox.
  *  Everything below is in these units: a row's height, the axis strip under
@@ -43,7 +43,7 @@ export function BoxPlot({
   // every box into the left tenth of the card -- hiding the distribution to
   // make room for the exception to it. The ones that fall outside are drawn
   // against the edge instead, and the count in the tooltip still has them.
-  const all = series.flatMap((s) => [s.min, s.max])
+  const all = series.flatMap((s) => (isFew(s) ? s.points : [s.min, s.max]))
   const low = Math.min(...all, 0)
   const high = Math.max(...all, 0)
   const pad = (high - low) * 0.06 || 1
@@ -99,18 +99,44 @@ export function BoxPlot({
         const mid = index * ROW + ROW / 2
         const box = 17
         // Losers sit left of zero and winners right of it, so colouring by
-        // where the median falls matches what the eye already read.
+        // where the middle falls matches what the eye already read.
+        const middle = isFew(s) ? s.points[Math.floor(s.points.length / 2)] : s.median
         const colour =
-          s.median > 0 ? 'var(--tz-gain)' : s.median < 0 ? 'var(--tz-loss)' : 'var(--tz-flat)'
+          middle > 0 ? 'var(--tz-gain)' : middle < 0 ? 'var(--tz-loss)' : 'var(--tz-flat)'
 
-        return (
-          <g key={s.key}>
+        const heading = (
+          <>
             <text x={0} y={mid - 1} fill="var(--tz-text)" style={{ fontSize: 12 }}>
               {s.label}
             </text>
             <text x={0} y={mid + 12} fill="var(--tz-text-faint)" style={{ fontSize: 10 }}>
-              {s.count} trades
+              {s.count === 1 ? '1 trade' : `${s.count} trades`}
             </text>
+          </>
+        )
+
+        // Two trades have quartiles the way two people have an average height:
+        // the arithmetic works and describes nobody. Drawn as the trades they
+        // are, on the same axis as the boxes, because leaving the row out
+        // altogether read as "no winners" on a day that had two.
+        if (isFew(s)) {
+          return (
+            <g key={s.key}>
+              {heading}
+              {s.points.map((value, at) => (
+                <circle key={at} cx={x(value)} cy={mid} r={3.4} fill={colour} fillOpacity={0.75} />
+              ))}
+              <title>
+                {`${s.label}: ${s.count === 1 ? '1 trade' : `${s.count} trades`}, at ` +
+                  `${s.points.map(format).join(', ')} -- too few to draw a box`}
+              </title>
+            </g>
+          )
+        }
+
+        return (
+          <g key={s.key}>
+            {heading}
 
             {/* Whiskers to the furthest trade that is not an outlier. */}
             <line x1={x(s.min)} x2={x(s.max)} y1={mid} y2={mid} stroke={colour} strokeWidth={1.4} />

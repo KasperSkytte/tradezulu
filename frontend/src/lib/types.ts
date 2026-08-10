@@ -263,12 +263,26 @@ export interface FiveNumber {
   outliers: number[]
 }
 
-export interface Distribution extends FiveNumber {
+/** Too few trades for quartiles to mean anything: the trades themselves. */
+export interface FewTrades {
+  count: number
+  points: number[]
+}
+
+/** What a distribution can say about itself, which depends on how many trades
+ *  are in it. A count of zero is a series with nothing to say in this unit. */
+export type Spread = FiveNumber | FewTrades
+
+export function isFew(spread: Spread): spread is FewTrades {
+  return 'points' in spread
+}
+
+export type Distribution = Spread & {
   key: string
   label: string
   hint: string
   /** The same distribution in account currency, when it has one. */
-  money: FiveNumber | null
+  money: Spread | null
 }
 
 export interface CalendarWeek {

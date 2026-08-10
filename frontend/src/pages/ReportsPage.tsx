@@ -7,6 +7,7 @@ import { BoxPlot } from '../components/BoxPlot'
 import { useFilters } from '../lib/filters'
 import { useSettings } from '../lib/settings'
 import { dateOnly, money, num, percent, pnlClass, profitFactor } from '../lib/format'
+import { isFew } from '../lib/types'
 import type { BreakdownRow, Breakdowns, Distribution, Summary } from '../lib/types'
 import { FilterBar } from '../components/FilterBar'
 import { DrawdownChart, SignedBarChart, WinRateLine } from '../components/charts'
@@ -72,7 +73,11 @@ function Shape({
         ? { ...entry, key: entry.key, label: entry.label }
         : entry.money && { ...entry.money, key: entry.key, label: entry.label },
     )
+    // A series with no trades in this unit is left out rather than drawn as an
+    // empty row: realised R needs a defined risk on every trade, and net
+    // profit does not, so the same day can have one and not the other.
     .filter((row): row is NonNullable<typeof row> => Boolean(row))
+    .filter((row) => row.count > 0)
 
   if (!rows.length) return null
 
@@ -86,7 +91,17 @@ function Shape({
           <div key={row.key}>
             <dt className="sr-only">{row.label}</dt>
             <dd className="tabular text-[var(--tz-text)]">
-              median {format(row.median)} · middle half {format(row.q1)} to {format(row.q3)}
+              {isFew(row) ? (
+                // Named here, unlike the rows with a box: a line of two figures
+                // means nothing without saying which trades they belong to.
+                <>
+                  {row.label.toLowerCase()}: {row.points.map(format).join(' · ')}
+                </>
+              ) : (
+                <>
+                  median {format(row.median)} · middle half {format(row.q1)} to {format(row.q3)}
+                </>
+              )}
             </dd>
           </div>
         ))}

@@ -125,6 +125,23 @@ def five_number(values: Sequence[float]) -> dict[str, Any] | None:
     }
 
 
+def _spread(values: Sequence[float]) -> dict[str, Any] | None:
+    """Five numbers, or the trades themselves when there are too few for them.
+
+    Quartiles of two trades are arithmetic rather than a shape, so they are not
+    reported as one. But dropping the series was worse: a day with two winners
+    and seven losers drew the losers alone, with nothing to say that the
+    winners had been left out -- while the win rate at the top of the same page
+    said 22%. Two trades are still worth plotting, as the two trades they are.
+    """
+    if not values:
+        return None
+    return five_number(values) or {
+        "count": len(values),
+        "points": [_r(v, 3) for v in sorted(values)],
+    }
+
+
 def _median(values: Sequence[float]) -> float | None:
     """The middle value, for figures with a tail that a mean cannot survive.
 
@@ -831,19 +848,24 @@ def distributions(trades: Sequence[Trade], breakeven_handling: str) -> list[dict
     ]
     out = []
     for key, label, hint, r_values, cash_values in series:
-        summary = five_number(r_values)
-        if summary:
-            out.append(
-                {
-                    "key": key,
-                    "label": label,
-                    "hint": hint,
-                    **summary,
-                    # Null when there is nothing to say in money: a planned R:R
-                    # on a trade whose risk was never defined has no cash form.
-                    "money": five_number(cash_values),
-                }
-            )
+        shape = _spread(r_values)
+        money = _spread(cash_values)
+        if shape is None and money is None:
+            continue
+        out.append(
+            {
+                "key": key,
+                "label": label,
+                "hint": hint,
+                # Zero when the series has nothing to say in R but something to
+                # say in money: realised R needs a defined risk, and net profit
+                # does not. The page leaves out whichever is empty.
+                **(shape or {"count": 0, "points": []}),
+                # Null when there is nothing to say in money: a planned R:R
+                # on a trade whose risk was never defined has no cash form.
+                "money": money,
+            }
+        )
     return out
 
 
