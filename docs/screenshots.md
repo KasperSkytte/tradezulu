@@ -56,8 +56,8 @@ the page without showing what the account is worth.
 
 ## Accounts
 
-The master account's credentials, whether each account's terminal is reporting,
-and every slave that follows it. The terminal is provisioned, logged in and
+Under **Settings → Accounts**: the master account's credentials, whether each
+account's terminal is reporting, and every slave that follows it. The terminal is provisioned, logged in and
 started for you: nothing to install and no paths to configure.
 
 ![Accounts](screenshots/accounts.png)
