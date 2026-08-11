@@ -31,6 +31,7 @@ import { Button, Card, CardHeader, EmptyState, ErrorState, Field, Skeleton } fro
 import { SlaveForm } from '../components/SlaveForm'
 import { CopyActivity } from '../components/CopyActivity'
 import { ImportCard } from '../components/ImportCard'
+import { TerminalControls } from '../components/TerminalViewer'
 import { SymbolMappings } from '../components/SymbolMappings'
 import { MT5Connection } from '../components/MT5Connection'
 
@@ -312,6 +313,11 @@ function AccountRow({
               )}
             </>
           )}
+
+          {/* Looking at the terminal and restarting it belong to the account
+              itself, next to everything else about it -- and every account has
+              one, master or slave. */}
+          <TerminalControls accountId={account.id} login={account.login} />
 
           <Button
             variant="ghost"
