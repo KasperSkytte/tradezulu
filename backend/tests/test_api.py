@@ -104,6 +104,25 @@ class TestIngest:
         again = client.post("/api/mt5/ingest", json=deal_payload(base), headers=INGEST_HEADERS).json()
         assert again["deals_new"] == 0
 
+    def test_a_dropped_session_does_not_erase_the_equity(self, client, auth_client):
+        """The ingest path had no guard, unlike the agent heartbeat.
+
+        A terminal whose connection has dropped reports the balance it last
+        saw and an equity of zero. Believed here, it left the account "worth
+        10,400.00 with 0.00 equity", which the copier reads as everything lost
+        and halts on -- for good, and by hand to clear.
+        """
+        base = datetime(2026, 6, 1, 10)
+        client.post("/api/mt5/ingest", json=deal_payload(base), headers=INGEST_HEADERS)
+
+        dropped = deal_payload(base)
+        dropped["account"]["equity"] = 0.0
+        dropped["deals"] = []
+        client.post("/api/mt5/ingest", json=dropped, headers=INGEST_HEADERS)
+
+        account = auth_client.get("/api/accounts").json()[0]
+        assert account["equity"] == 10_400.0
+
     def test_trade_is_visible_with_correct_maths(self, client, auth_client):
         base = datetime(2026, 6, 1, 10)
         client.post("/api/mt5/ingest", json=deal_payload(base), headers=INGEST_HEADERS)

@@ -231,6 +231,17 @@ def plan(
         # Nothing below this point may add exposure.
         return actions
 
+    if guard.verdict is Verdict.SKIP:
+        # A guard that refuses rather than halts -- an equity nobody can read,
+        # so far. Nothing new is opened, because sizing it would divide by a
+        # figure that is not there, but what is open is still managed and no
+        # latch is set: the next pass after the terminal logs back in copies
+        # again without anyone clearing anything.
+        actions.append(Action(ActionType.SKIP, 0, reason=guard.reason, rule=guard.rule))
+        return actions + _mirror_actions(
+            by_master_id, context, already_closing, mirror_stops
+        )
+
     if context.halted:
         # Halted earlier and not yet reset: mirror management, open nothing.
         return actions + _mirror_actions(

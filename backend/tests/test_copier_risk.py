@@ -350,3 +350,42 @@ class TestAnUnknownContractValue:
 
         assert result.verdict is Verdict.SKIP
         assert result.rule == "max_risk_percent_per_trade"
+
+
+class TestAnEquityNobodyCanRead:
+    """Zero equity from a terminal that has lost its session.
+
+    Every guard below divides by, or compares against, the equity. A zero
+    walks straight through all of them as a total loss and halts the account
+    for good -- a latch that survives the terminal logging back in and has to
+    be cleared by hand. An account that is worth something and reports nothing
+    has a broken terminal, not a blown balance.
+    """
+
+    def test_zero_equity_is_refused_rather_than_halted(self):
+        config = RiskConfig(equity_stop_amount=45_000.0)
+        result = check_account_guards(snapshot(equity=0.0), config)
+        assert result.verdict is Verdict.SKIP
+        assert result.rule == "equity_unknown"
+        assert "not logged in" in result.reason
+
+    def test_it_beats_every_equity_rule_to_the_verdict(self):
+        config = RiskConfig(
+            equity_stop_amount=45_000.0,
+            equity_stop_percent=10.0,
+            max_daily_drawdown_percent=5.0,
+        )
+        assert check_account_guards(snapshot(equity=0.0), config).verdict is Verdict.SKIP
+
+    def test_an_account_that_never_had_anything_is_not_second_guessed(self):
+        """Nothing to contradict: no balance, no peak, no opening equity."""
+        state = snapshot(equity=0.0, balance=0.0, day_start_equity=0.0, peak_equity=0.0)
+        config = RiskConfig(equity_stop_amount=45_000.0)
+        result = check_account_guards(state, config)
+        assert result.verdict is Verdict.HALT
+        assert result.rule == "equity_stop_amount"
+
+    def test_a_real_drawdown_still_halts(self):
+        config = RiskConfig(equity_stop_amount=45_000.0)
+        result = check_account_guards(snapshot(equity=44_999.0), config)
+        assert result.verdict is Verdict.HALT

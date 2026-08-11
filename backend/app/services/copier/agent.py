@@ -44,23 +44,45 @@ def _aware(value: datetime | None) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
+def reported_figure(reported: float | None, known: float | None) -> float | None:
+    """What to store for a balance or an equity, or None to keep what is there.
+
+    A terminal that is running but not logged in reports zero, and it reports
+    it every few seconds. Taken at face value it erases what the account is
+    worth, and with it every percentage in the journal -- the daily and weekly
+    returns, Net ROI, the equity curve -- because they all divide by it.
+
+    Each figure is judged on its own. Rejecting only the pair of zeros was not
+    enough: a terminal whose session has dropped keeps reporting the balance it
+    last knew and an equity of zero, which passed straight through and left an
+    account "worth 176.92 with 0.00 equity" -- a state no funded account can be
+    in, and one the copier reads as a total loss.
+
+    A genuine zero on an account that never had a figure is still recorded: it
+    is only a *known* figure that a zero cannot overwrite.
+    """
+    value = float(reported or 0.0)
+    if value == 0.0 and known:
+        return None
+    return value
+
+
 def update_account_state(db: Session, account: Account, payload: Any) -> None:
     """Record what the terminal just told us about itself."""
-    balance = float(payload.balance or 0.0)
-    equity = float(payload.equity or 0.0)
+    balance = reported_figure(payload.balance, account.balance)
+    equity = reported_figure(payload.equity, account.equity)
 
-    # A terminal that is running but not logged in reports nothing at all --
-    # zero balance, zero equity -- and it reports it every few seconds. Taken
-    # at face value it erases what the account is worth, and with it every
-    # percentage in the journal: the daily and weekly returns, Net ROI, the
-    # equity curve. An account really worth nothing does not poll, so nothing
-    # is lost by disbelieving this one.
-    if balance == 0.0 and equity == 0.0 and (account.balance or account.equity):
+    if balance is None and equity is None:
         log.debug("account %s reported nothing; keeping what it was worth", account.login)
         return
 
-    account.balance = balance
-    account.equity = equity
+    # One of the two can be missing on its own -- a session that has just
+    # dropped still knows the balance -- and the one that arrived is worth
+    # having.
+    if balance is not None:
+        account.balance = balance
+    if equity is not None:
+        account.equity = equity
     if payload.currency:
         account.currency = payload.currency
     if payload.name and not account.name:

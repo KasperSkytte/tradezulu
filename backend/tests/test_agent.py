@@ -853,3 +853,34 @@ class TestTheBrokersSymbolList:
 
         db.expire_all()
         assert [s["symbol"] for s in db.get(Account, slave.id).symbols] == ["EURUSD+"]
+
+    def test_a_session_that_drops_keeps_its_equity_too(self, auth_client, db, master):
+        """The half-report that started this.
+
+        A terminal whose connection has dropped still knows the balance it last
+        saw and reports an equity of zero. Only the pair of zeros was refused,
+        so this one passed straight through and left the account worth 176.92
+        with 0.00 equity -- which the copier reads as everything lost, halting
+        it for good on an account that had merely gone offline.
+        """
+        master.balance, master.equity = 176.92, 176.92
+        db.commit()
+
+        payload = account_payload("5000", "Master-Server")
+        payload["balance"], payload["equity"] = 176.92, 0.0
+        auth_client.post("/api/agent/poll", json=payload)
+
+        db.expire_all()
+        assert db.get(Account, master.id).equity == 176.92
+
+    def test_an_equity_that_arrives_without_a_balance_is_kept(self, auth_client, db, master):
+        master.balance, master.equity = 5_000.0, 5_000.0
+        db.commit()
+
+        payload = account_payload("5000", "Master-Server")
+        payload["balance"], payload["equity"] = 0.0, 5_120.0
+        auth_client.post("/api/agent/poll", json=payload)
+
+        db.expire_all()
+        refreshed = db.get(Account, master.id)
+        assert (refreshed.balance, refreshed.equity) == (5_000.0, 5_120.0)

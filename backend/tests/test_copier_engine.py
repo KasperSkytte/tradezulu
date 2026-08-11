@@ -345,6 +345,48 @@ class TestHalting:
         assert ActionType.MODIFY in types(actions)
 
 
+class TestATerminalWithNoEquityToReport:
+    """Zero equity on an account that has a balance is a broken terminal.
+
+    Halting on it is wrong twice over: the account has not lost anything, and
+    a halt latches -- it survives the terminal logging back in and has to be
+    cleared by hand. Refused instead, every pass, until the figure comes back.
+    """
+
+    def _context(self, **kwargs):
+        return context(
+            snapshot=SlaveSnapshot(
+                balance=10_000.0, equity=0.0, day_start_equity=10_000.0, peak_equity=10_000.0
+            ),
+            risk=RiskConfig(equity_stop_percent=10.0),
+            **kwargs,
+        )
+
+    def test_nothing_is_opened_and_nothing_is_halted(self):
+        actions = plan([master_position()], MASTER_ACCOUNT, self._context(), TODAY)
+        assert ActionType.SKIP in types(actions)
+        assert ActionType.OPEN not in types(actions)
+        assert ActionType.HALT not in types(actions)
+
+    def test_what_is_open_is_still_managed(self):
+        """Nothing is flattened either: the equity is unknown, not lost."""
+        copied = CopiedPosition(1, 555, "EURUSD", "long", 0.10, 1.1000)
+        actions = plan(
+            [master_position()], MASTER_ACCOUNT, self._context(copied=[copied]), TODAY
+        )
+        assert ActionType.CLOSE not in types(actions)
+        assert ActionType.HALT not in types(actions)
+
+    def test_the_reason_names_the_terminal(self):
+        actions = plan([master_position()], MASTER_ACCOUNT, self._context(), TODAY)
+        skip = next(a for a in actions if a.type is ActionType.SKIP)
+        assert "not logged in" in skip.reason
+
+    def test_the_equity_coming_back_copies_again(self):
+        ctx = context(risk=RiskConfig(equity_stop_percent=10.0))
+        assert ActionType.OPEN in types(plan([master_position()], MASTER_ACCOUNT, ctx, TODAY))
+
+
 class TestSizingModesEndToEnd:
     def test_risk_percent_sizing_through_the_planner(self):
         ctx = context(

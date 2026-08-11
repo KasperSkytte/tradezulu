@@ -43,6 +43,7 @@ from ..services.aggregation import (
     upsert_deals,
 )
 from ..services.brokers import list_brokers
+from ..services.copier.agent import reported_figure
 from ..services.credentials import (
     clear_credentials,
     credentials_status,
@@ -87,10 +88,16 @@ def _resolve_account(db: Session, info: dict[str, Any]) -> Account:
     account.broker = str(info.get("company") or account.broker)
     account.currency = str(info.get("currency") or account.currency or "USD")
     account.leverage = int(info.get("leverage") or account.leverage or 0)
-    if info.get("balance") is not None:
-        account.balance = float(info["balance"])
-    if info.get("equity") is not None:
-        account.equity = float(info["equity"])
+    # The same disbelief the agent's heartbeat applies: a terminal whose
+    # session has dropped reports zero, and a zero cannot overwrite a figure
+    # the account already has. This path had no such guard, so the sync that
+    # ran while a terminal was logged out undid what the heartbeat protected.
+    balance = reported_figure(info.get("balance"), account.balance)
+    if balance is not None:
+        account.balance = balance
+    equity = reported_figure(info.get("equity"), account.equity)
+    if equity is not None:
+        account.equity = equity
     offset = brokerclock.offset_minutes(info.get("server_time"))
     if offset is not None:
         account.broker_utc_offset_minutes = offset
