@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.26.2](https://github.com/KasperSkytte/tradezulu/compare/v1.26.1...v1.26.2) (2026-08-11)
+
+
+### Bug fixes
+
+* **dashboard:** six stat tiles do not fit a 1440 screen ([1820e83](https://github.com/KasperSkytte/tradezulu/commit/1820e830e7f4cc24abe4c0ee6fe8915cdd77037d))
+* **reports:** a readable ruler on the box plots in money ([59d6b72](https://github.com/KasperSkytte/tradezulu/commit/59d6b72e793ae9b843a79d401c7cb4ce77581543))
+
+
+### Documentation
+
+* order the screenshots by the menu, and add the news calendars ([ccf26b8](https://github.com/KasperSkytte/tradezulu/commit/ccf26b8b67652e9f9dbe30c456ae024080b58f0e))
+* retake the screenshots ([fe6ea17](https://github.com/KasperSkytte/tradezulu/commit/fe6ea17e2df129e6483dc713d52b4e99a013d819))
+
 ## [1.26.1](https://github.com/KasperSkytte/tradezulu/compare/v1.26.0...v1.26.1) (2026-08-10)
 
 
