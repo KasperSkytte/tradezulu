@@ -419,6 +419,8 @@ class CopySettingsOut(BaseModel):
     max_risk_percent_per_trade: float = 0.0
     max_lot_per_trade: float = 0.0
     require_stop_loss: bool = False
+    #: Points, one unit of the last digit the broker quotes. 0 disables.
+    min_stop_distance_points: float = 0.0
     max_open_positions: int = 0
     max_same_direction: int = 0
     max_positions_per_symbol: int = 0

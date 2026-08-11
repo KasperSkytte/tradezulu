@@ -389,3 +389,42 @@ class TestAnEquityNobodyCanRead:
         config = RiskConfig(equity_stop_amount=45_000.0)
         result = check_account_guards(snapshot(equity=44_999.0), config)
         assert result.verdict is Verdict.HALT
+
+
+class TestMinimumStopDistance:
+    """A stop too tight to survive being copied to another broker.
+
+    Size comes from the master's entry-to-stop distance and the copy is filled
+    at its own price with the master's stop. Fill it a little worse and the
+    real distance is wider than the one it was sized for, so the loss is wider
+    by the same proportion -- nothing on a wide stop, everything on a tight one.
+    """
+
+    def _trade(self, stop):
+        return MasterTrade(
+            symbol="EURUSD", direction="long", volume=1.0,
+            entry_price=1.1000, stop_loss=stop, take_profit=1.1100,
+        )
+
+    def test_a_stop_inside_the_minimum_is_refused(self):
+        config = RiskConfig(min_stop_distance_points=100.0)  # 10 pips on a 5-digit pair
+        result = check_trade_gates(self._trade(1.0995), 1.0, EURUSD, snapshot(), config)
+        assert result.verdict is Verdict.SKIP
+        assert result.rule == "min_stop_distance"
+        assert "50 points" in result.reason
+
+    def test_a_stop_at_the_minimum_is_allowed(self):
+        config = RiskConfig(min_stop_distance_points=100.0)
+        assert check_trade_gates(self._trade(1.0990), 1.0, EURUSD, snapshot(), config).allowed
+
+    def test_a_wide_stop_is_untouched(self):
+        config = RiskConfig(min_stop_distance_points=100.0)
+        assert check_trade_gates(self._trade(1.0900), 1.0, EURUSD, snapshot(), config).allowed
+
+    def test_zero_means_no_minimum(self):
+        assert check_trade_gates(self._trade(1.09999), 1.0, EURUSD, snapshot(), RiskConfig()).allowed
+
+    def test_a_trade_with_no_stop_is_left_to_require_stop_loss(self):
+        """This rule is about how far away a stop is, not whether there is one."""
+        config = RiskConfig(min_stop_distance_points=100.0)
+        assert check_trade_gates(self._trade(None), 1.0, EURUSD, snapshot(), config).allowed

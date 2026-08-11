@@ -79,6 +79,10 @@ class RiskConfig:
     max_lot_per_trade: float = 0.0
     #: Refuse a copy with no stop loss at all.
     require_stop_loss: bool = False
+    #: Refuse a copy whose stop is closer than this many points to the entry.
+    #: Points, not pips: one unit of the last digit the broker quotes, so it
+    #: means the same thing on a 5-digit currency and a 2-digit metal.
+    min_stop_distance_points: float = 0.0
 
     # -- concurrency ------------------------------------------------------
     max_open_positions: int = 0
@@ -226,6 +230,29 @@ def check_trade_gates(
         return Decision(
             Verdict.SKIP, "the master trade has no stop loss", "require_stop_loss"
         )
+
+    # A stop so close that the noise between two brokers is a large part of it.
+    #
+    # The size is worked out from the master's entry-to-stop distance, and the
+    # slave is then opened at its own fill with the master's stop price. Fill
+    # the trade a little worse and the slave's real distance is wider than the
+    # one it was sized for, so the loss is wider too -- by the same proportion.
+    # On a wide stop a pip of that is nothing. On a five-pip stop it is twenty
+    # per cent, and two brokers quoting the same instrument a couple of pips
+    # apart turns a 100 loss into 200 without anything going wrong.
+    #
+    # Refused rather than resized: a stop that tight is a trade whose plan does
+    # not survive being copied to another broker at all.
+    if config.min_stop_distance_points > 0 and master.stop_loss:
+        points = abs(master.entry_price - master.stop_loss) * (10**spec.digits)
+        if points < config.min_stop_distance_points:
+            return Decision(
+                Verdict.SKIP,
+                f"the stop is {points:.0f} points away, inside the "
+                f"{config.min_stop_distance_points:g}-point minimum -- too tight to "
+                "survive the difference between two brokers' prices",
+                "min_stop_distance",
+            )
 
     if config.max_lot_per_trade > 0 and volume > config.max_lot_per_trade:
         return Decision(

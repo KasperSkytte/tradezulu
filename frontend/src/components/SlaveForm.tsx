@@ -51,6 +51,7 @@ const EMPTY: CopySettings = {
   max_risk_percent_per_trade: 2,
   max_lot_per_trade: 0,
   require_stop_loss: false,
+  min_stop_distance_points: 0,
   max_open_positions: 0,
   max_same_direction: 0,
   max_positions_per_symbol: 0,
@@ -276,6 +277,12 @@ export function SlaveForm({
               <Num label="Same direction at" value={settings.max_same_direction} onChange={(v) => set('max_same_direction', v)} step={1} zero="no limit" />
               <Num label="Per symbol at" value={settings.max_positions_per_symbol} onChange={(v) => set('max_positions_per_symbol', v)} step={1} zero="no limit" />
               <Num label="Total exposure (lots)" value={settings.max_total_lots} onChange={(v) => set('max_total_lots', v)} step={0.1} zero="no limit" />
+              {/* The size is worked out from the master's stop distance and the
+                  copy is filled at its own price, so a tight stop is widened by
+                  whatever the two brokers disagree about -- and the loss with
+                  it. Points, so it reads the same on a 5-digit pair and a
+                  2-digit metal. */}
+              <Num label="Stop closer than (points)" value={settings.min_stop_distance_points} onChange={(v) => set('min_stop_distance_points', v)} step={1} zero="no minimum" />
             </div>
             <div className="mt-3">
               <Toggle

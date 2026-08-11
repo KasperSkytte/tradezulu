@@ -517,6 +517,8 @@ export interface CopySettings {
   max_risk_percent_per_trade: number
   max_lot_per_trade: number
   require_stop_loss: boolean
+  /** Points between entry and stop, below which a copy is refused. */
+  min_stop_distance_points: number
   max_open_positions: number
   max_same_direction: number
   max_positions_per_symbol: number
