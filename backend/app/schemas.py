@@ -598,6 +598,11 @@ class TerminalStateIn(BaseModel):
     phase: str = Field(default="", max_length=24)
     message: str = Field(default="", max_length=400)
     attempts: int = 0
+    #: The X display this account's terminal has to itself, and the port its
+    #: screen is served on. One per account, which is what lets the web
+    #: interface show one terminal without showing anybody else's.
+    display: str = Field(default="", max_length=64)
+    vnc_port: int | None = None
 
 
 class TerminalStatesIn(BaseModel):

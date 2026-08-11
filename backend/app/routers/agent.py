@@ -47,6 +47,7 @@ from ..services.copier.agent import (
 )
 from ..services.credentials import credentials_status, get_credentials
 from ..services.crypto import decrypt
+from ..services.terminalview import bridge_address
 
 log = logging.getLogger(__name__)
 
@@ -292,6 +293,11 @@ def terminal_states(payload: TerminalStatesIn, db: Session = Depends(get_db)) ->
             "message": entry.message,
             "attempts": entry.attempts,
             "at": when,
+            # Where this one terminal can be watched. Kept per account, never
+            # global: it is the whole reason one viewer cannot show another
+            # account's screen.
+            "display": entry.display,
+            "vnc_port": entry.vnc_port,
         }
     db.commit()
 
@@ -363,6 +369,12 @@ def terminals(db: Session = Depends(get_db)) -> dict[str, Any]:
                     if account.last_sync_at
                     else None
                 ),
+                # Set when somebody pressed Restart, and never cleared from
+                # here. The provisioner remembers the last one it acted on, so
+                # a token it has not seen before means restart and the same
+                # token means nothing -- which needs no acknowledgement, no
+                # clearing, and survives either side being restarted mid-way.
+                "restart_token": (account.terminal_state or {}).get("restart_requested") or "",
             }
         )
 
@@ -383,6 +395,11 @@ def terminals(db: Session = Depends(get_db)) -> dict[str, Any]:
             "weekday": int(config["mt5"].get("restart_weekday", 6)),
             "hour": int(config["mt5"].get("restart_hour", 3)),
         },
+        # Where to serve each terminal's screen so this container can reach it.
+        # Sent from here because only this side knows the answer: it is the
+        # host end of the bridge this container is on, and the provisioner has
+        # no way to work out which bridge that is.
+        "vnc_bind": bridge_address(),
         "terminals": wanted,
     }
 

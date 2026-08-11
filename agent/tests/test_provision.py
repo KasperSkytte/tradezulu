@@ -34,6 +34,17 @@ def bottles(tmp_path, monkeypatch):
     return tmp_path
 
 
+@pytest.fixture(autouse=True)
+def screens(monkeypatch):
+    """Every account has a screen of its own; none of them is under test here.
+
+    There is no X server in a test container, and bringing one up per account
+    is not what any of this is checking.
+    """
+    monkeypatch.setattr(tz, "ensure_display", lambda *a, **k: True)
+    monkeypatch.setattr(tz, "ensure_vnc", lambda *a, **k: None)
+
+
 # --- is this terminal working? -----------------------------------------------
 
 
@@ -279,7 +290,7 @@ class TestSupervise:
         prefix.mkdir()
         tried = []
         monkeypatch.setattr(tz, "datetime", _FrozenClock(NOW))
-        monkeypatch.setattr(tz, "allow_webrequest", lambda login, url: tried.append(login))
+        monkeypatch.setattr(tz, "allow_webrequest", lambda login, url, display="": tried.append(login))
         spec = {"account_id": 7, "login": "9", "server": "s"}
         state = {"launched": (NOW - timedelta(hours=1)).isoformat()}
         tz.supervise(spec, self.plan, prefix, state)
@@ -594,3 +605,88 @@ class TestTerminalStatus:
         )
         assert status["phase"] == "running"
         assert status["attempts"] == 0
+
+
+class TestOneScreenPerAccount:
+    """Every terminal draws on a display of its own.
+
+    One screen for all of them was fine while nobody could look at it. The
+    moment a terminal can be watched from the web interface it is a privacy
+    boundary: whoever may see account 3 must not be shown account 4's open
+    positions because the two windows are stacked in the same place.
+    """
+
+    def test_each_account_gets_its_own(self, monkeypatch):
+        monkeypatch.setattr(tz, "DISPLAY", ":77")
+        assert tz.display_for(1) == ":78"
+        assert tz.display_for(2) == ":79"
+
+    def test_the_port_follows_the_display(self, monkeypatch):
+        monkeypatch.setattr(tz, "DISPLAY", ":77")
+        assert tz.vnc_port_for(tz.display_for(1)) == 5978
+        assert tz.vnc_port_for(tz.display_for(2)) == 5979
+
+    def test_a_display_somewhere_else_cannot_be_multiplied(self, monkeypatch):
+        """``host:N`` is another machine's screen, and there is no second one."""
+        monkeypatch.setattr(tz, "DISPLAY", "127.0.0.1:77")
+        assert tz.display_for(1) == "127.0.0.1:77"
+        assert tz.vnc_port_for(tz.display_for(1)) is None
+
+
+class TestRestartingOneTerminal:
+    """Asked for in the web interface, carried out here.
+
+    Only stopping is done: the reconcile that recovers a terminal which died
+    on its own starts it again, so there is no second way to start one.
+    """
+
+    def _spec(self, token=""):
+        return {
+            "account_id": 1, "login": "9", "server": "S", "password": "p",
+            "enabled": True, "restart_token": token,
+        }
+
+    def _prefix(self):
+        prefix = tz.bottle_for(1)
+        prefix.mkdir(parents=True)
+        (prefix / "drive_c").mkdir()
+        (prefix / "drive_c/terminal64.exe").write_bytes(b"")
+        return prefix
+
+    def test_a_new_token_stops_the_terminal(self, monkeypatch):
+        self._prefix()
+        stopped = []
+        monkeypatch.setattr(tz, "is_running", lambda bottle: True)
+        monkeypatch.setattr(tz, "stop_terminal", lambda bottle: stopped.append(bottle))
+        tz.save_state(1, {"login": "9"})
+
+        tz.ensure_terminal(self._spec("2026-08-11T09:00:00"), tz.Plan("u", "k", [], {}),
+                           Path("/template"), Path("/expert"))
+
+        assert len(stopped) == 1
+        assert tz.load_state(1)["restart_token"] == "2026-08-11T09:00:00"
+
+    def test_the_same_token_twice_restarts_once(self, monkeypatch):
+        """Remembered rather than acknowledged, so a plan re-read is harmless."""
+        self._prefix()
+        stopped = []
+        monkeypatch.setattr(tz, "is_running", lambda bottle: True)
+        monkeypatch.setattr(tz, "stop_terminal", lambda bottle: stopped.append(bottle))
+        monkeypatch.setattr(tz, "supervise", lambda *a, **k: None)
+        tz.save_state(1, {"login": "9"})
+
+        for _ in range(2):
+            tz.ensure_terminal(self._spec("2026-08-11T09:00:00"), tz.Plan("u", "k", [], {}),
+                               Path("/template"), Path("/expert"))
+
+        assert len(stopped) == 1
+
+    def test_no_token_stops_nothing(self, monkeypatch):
+        self._prefix()
+        monkeypatch.setattr(tz, "is_running", lambda bottle: True)
+        monkeypatch.setattr(tz, "stop_terminal", lambda bottle: pytest.fail("stopped"))
+        monkeypatch.setattr(tz, "supervise", lambda *a, **k: None)
+        tz.save_state(1, {"login": "9"})
+
+        tz.ensure_terminal(self._spec(), tz.Plan("u", "k", [], {}),
+                           Path("/template"), Path("/expert"))

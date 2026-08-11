@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .db import init_db
-from .routers import accounts, agent, auth, imports, mt5, stats, trades
+from .routers import accounts, agent, auth, imports, mt5, stats, terminal, trades
 from .routers import settings as settings_router
 
 logging.basicConfig(
@@ -87,6 +87,7 @@ api.include_router(stats.router)
 api.include_router(mt5.router)
 api.include_router(imports.router)
 api.include_router(settings_router.router)
+api.include_router(terminal.router)
 
 
 @api.get("/health", tags=["system"])

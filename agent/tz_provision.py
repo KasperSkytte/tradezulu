@@ -46,7 +46,40 @@ BOTTLES = Path.home() / ".var/app/com.usebottles.bottles/data/bottles"
 #: Display the terminals live on. They are never meant to be looked at, so
 #: this must not be :0 -- a provisioner that throws windows onto the operator's
 #: screen every time it starts a terminal is unusable on a desktop machine.
+#:
+#: This is the *base*: each account gets its own display at this number plus
+#: its account id, so no two accounts ever draw on the same screen. One screen
+#: for all of them worked while nobody looked at it, but the moment a terminal
+#: can be watched from the web interface it becomes a privacy boundary --
+#: whoever may see account 3 must not be shown account 4's open positions
+#: because the two windows happen to be stacked in the same place.
 DISPLAY = os.getenv("TZ_DISPLAY", ":77")
+
+#: VNC ports follow the display number: display :78 is served on 5978. One
+#: server per display, so a viewer is connected to exactly one account.
+VNC_PORT_BASE = int(os.getenv("TZ_VNC_PORT_BASE", "5900"))
+
+
+def display_for(account_id: int) -> str:
+    """The display this account's terminal draws on, and nobody else's.
+
+    Only a display we start ourselves can be multiplied like this. One written
+    ``host:N`` belongs to somewhere else -- another machine, or a container --
+    and there is no second screen to be had there, so every terminal shares it
+    and the isolation below is not available. Said once, at startup, rather
+    than pretended.
+    """
+    if not DISPLAY.startswith(":"):
+        return DISPLAY
+    base = int(DISPLAY[1:].split(".")[0])
+    return f":{base + int(account_id)}"
+
+
+def vnc_port_for(display: str) -> int | None:
+    """The port this display is served on, or None if it is not ours to serve."""
+    if not display.startswith(":"):
+        return None
+    return VNC_PORT_BASE + int(display[1:].split(".")[0])
 
 
 # --- talking to TradeZulu ----------------------------------------------------
@@ -67,6 +100,10 @@ class Plan:
     #: has a plan can also report back without being handed them separately.
     base_url: str = ""
     token: str = ""
+    #: The address to serve each terminal's screen on, as TradeZulu reported
+    #: it: the host end of the bridge its own container sits on. Empty means
+    #: the site cannot reach a VNC server here, and none is started.
+    vnc_bind: str = ""
     #: Every account the server has, including ones with no credentials yet.
     #: Anything on this machine that is not in here belongs to an account that
     #: has been forgotten, and is cleared up. None means the server did not say
@@ -87,6 +124,7 @@ def fetch_plan(base_url: str, token: str) -> Plan:
         api_key=data.get("api_key", ""),
         terminals=list(data.get("terminals", [])),
         maintenance=dict(data.get("maintenance") or {}),
+        vnc_bind=str(data.get("vnc_bind") or ""),
         base_url=base_url,
         token=token,
         known_accounts={int(value) for value in known} if known is not None else None,
@@ -140,8 +178,8 @@ def _flatpak_spawn(script: str) -> None:
     )
 
 
-def ensure_display() -> None:
-    """Make sure there is a screen for the terminals to draw on.
+def ensure_display(display: str = "", required: bool = True) -> bool:
+    """Make sure there is a screen for a terminal to draw on.
 
     MetaTrader will not run headless. It does not need a *visible* screen
     though, and giving it a real one would put trading windows in front of
@@ -152,22 +190,31 @@ def ensure_display() -> None:
     plain ``:N`` is ours to bring up, and the socket says whether it already
     is without needing an X client installed to ask.
     """
-    if not DISPLAY.startswith(":"):
-        log.info("using the display at %s", DISPLAY)
-        return
+    display = display or DISPLAY
+    if not display.startswith(":"):
+        log.info("using the display at %s", display)
+        return True
 
-    if Path(f"/tmp/.X11-unix/X{DISPLAY[1:]}").exists():
-        return
+    if Path(f"/tmp/.X11-unix/X{display[1:]}").exists():
+        return True
 
     if shutil.which("Xvfb") is None:
-        raise SystemExit(
-            f"No display at {DISPLAY} and Xvfb is not installed. "
+        message = (
+            f"No display at {display} and Xvfb is not installed. "
             "Run install.sh, or apt install xvfb xdotool openbox."
         )
+        # Fatal at startup, where it means nothing can run and saying so once
+        # is kinder than failing account by account. Not fatal per account:
+        # one screen that cannot be brought up is one terminal that does not
+        # start, and the others have no part in it.
+        if required:
+            raise SystemExit(message)
+        log.error("%s", message)
+        return False
 
-    log.info("starting virtual display %s", DISPLAY)
+    log.info("starting virtual display %s", display)
     subprocess.Popen(
-        ["Xvfb", DISPLAY, "-ac", "-screen", "0", "1400x1000x24"],
+        ["Xvfb", display, "-ac", "-screen", "0", "1400x1000x24"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -175,11 +222,76 @@ def ensure_display() -> None:
     if shutil.which("openbox"):
         subprocess.Popen(
             ["openbox"],
-            env={**os.environ, "DISPLAY": DISPLAY},
+            env={**os.environ, "DISPLAY": display},
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         time.sleep(2)
+    return True
+
+
+def ensure_vnc(display: str, bind: str) -> int | None:
+    """Serve one display over VNC, for the web interface to show.
+
+    One server per display, which is what makes this safe to put on a web page
+    at all: a viewer is connected to a single account's screen and there is no
+    window on it belonging to anybody else.
+
+    Bound to the address TradeZulu itself reported -- the host end of the
+    bridge its container sits on -- so the site can reach it and the network
+    the machine is on cannot. Never 0.0.0.0: these are logged-in trading
+    terminals, and x11vnc's own authentication is not worth relying on.
+    """
+    port = vnc_port_for(display)
+    if port is None or not bind:
+        return None
+
+    if shutil.which("x11vnc") is None:
+        log.warning(
+            "x11vnc is not installed, so %s cannot be watched from the web "
+            "interface. apt install x11vnc",
+            display,
+        )
+        return None
+
+    if _vnc_running(port):
+        return port
+
+    log.info("serving %s on %s:%s", display, bind, port)
+    subprocess.Popen(
+        [
+            "x11vnc",
+            "-display", display,
+            "-listen", bind,
+            "-rfbport", str(port),
+            # -viewonly for now: this is for looking at a terminal that has gone
+            # wrong, and a stray click on a live account is a placed order.
+            "-viewonly",
+            "-shared", "-forever", "-nopw", "-quiet",
+            # Without this it exits the moment the display it was started for
+            # blinks, and nothing would bring it back until the next cycle.
+            "-loop",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    return port
+
+
+def _vnc_running(port: int) -> bool:
+    """Is there already an x11vnc on this port?
+
+    By its command line rather than by connecting: opening a socket to a VNC
+    server counts as a client, and x11vnc logs and reference-counts those.
+    """
+    try:
+        out = subprocess.run(
+            ["pgrep", "-af", "x11vnc"], capture_output=True, text=True, timeout=5
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return any(f"-rfbport {port} " in f"{line} " for line in out.splitlines())
 
 
 # --- one terminal per account ------------------------------------------------
@@ -636,17 +748,20 @@ def write_startup(
     (terminal / "tzstart.ini").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def launch(bottle: Path, terminal: Path, login: str, server: str, password: str) -> None:
-    """Start the terminal, logged in, on the virtual display.
+def launch(
+    bottle: Path, terminal: Path, login: str, server: str, password: str, display: str = ""
+) -> None:
+    """Start the terminal, logged in, on its own virtual display.
 
     Credentials go on the command line rather than into a file. MetaTrader
     stores what it needs in its own encrypted form once it has connected, and
     a password written to disk in the clear would outlive this call.
     """
-    log.info("starting terminal for %s on %s", login, server)
+    display = display or DISPLAY
+    log.info("starting terminal for %s on %s (display %s)", login, server, display)
     write_startup(terminal, login, server, password)
     script = (
-        f'export WINEPREFIX="{bottle}" WINEDEBUG=-all DISPLAY={DISPLAY}\n'
+        f'export WINEPREFIX="{bottle}" WINEDEBUG=-all DISPLAY={display}\n'
         f'unset PYTHONPATH PYTHONHOME\n'
         f'cd "{terminal}"\n'
         f'setsid "{_runner()}" terminal64.exe /portable /config:tzstart.ini '
@@ -658,7 +773,7 @@ def launch(bottle: Path, terminal: Path, login: str, server: str, password: str)
 # --- the one thing that still needs a GUI ------------------------------------
 
 
-def allow_webrequest(login: str, url: str) -> bool:
+def allow_webrequest(login: str, url: str, display: str = "") -> bool:
     """Add TradeZulu to the terminal's WebRequest allowlist.
 
     MetaTrader keeps this list encrypted in its own config, so it cannot be
@@ -679,7 +794,7 @@ def allow_webrequest(login: str, url: str) -> bool:
         )
         return False
 
-    env = {**os.environ, "DISPLAY": DISPLAY}
+    env = {**os.environ, "DISPLAY": display or DISPLAY}
 
     found = subprocess.run(
         ["xdotool", "search", "--name", re.escape(login)],
@@ -987,6 +1102,8 @@ def reconcile(plan: Plan, template: Path, expert: Path, settled: bool = True) ->
         [
             dict(
                 account_id=int(spec["account_id"]),
+                display=display_for(int(spec["account_id"])),
+                vnc_port=vnc_port_for(display_for(int(spec["account_id"]))),
                 **terminal_status(
                     spec,
                     bottle_for(int(spec["account_id"])),
@@ -1007,6 +1124,33 @@ def ensure_terminal(
     account_id = int(spec["account_id"])
     bottle = bottle_for(account_id)
     state = load_state(account_id)
+
+    # Its own screen, and its own VNC server on it. Done every cycle rather
+    # than only at launch: both survive this process restarting, and a display
+    # that died takes its terminal with it, so the next pass finds no terminal
+    # running and starts one on the screen this just brought back.
+    display = display_for(account_id)
+    if not ensure_display(display, required=False):
+        return
+    ensure_vnc(display, plan.vnc_bind)
+
+    # Somebody pressed Restart in the web interface. Stopping is all that is
+    # done here: the reconcile below finds no terminal running and starts one,
+    # which is the same path a terminal that died on its own takes, so there
+    # is no second way to start a terminal that can rot.
+    #
+    # The token is remembered rather than acknowledged. A request this process
+    # has already acted on looks identical to one it has not, unless it keeps
+    # the last one it saw -- and a flag cleared over the network is a flag that
+    # is cleared twice, or not at all, when either side restarts mid-way.
+    token = str(spec.get("restart_token") or "")
+    if token and token != str(state.get("restart_token") or ""):
+        state["restart_token"] = token
+        save_state(account_id, state)
+        if is_running(bottle):
+            log.info("restart asked for %s; stopping it", spec.get("login"))
+            stop_terminal(bottle)
+            return
 
     # A prefix is named after the account row, and a row's id can be handed out
     # again after the account it belonged to was forgotten. Inheriting the last
@@ -1060,7 +1204,10 @@ def ensure_terminal(
     clear_strays(bottle)
 
     install_expert(terminal, expert, plan.callback_url, plan.api_key)
-    launch(bottle, terminal, spec["login"], spec["server"], spec["password"])
+    launch(
+        bottle, terminal, spec["login"], spec["server"], spec["password"],
+        display_for(account_id),
+    )
 
     state.update(
         login=str(spec["login"]),
@@ -1123,7 +1270,7 @@ def supervise(
                 "%s has not reported in; granting WebRequest permission (attempt %d)",
                 login, attempts + 1,
             )
-            allow_webrequest(login, plan.callback_url)
+            allow_webrequest(login, plan.callback_url, display_for(account_id))
             return
         recycle(spec, bottle, state, "it has never reported in", plan)
         return
