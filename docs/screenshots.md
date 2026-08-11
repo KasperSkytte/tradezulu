@@ -1,7 +1,7 @@
 # Screenshots
 
-The dashboard is in the [README](../README.md). Everything else lives here so
-the front page stays short.
+The dashboard is in the [README](../README.md). Everything else lives here, in
+the order the pages appear in the sidebar, so the front page stays short.
 
 These are the demo account rather than a real one: `TZ_DEMO=1` fills a
 throwaway database with 129 trades over four months, and every figure below is
@@ -13,16 +13,6 @@ so read the numbers as a shape rather than as a promise.
 docker compose run --rm --service-ports -e TZ_DEMO=1 tradezulu demo
 ```
 
-## Calendar
-
-Each day carries three things and no more: what it made or lost, that as a
-percentage of the balance the day *opened* with, and how many trades it took.
-Compounding follows from the second one, so a good day early makes a later day
-of the same size a smaller percentage — which is what actually happened to the
-account.
-
-![Calendar](screenshots/calendar.png)
-
 ## Trades
 
 Every position, with its R multiple, outcome, tags and what it did to the
@@ -33,7 +23,7 @@ lumping it with either distorts the win rate.
 
 ![Trades](screenshots/trades.png)
 
-## A trade in detail
+### A trade in detail
 
 The chart around the entry, with the real entry, exit, stop and target drawn on
 it and an arrow for every fill, so scale-ins and partial exits are visible. The
@@ -46,6 +36,30 @@ and inventing it would be interpolation presented as price.
 
 ![Trade detail](screenshots/trade-detail.png)
 
+## Calendar
+
+Each day carries three things and no more: what it made or lost, that as a
+percentage of the balance the day *opened* with, and how many trades it took.
+Compounding follows from the second one, so a good day early makes a later day
+of the same size a smaller percentage — which is what actually happened to the
+account.
+
+![Calendar](screenshots/calendar.png)
+
+## News
+
+Two calendars, because they disagree about what matters. **ForexFactory** is
+drawn by TradeZulu rather than embedded, so it matches the rest of the journal
+and can be filtered by currency and folder colour — red folders on the dollar
+by default, which is what most people mean by "the news".
+
+![ForexFactory calendar](screenshots/news-forexfactory.png)
+
+**TradingView** is their own widget, with their own figures and their own
+country filter. It is the one to pick if you already read theirs.
+
+![TradingView calendar](screenshots/news-tradingview.png)
+
 ## Reports
 
 Breakdowns by symbol, tag, setup, weekday, hour, hold time and R multiple,
@@ -54,10 +68,10 @@ the page without showing what the account is worth.
 
 ![Reports](screenshots/reports.png)
 
-## Accounts
+## Settings — Accounts
 
-Under **Settings → Accounts**: the master account's credentials, whether each
-account's terminal is reporting, and every slave that follows it. The terminal is provisioned, logged in and
+The master account's credentials, whether each account's terminal is reporting,
+and every slave that follows it. The terminal is provisioned, logged in and
 started for you: nothing to install and no paths to configure.
 
 ![Accounts](screenshots/accounts.png)
