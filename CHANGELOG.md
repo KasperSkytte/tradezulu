@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.26.1](https://github.com/KasperSkytte/tradezulu/compare/v1.26.0...v1.26.1) (2026-08-10)
+
+
+### Bug fixes
+
+* **reports:** a ruler on axes narrower than a single R ([7cafe93](https://github.com/KasperSkytte/tradezulu/commit/7cafe93679705c5b2de91e7d885b2cd1ff5ef018))
+* **reports:** draw a series of fewer than four trades instead of dropping it ([a06ef00](https://github.com/KasperSkytte/tradezulu/commit/a06ef00dec71be788d743614989642f4ebe814f6))
+
 ## [1.26.0](https://github.com/KasperSkytte/tradezulu/compare/v1.25.2...v1.26.0) (2026-08-10)
 
 
