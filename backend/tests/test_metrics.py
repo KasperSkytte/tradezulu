@@ -484,11 +484,11 @@ class TestPeriodBounds:
 
     def test_this_week_monday_start(self):
         start, end = period_bounds("this_week", self.TODAY, "monday")
-        assert start == date(2026, 6, 15)
+        assert (start, end) == (date(2026, 6, 15), date(2026, 6, 21))
 
     def test_this_week_sunday_start(self):
-        start, _ = period_bounds("this_week", self.TODAY, "sunday")
-        assert start == date(2026, 6, 14)
+        start, end = period_bounds("this_week", self.TODAY, "sunday")
+        assert (start, end) == (date(2026, 6, 14), date(2026, 6, 20))
 
     def test_last_month(self):
         start, end = period_bounds("last_month", self.TODAY)
@@ -496,11 +496,37 @@ class TestPeriodBounds:
 
     def test_this_month(self):
         start, end = period_bounds("this_month", self.TODAY)
-        assert (start, end) == (date(2026, 6, 1), self.TODAY)
+        assert (start, end) == (date(2026, 6, 1), date(2026, 6, 30))
 
     def test_this_quarter(self):
-        start, _ = period_bounds("this_quarter", self.TODAY)
-        assert start == date(2026, 4, 1)
+        start, end = period_bounds("this_quarter", self.TODAY)
+        assert (start, end) == (date(2026, 4, 1), date(2026, 6, 30))
+
+    def test_this_year(self):
+        start, end = period_bounds("this_year", self.TODAY)
+        assert (start, end) == (date(2026, 1, 1), date(2026, 12, 31))
+
+    def test_a_named_period_runs_to_its_own_end_not_to_today(self):
+        """The whole point: on a Wednesday, this week still ends on Sunday.
+
+        Nothing is double-counted for it -- there are no trades in the future
+        -- and the days still to come are visible instead of having to be
+        typed in by hand.
+        """
+        for name in ("this_week", "this_month", "this_quarter", "this_year"):
+            assert period_bounds(name, self.TODAY)[1] > self.TODAY, name
+
+    def test_a_december_quarter_does_not_run_into_next_year(self):
+        start, end = period_bounds("this_quarter", date(2026, 11, 4))
+        assert (start, end) == (date(2026, 10, 1), date(2026, 12, 31))
+
+    def test_a_december_month_ends_on_the_last_of_december(self):
+        start, end = period_bounds("this_month", date(2026, 12, 4))
+        assert (start, end) == (date(2026, 12, 1), date(2026, 12, 31))
+
+    def test_february_in_a_leap_year(self):
+        start, end = period_bounds("this_month", date(2028, 2, 3))
+        assert (start, end) == (date(2028, 2, 1), date(2028, 2, 29))
 
     def test_all(self):
         start, _ = period_bounds("all", self.TODAY)

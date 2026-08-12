@@ -60,8 +60,14 @@ export function resolvePeriod(id: string, weekStartsOn: 0 | 1 = 1, today = new D
       return { start: day(subDays(today, 89)), end: day(today) }
     case 'last_180_days':
       return { start: day(subDays(today, 179)), end: day(today) }
+    // The calendar presets run to the end of the period they name, not to
+    // today: "this week" ending on Wednesday is not this week, and the days
+    // still to come were missing from the calendar because of it.
     case 'this_week':
-      return { start: day(startOfWeek(today, { weekStartsOn })), end: day(today) }
+      return {
+        start: day(startOfWeek(today, { weekStartsOn })),
+        end: day(endOfWeek(today, { weekStartsOn })),
+      }
     case 'last_week': {
       const ref = subWeeks(today, 1)
       return {
@@ -70,7 +76,7 @@ export function resolvePeriod(id: string, weekStartsOn: 0 | 1 = 1, today = new D
       }
     }
     case 'this_month':
-      return { start: day(startOfMonth(today)), end: day(today) }
+      return { start: day(startOfMonth(today)), end: day(endOfMonth(today)) }
     case 'last_month': {
       const ref = subMonths(today, 1)
       return { start: day(startOfMonth(ref)), end: day(endOfMonth(ref)) }
@@ -78,7 +84,7 @@ export function resolvePeriod(id: string, weekStartsOn: 0 | 1 = 1, today = new D
     case 'this_quarter':
       return { start: day(startOfQuarter(today)), end: day(endOfQuarter(today)) }
     case 'this_year':
-      return { start: day(startOfYear(today)), end: day(today) }
+      return { start: day(startOfYear(today)), end: day(endOfYear(today)) }
     case 'last_year': {
       const ref = subYears(today, 1)
       return { start: day(startOfYear(ref)), end: day(endOfYear(ref)) }

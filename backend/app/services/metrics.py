@@ -970,8 +970,28 @@ def rolling_metrics(daily: Sequence[dict[str, Any]], window: int = 20) -> list[d
     return out
 
 
+def _end_of_month(day: date) -> date:
+    """The last day of the month *day* falls in."""
+    first_next = (
+        date(day.year + 1, 1, 1) if day.month == 12 else date(day.year, day.month + 1, 1)
+    )
+    return first_next - timedelta(days=1)
+
+
 def period_bounds(period: str, today: date, week_starts_on: str = "monday") -> tuple[date, date]:
-    """Translate the UI's period presets into concrete dates."""
+    """Translate the UI's period presets into concrete dates.
+
+    The calendar presets -- this week, this month, this quarter, this year --
+    run to the end of the period they name rather than to today. "This week"
+    ending on Wednesday is not this week; it is the part of it that has
+    happened, which meant the days still to come were missing from the calendar
+    and the range had to be set by hand to see them.
+
+    Nothing is counted twice for it. There are no trades in the future, so
+    every figure is the same either way, and the daily series is built from the
+    trades themselves rather than from the days in the range -- so no empty
+    columns arrive with the extra days.
+    """
     if period == "today":
         return today, today
     if period == "yesterday":
@@ -979,13 +999,14 @@ def period_bounds(period: str, today: date, week_starts_on: str = "monday") -> t
         return day, day
     if period == "this_week":
         offset = today.weekday() if week_starts_on == "monday" else (today.weekday() + 1) % 7
-        return today - timedelta(days=offset), today
+        start = today - timedelta(days=offset)
+        return start, start + timedelta(days=6)
     if period == "last_week":
         offset = today.weekday() if week_starts_on == "monday" else (today.weekday() + 1) % 7
         start_this = today - timedelta(days=offset)
         return start_this - timedelta(days=7), start_this - timedelta(days=1)
     if period == "this_month":
-        return today.replace(day=1), today
+        return today.replace(day=1), _end_of_month(today)
     if period == "last_month":
         first_this = today.replace(day=1)
         last_prev = first_this - timedelta(days=1)
@@ -1000,9 +1021,10 @@ def period_bounds(period: str, today: date, week_starts_on: str = "monday") -> t
         return today - timedelta(days=179), today
     if period == "this_quarter":
         quarter_start_month = 3 * ((today.month - 1) // 3) + 1
-        return today.replace(month=quarter_start_month, day=1), today
+        start = today.replace(month=quarter_start_month, day=1)
+        return start, _end_of_month(start.replace(month=quarter_start_month + 2))
     if period == "this_year":
-        return today.replace(month=1, day=1), today
+        return today.replace(month=1, day=1), date(today.year, 12, 31)
     if period == "last_year":
         return date(today.year - 1, 1, 1), date(today.year - 1, 12, 31)
     if period == "all":
