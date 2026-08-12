@@ -123,6 +123,37 @@ After a version that changes how trades are folded, run *Settings → MetaTrader
 → Rebuild trades from stored deals*. Because every raw deal is kept, this is
 always available and never loses your notes.
 
+### Upgrading to per-terminal screens
+
+The version that added **Inspect** on the accounts page gives every terminal an
+X display of its own — `:78` for account 1, `:79` for account 2, and so on —
+where before they all drew on `:77`. Two things follow, and both are handled
+for you:
+
+```bash
+cd /opt/tradezulu
+git pull
+sudo ./install.sh          # names the packages it is about to add, x11vnc among them
+docker compose build && docker compose up -d
+sudo systemctl restart tradezulu-agent
+```
+
+`install.sh` is safe to re-run: it checks each command rather than asking dpkg,
+installs only what is missing, and leaves your prefixes, templates and database
+alone.
+
+Terminals that were already running are still on the old shared display, and
+nothing about them is unhealthy, so supervision would leave them there for
+ever — with Inspect showing whichever of them happens to be on top. The
+provisioner notices on its first pass after the upgrade, stops each one, and
+the next cycle brings it back on its own screen. Expect every terminal to
+restart once, a minute or two apart, and copying to pause for that minute.
+
+Nothing needs cleaning up by hand. The old `:77` is left running if something
+else is on it, the new displays are created as needed, and a terminal is only
+ever moved once — the screen it started on is recorded from now on, so a
+second upgrade does not repeat it.
+
 ## Resource limits
 
 Worth adding on a shared Proxmox host:
@@ -175,3 +206,13 @@ Set `TZ_LOG_LEVEL=DEBUG` for verbose output when something is misbehaving.
   TradeZulu detects this and asks for it again rather than carrying on.
 - Terminals only ever talk outwards, to `127.0.0.1`. Nothing listens on their
   behalf, so there is no port to expose and none to secure.
+- The exception is the terminal viewer, and it is a narrow one. Each screen is
+  served by an x11vnc bound to the host end of the Docker bridge — reachable by
+  the TradeZulu container and by nothing on your network — and the site relays
+  it to the browser over the same authenticated session as the rest of the API.
+  The servers run `-viewonly`, so a viewer cannot click on a live account.
+- One screen per account is what makes that viewer safe to have at all: it
+  shows one terminal because there is only one terminal on the display it is
+  connected to. Note that accounts themselves are not owned by anybody yet —
+  every login sees every account — so this is a boundary between *terminals*,
+  not between users.
