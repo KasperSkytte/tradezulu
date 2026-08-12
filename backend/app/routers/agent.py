@@ -208,8 +208,32 @@ def _candle_seconds(charts: dict[str, Any]) -> int:
     return timeframes.seconds(name if name in timeframes.TIMEFRAMES else "M5")
 
 
+#: What a terminal is asked for while copying is live, in milliseconds. Half a
+#: second is the floor under every copy that is not event-driven -- the slave
+#: cannot act on a command it has not been given -- and at this rate a handful
+#: of terminals is a few requests a second against a server that plans one in
+#: about fifteen milliseconds.
+COPYING_POLL_MS = 500
+#: And when nothing is armed: nothing is waiting on anybody, and the journal
+#: does not care whether a closed trade arrives now or in ten seconds.
+IDLE_POLL_MS = 10_000
+
+
+def _poll_ms(db: Session, account: Account) -> int:
+    """How often this terminal should report in, in milliseconds."""
+    if account.role == "slave":
+        return COPYING_POLL_MS if account.copy_enabled else IDLE_POLL_MS
+    armed = db.scalar(
+        select(func.count())
+        .select_from(Account)
+        .where(Account.role == "slave", Account.copy_enabled.is_(True))
+    )
+    return COPYING_POLL_MS if armed else IDLE_POLL_MS
+
+
 def _poll_seconds(db: Session, account: Account) -> int:
-    """How often this terminal should report in.
+    """The same thing in whole seconds, for an Expert Advisor from before the
+    millisecond field existed. Never zero: that would be a busy loop.
 
     The master gets the fast rate too, whenever any slave is armed. It used to
     be given the slow one on the grounds that nothing is asked of it -- but
@@ -222,14 +246,7 @@ def _poll_seconds(db: Session, account: Account) -> int:
     poll every two seconds is a request per second per terminal, all day, for
     a journal that is only being written to.
     """
-    if account.role == "slave":
-        return 2 if account.copy_enabled else 10
-    armed = db.scalar(
-        select(func.count())
-        .select_from(Account)
-        .where(Account.role == "slave", Account.copy_enabled.is_(True))
-    )
-    return 2 if armed else 10
+    return max(1, _poll_ms(db, account) // 1000)
 
 
 @router.post("/poll", response_model=AgentPollOut)
@@ -276,6 +293,7 @@ def poll(payload: AgentPollIn, db: Session = Depends(get_db)) -> AgentPollOut:
         dry_run=bool(account.copy_dry_run),
         halted=bool(account.copy_halted),
         poll_seconds=_poll_seconds(db, account),
+        poll_ms=_poll_ms(db, account),
         history_before_seconds=_history_seconds(charts, "history_days_before"),
         history_after_seconds=_history_seconds(charts, "history_days_after"),
         candle_seconds=_candle_seconds(charts),

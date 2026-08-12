@@ -190,7 +190,7 @@ class TestSlaveCommands:
                                        json=account_payload("9001", "Slave-Server")).json()
         master_reply = auth_client.post("/api/agent/poll",
                                         json=account_payload("5000", "Master-Server")).json()
-        assert slave_reply["poll_seconds"] == master_reply["poll_seconds"] == 2
+        assert slave_reply["poll_ms"] == master_reply["poll_ms"] == 500
 
 
 class TestResults:
@@ -901,22 +901,32 @@ class TestHowOftenATerminalReportsIn:
         slave.copy_enabled = False
         db.commit()
         payload = account_payload("5000", "Master-Server")
-        assert auth_client.post("/api/agent/poll", json=payload).json()["poll_seconds"] == 10
+        assert auth_client.post("/api/agent/poll", json=payload).json()["poll_ms"] == 10_000
 
     def test_the_master_speeds_up_for_an_armed_slave(self, auth_client, db, master, slave):
         slave.copy_enabled = True
         db.commit()
         payload = account_payload("5000", "Master-Server")
-        assert auth_client.post("/api/agent/poll", json=payload).json()["poll_seconds"] == 2
+        assert auth_client.post("/api/agent/poll", json=payload).json()["poll_ms"] == 500
 
     def test_an_armed_slave_is_fast(self, auth_client, db, slave):
         slave.copy_enabled = True
         db.commit()
         payload = account_payload(slave.login, slave.server)
-        assert auth_client.post("/api/agent/poll", json=payload).json()["poll_seconds"] == 2
+        assert auth_client.post("/api/agent/poll", json=payload).json()["poll_ms"] == 500
 
     def test_a_disarmed_slave_is_slow(self, auth_client, db, slave):
         slave.copy_enabled = False
         db.commit()
         payload = account_payload(slave.login, slave.server)
-        assert auth_client.post("/api/agent/poll", json=payload).json()["poll_seconds"] == 10
+        assert auth_client.post("/api/agent/poll", json=payload).json()["poll_ms"] == 10_000
+
+    def test_an_older_expert_is_told_whole_seconds_it_can_use(self, auth_client, db, slave):
+        """It has no millisecond field, and a rounded-down 0 would be a busy
+        loop -- so the fallback is one second, not none."""
+        slave.copy_enabled = True
+        db.commit()
+        reply = auth_client.post(
+            "/api/agent/poll", json=account_payload(slave.login, slave.server)
+        ).json()
+        assert reply["poll_seconds"] == 1

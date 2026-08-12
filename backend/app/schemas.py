@@ -617,7 +617,12 @@ class AgentPollOut(BaseModel):
     enabled: bool
     dry_run: bool
     halted: bool
+    #: How long to wait before reporting in again. Milliseconds, because the
+    #: interval is the floor under every copy and a whole second is too coarse
+    #: to be the smallest step. ``poll_seconds`` is the same thing rounded, for
+    #: an Expert Advisor from before this field existed.
     poll_seconds: int = 5
+    poll_ms: int = 5_000
     #: How much history to send around each closed trade, in seconds either
     #: side. Seconds rather than a bar count so the terminal can divide by
     #: whatever timeframe it is set to collect, and so changing the setting

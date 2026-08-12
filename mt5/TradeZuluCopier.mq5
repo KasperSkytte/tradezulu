@@ -28,7 +28,7 @@ input string ApiKey           = "";                             // TZ_INGEST_TOK
 input int    RequestTimeoutMs = 15000;                          // WebRequest timeout (ms)
 
 input group "Behaviour"
-input int    PollSeconds      = 2;     // How often to report in. The server can ask for slower.
+input int    PollSeconds      = 2;     // How often to report in, in seconds. The server can ask for faster or slower.
 input int    Slippage         = 20;    // Maximum deviation, in points
 input int    MagicNumber      = 0;     // Stamped on copied orders; 0 leaves it unset
 input bool   Verbose          = true;  // Log every command to the Experts tab
@@ -59,6 +59,8 @@ string g_pending      = "";   // results waiting to go back on the next poll
 int    g_done         = 0;
 int    g_failed       = 0;
 int    g_poll_seconds = 0;
+int    g_poll_ms      = 0;    // what the timer actually runs at
+uint   g_last_poll    = 0;    // GetTickCount() of the last poll, for debouncing
 
 //--- journal --------------------------------------------------------
 ulong    g_last_ticket  = 0;      // highest deal the server already has
@@ -111,7 +113,12 @@ int OnInit()
       StyleChart();
 
    g_poll_seconds = MathMax(1, PollSeconds);
-   EventSetTimer(1);   // first tick promptly, then settle to the agreed rate
+   g_poll_ms      = g_poll_seconds * 1000;
+   // Milliseconds, not seconds: copying is a race against the market and the
+   // interval is the floor under every copy. The server asks for the rate it
+   // wants -- half a second while anything is armed, ten seconds when nothing
+   // is -- and this is only the value until the first reply arrives.
+   EventSetMillisecondTimer(200);   // first tick promptly, then settle
    Print("TradeZulu copier: started, reporting to ", ServerUrl);
    return INIT_SUCCEEDED;
 }
@@ -132,7 +139,7 @@ void OnTimer()
    {
       first = false;
       EventKillTimer();
-      EventSetTimer(g_poll_seconds);
+      EventSetMillisecondTimer(g_poll_ms);
    }
    Poll();
 
@@ -346,6 +353,8 @@ string PollBody()
 //--- the heartbeat --------------------------------------------------
 void Poll()
 {
+   g_last_poll = GetTickCount();
+
    string reply;
    if(!HttpPost("/agent/poll", PollBody(), reply))
    {
@@ -356,12 +365,16 @@ void Poll()
    // Everything we just reported was accepted, so stop resending it.
    g_pending = "";
 
-   int wanted = (int)StringToInteger(JsonValue(reply, "poll_seconds"));
-   if(wanted > 0 && wanted != g_poll_seconds)
+   // Milliseconds if the server speaks them, seconds if it is an older one.
+   int wanted_ms = (int)StringToInteger(JsonValue(reply, "poll_ms"));
+   if(wanted_ms <= 0)
+      wanted_ms = (int)StringToInteger(JsonValue(reply, "poll_seconds")) * 1000;
+   if(wanted_ms > 0 && wanted_ms != g_poll_ms)
    {
-      g_poll_seconds = wanted;
+      g_poll_ms = wanted_ms;
+      g_poll_seconds = (int)MathMax(1, wanted_ms / 1000);
       EventKillTimer();
-      EventSetTimer(g_poll_seconds);
+      EventSetMillisecondTimer(g_poll_ms);
    }
 
    // How much chart history the journal wants around each trade. It is a
@@ -1121,6 +1134,33 @@ void StyleChart()
    ChartSetInteger(0, CHART_FOREGROUND, false);
 
    ChartRedraw(0);
+}
+
+//+------------------------------------------------------------------+
+//| A position opened or closed here: say so now, not on the timer.  |
+//|                                                                  |
+//| The timer is the floor under every copy -- a slave cannot be told |
+//| to open something the server has not heard about, and the server  |
+//| hears about it when this terminal next reports. Waiting out the   |
+//| interval to mention a trade that has *already happened* is the    |
+//| one wait with nothing to gain from it.                            |
+//|                                                                  |
+//| Debounced, because MetaTrader fires several transactions for one  |
+//| trade -- the order, the deal, the position -- and each of them     |
+//| would otherwise be its own HTTP request.                          |
+//+------------------------------------------------------------------+
+void OnTradeTransaction(const MqlTradeTransaction &transaction,
+                        const MqlTradeRequest &request,
+                        const MqlTradeResult &result)
+{
+   if(transaction.type != TRADE_TRANSACTION_DEAL_ADD &&
+      transaction.type != TRADE_TRANSACTION_POSITION)
+      return;
+
+   if(GetTickCount() - g_last_poll < 150)
+      return;
+
+   Poll();
 }
 
 void ShowStatus()
