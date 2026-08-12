@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.27.0](https://github.com/KasperSkytte/tradezulu/compare/v1.26.2...v1.27.0) (2026-08-12)
+
+
+### Features
+
+* **accounts:** watch and restart a terminal from the account it belongs to ([1a3cc6d](https://github.com/KasperSkytte/tradezulu/commit/1a3cc6d5129ed9167141edf7421d57be8375b0be))
+* **agent:** a screen of its own for every terminal, served over VNC ([9e1cfd0](https://github.com/KasperSkytte/tradezulu/commit/9e1cfd06f062c1a02fea66a01549294da9f1c68a))
+* **copier:** refuse a stop too tight to survive another broker's prices ([2043d66](https://github.com/KasperSkytte/tradezulu/commit/2043d6688c8c21597b2d5d5362ce3ec02d4cc31c))
+
+
+### Bug fixes
+
+* **agent:** move a terminal to its own screen after an upgrade ([97ac308](https://github.com/KasperSkytte/tradezulu/commit/97ac3080843c733500d2af9a8fcb429d714328a3))
+* **copier:** a terminal with no session must not read as a wiped account ([813e710](https://github.com/KasperSkytte/tradezulu/commit/813e71009c846752c092f5c31ef097182703ab5d))
+
+
+### Documentation
+
+* what an upgrade to per-terminal screens does to a running server ([8daa60f](https://github.com/KasperSkytte/tradezulu/commit/8daa60f6c34a735b9a43e3337f05c0c61afeedc3))
+
+
+### Build & packaging
+
+* **install:** install x11vnc, and clear every display on the way out ([1920928](https://github.com/KasperSkytte/tradezulu/commit/19209289ebe7e06e96d5fa32b97474769f5f39b5))
+
 ## [1.26.2](https://github.com/KasperSkytte/tradezulu/compare/v1.26.1...v1.26.2) (2026-08-11)
 
 
