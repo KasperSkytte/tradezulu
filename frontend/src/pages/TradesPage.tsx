@@ -20,6 +20,7 @@ import {
 } from '../lib/format'
 import type { Tag, Trade, TradePage as TradePageData } from '../lib/types'
 import { FilterBar } from '../components/FilterBar'
+import { SortPicker } from '../components/SortPicker'
 import { ManualTradeDialog } from '../components/ManualTradeDialog'
 import {
   Button,
@@ -61,13 +62,14 @@ const COLUMNS: { key: SortKey | null; label: string; align?: 'right'; hideBelow?
 ]
 
 export function TradesPage() {
-  const { params } = useFilters()
+  // Sorting lives with the filters rather than in this component: it belongs
+  // in the URL, so a reload or a shared link keeps the order somebody chose.
+  const { params, filters, setSort } = useFilters()
+  const { sort, order } = filters
   const { currency } = useSettings()
   const queryClient = useQueryClient()
 
   const [page, setPage] = useState(1)
-  const [sort, setSort] = useState<SortKey>('closed_at')
-  const [order, setOrder] = useState<'asc' | 'desc'>('desc')
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [showManual, setShowManual] = useState(false)
   const pageSize = 50
@@ -103,11 +105,8 @@ export function TradesPage() {
   })
 
   function applySort(key: SortKey) {
-    if (sort === key) setOrder(order === 'asc' ? 'desc' : 'asc')
-    else {
-      setSort(key)
-      setOrder('desc')
-    }
+    if (!key) return
+    setSort(key)
     setPage(1)
   }
 
@@ -119,6 +118,7 @@ export function TradesPage() {
       <div className="flex flex-wrap items-center gap-2">
         <FilterBar />
         <div className="ml-auto flex gap-2">
+          <SortPicker />
           <Button icon={<Plus size={15} />} onClick={() => setShowManual(true)}>
             <span className="hidden sm:inline">Add trade</span>
           </Button>

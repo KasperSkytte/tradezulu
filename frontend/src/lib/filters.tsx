@@ -22,8 +22,13 @@ import type { Account } from './types'
  *  because that is what the numbers are actually about. */
 export type AccountScope = number | 'all'
 
+export type SortOrder = 'asc' | 'desc'
+
 export interface Filters {
   accountId: AccountScope | undefined
+  /** How the trade list is ordered. Only the trades page reads these. */
+  sort: string
+  order: SortOrder
   period: string
   start: string
   end: string
@@ -47,6 +52,9 @@ interface FiltersState {
   setAccount: (scope: AccountScope) => void
   setPeriod: (period: string) => void
   setRange: (start: string, end: string) => void
+  /** Order the trade list. Choosing the column already sorted on flips it. */
+  setSort: (key: string) => void
+  setOrder: (order: SortOrder) => void
   update: (patch: Partial<Filters>) => void
   reset: () => void
   activeCount: number
@@ -67,6 +75,10 @@ function parseList(value: string | null): string[] {
 const FILTER_KEYS = [
   'period', 'start', 'end', 'account', 'symbols', 'tags',
   'directions', 'outcomes', 'q', 'minR', 'maxR', 'excluded',
+  // Not a filter -- it changes the order, not which trades there are -- but it
+  // belongs to the same bar, the same URL and the same "where was I" as the
+  // rest. Kept out of the active count for the same reason.
+  'sort', 'order',
 ] as const
 
 const REMEMBERED = 'tz-filters'
@@ -140,6 +152,8 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
     () => ({
       accountId,
       period: searchParams.get('start') && searchParams.get('end') ? 'custom' : period,
+      sort: searchParams.get('sort') ?? 'closed_at',
+      order: searchParams.get('order') === 'asc' ? 'asc' : 'desc',
       start: searchParams.get('start') ?? resolved.start,
       end: searchParams.get('end') ?? resolved.end,
       symbols: parseList(searchParams.get('symbols')),
@@ -182,6 +196,28 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
         next.delete('start')
         next.delete('end')
       })
+    },
+    [write],
+  )
+
+  const setSort = useCallback(
+    (key: string) => {
+      write((next) => {
+        // Choosing the column already in use turns it round, which is what
+        // clicking a table header has always done and what anyone expects of
+        // a sort control that names the same columns.
+        const flip = (next.get('sort') ?? 'closed_at') === key
+        const order = next.get('order') === 'asc' ? 'asc' : 'desc'
+        next.set('sort', key)
+        next.set('order', flip && order === 'desc' ? 'asc' : 'desc')
+      })
+    },
+    [write],
+  )
+
+  const setOrder = useCallback(
+    (order: SortOrder) => {
+      write((next) => next.set('order', order))
     },
     [write],
   )
@@ -268,11 +304,11 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
   const value = useMemo<FiltersState>(
     () => ({
       filters, params, accountParams, accounts,
-      setAccount, setPeriod, setRange, update, reset, activeCount,
+      setAccount, setPeriod, setRange, setSort, setOrder, update, reset, activeCount,
     }),
     [
       filters, params, accountParams, accounts,
-      setAccount, setPeriod, setRange, update, reset, activeCount,
+      setAccount, setPeriod, setRange, setSort, setOrder, update, reset, activeCount,
     ],
   )
 
