@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.30.0](https://github.com/KasperSkytte/tradezulu/compare/v1.29.1...v1.30.0) (2026-08-12)
+
+
+### Features
+
+* **mt5:** make the expert's own chart a plain background for its status ([7ee9e7f](https://github.com/KasperSkytte/tradezulu/commit/7ee9e7f9e96bb5389751d9fa42d6482aa44f43d4))
+* **trades:** a sort control beside the filter, and an order that survives ([609d6d3](https://github.com/KasperSkytte/tradezulu/commit/609d6d39290f4436930f10bc73939127b1b62880))
+
 ## [1.29.1](https://github.com/KasperSkytte/tradezulu/compare/v1.29.0...v1.29.1) (2026-08-12)
 
 
