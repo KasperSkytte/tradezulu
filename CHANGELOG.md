@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.29.0](https://github.com/KasperSkytte/tradezulu/compare/v1.28.0...v1.29.0) (2026-08-12)
+
+
+### Features
+
+* **accounts:** one live screen, and a banner rather than a dialog ([d6ec67b](https://github.com/KasperSkytte/tradezulu/commit/d6ec67be281c9da65dd0e12339fdfcc48d93d90f))
+
+
+### Bug fixes
+
+* **agent:** stop a chart piling up on every restart ([5c4afa9](https://github.com/KasperSkytte/tradezulu/commit/5c4afa93842e4de67876cd94a91e53f98ba76b32))
+* **filters:** a named period runs to its own end, not to today ([a3147f8](https://github.com/KasperSkytte/tradezulu/commit/a3147f87b53886ee8a08304b8414eebe2fdcb6dc)), closes [#5](https://github.com/KasperSkytte/tradezulu/issues/5)
+
 ## [1.28.0](https://github.com/KasperSkytte/tradezulu/compare/v1.27.0...v1.28.0) (2026-08-12)
 
 
