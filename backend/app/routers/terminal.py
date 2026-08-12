@@ -9,9 +9,11 @@ on the host. A browser cannot speak RFB to a TCP socket, so this relays the
 two -- which is all websockify does, and it is not worth a second service to
 do it.
 
-View-only, and view-only at the source: the provisioner passes ``-viewonly``
-to x11vnc, so nothing that arrives here can move a mouse over a live account
-even if it wanted to. The relay never writes to the terminal socket at all.
+Watching and driving are different sockets, not a flag. The provisioner runs
+two x11vnc servers on each display -- one ``-viewonly``, one not -- and a
+viewer that has not asked for control is connected to the first, which will
+not accept a click whatever the browser sends. Nothing here inspects the
+stream to decide; there is no filter of mine in the path to have a hole in it.
 """
 
 from __future__ import annotations
@@ -65,7 +67,12 @@ def viewable(account_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
         "account_id": account.id,
         "login": account.login,
         "available": target is not None,
+        # Whether this install can hand over a keyboard and mouse at all. An
+        # older provisioner runs one server per display and it is view-only,
+        # so the page has to know not to offer what cannot be given.
+        "can_control": viewer_target(state, control=True) is not None,
         "phase": state.get("phase") or "",
+        "message_phase": _phase_message(state),
         "display": state.get("display") or "",
         "message": (
             ""
@@ -128,8 +135,27 @@ async def _pump(read, write, name: str) -> None:
         return
 
 
+def _phase_message(state: dict) -> str:
+    """What the screen is showing, for a screen that is showing nothing.
+
+    A terminal that has not been installed yet draws on an empty display, and
+    an empty display is black. Black with no explanation reads as a broken
+    viewer -- it did here -- so the page is given the words to put over it.
+    """
+    phase = str(state.get("phase") or "")
+    return {
+        "installing": "This terminal is still being built. The screen stays "
+        "empty until MetaTrader is installed on it.",
+        "starting": "MetaTrader is starting. Give it a moment to draw.",
+        "quiet": "The terminal was reporting and has stopped. What is on its "
+        "screen is the best clue why.",
+        "failed": "This terminal was given up on. Its screen is the best clue "
+        "why.",
+    }.get(phase, "")
+
+
 @router.websocket("/{account_id}/stream")
-async def stream(websocket: WebSocket, account_id: int) -> None:
+async def stream(websocket: WebSocket, account_id: int, control: bool = False) -> None:
     """Relay one account's screen to the browser.
 
     The RFB protocol is a byte stream in both directions and noVNC speaks it
@@ -147,7 +173,7 @@ async def stream(websocket: WebSocket, account_id: int) -> None:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
         account = db.get(Account, account_id)
-        target = viewer_target(account.terminal_state if account else None)
+        target = viewer_target(account.terminal_state if account else None, control=control)
 
     if target is None:
         await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
@@ -162,7 +188,10 @@ async def stream(websocket: WebSocket, account_id: int) -> None:
         return
 
     await websocket.accept(subprotocol="binary")
-    log.info("watching account %s on %s:%s", account_id, host, port)
+    log.info(
+        "%s account %s on %s:%s",
+        "driving" if control else "watching", account_id, host, port,
+    )
 
     async def to_browser(data: bytes) -> None:
         await websocket.send_bytes(data)
@@ -174,10 +203,9 @@ async def stream(websocket: WebSocket, account_id: int) -> None:
         return await websocket.receive_bytes()
 
     async def to_terminal(data: bytes) -> None:
-        # The server is running -viewonly, so this only ever carries the
-        # client's half of the handshake -- protocol version, security type,
-        # framebuffer update requests. It is still forwarded, because without
-        # the requests nothing is ever redrawn.
+        # Forwarded whole. On the watching port the far end is -viewonly and
+        # drops anything that is not a redraw request; on the control port the
+        # user asked for it to arrive.
         writer.write(data)
         await writer.drain()
 

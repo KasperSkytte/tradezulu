@@ -602,7 +602,11 @@ class TerminalStateIn(BaseModel):
     #: screen is served on. One per account, which is what lets the web
     #: interface show one terminal without showing anybody else's.
     display: str = Field(default="", max_length=64)
+    #: Two servers on that display: one that only shows it, one that also takes
+    #: a keyboard and mouse. Which one a viewer is given is decided per
+    #: connection, so the refusal is x11vnc's rather than a filter of ours.
     vnc_port: int | None = None
+    vnc_control_port: int | None = None
 
 
 class TerminalStatesIn(BaseModel):

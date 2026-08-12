@@ -142,6 +142,10 @@ sudo systemctl restart tradezulu-agent
 installs only what is missing, and leaves your prefixes, templates and database
 alone.
 
+Two ports per terminal are opened on the Docker bridge, both bound to that
+address alone: `59NN` to watch and `60NN` to drive, where `NN` is the display
+number. Nothing on your network can reach either.
+
 Terminals that were already running are still on the old shared display, and
 nothing about them is unhealthy, so supervision would leave them there for
 ever — with Inspect showing whichever of them happens to be on top. The
@@ -207,10 +211,15 @@ Set `TZ_LOG_LEVEL=DEBUG` for verbose output when something is misbehaving.
 - Terminals only ever talk outwards, to `127.0.0.1`. Nothing listens on their
   behalf, so there is no port to expose and none to secure.
 - The exception is the terminal viewer, and it is a narrow one. Each screen is
-  served by an x11vnc bound to the host end of the Docker bridge — reachable by
+  served by x11vnc bound to the host end of the Docker bridge — reachable by
   the TradeZulu container and by nothing on your network — and the site relays
   it to the browser over the same authenticated session as the rest of the API.
-  The servers run `-viewonly`, so a viewer cannot click on a live account.
+- Each display has *two* servers: one `-viewonly`, one that accepts a keyboard
+  and mouse. Inspect connects to the first. **Take control** reconnects to the
+  second, after a warning, and the header stays red for as long as you hold it.
+  Two servers rather than one that is told what to allow, so the refusal is
+  x11vnc's own: a viewer that has not asked for control cannot send a click
+  whatever the browser does.
 - One screen per account is what makes that viewer safe to have at all: it
   shows one terminal because there is only one terminal on the display it is
   connected to. Note that accounts themselves are not owned by anybody yet —

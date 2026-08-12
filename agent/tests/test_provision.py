@@ -632,6 +632,19 @@ class TestOneScreenPerAccount:
         assert tz.vnc_port_for(tz.display_for(1)) == 5978
         assert tz.vnc_port_for(tz.display_for(2)) == 5979
 
+    def test_watching_and_driving_are_different_ports(self, monkeypatch):
+        """Two servers on the one display, so the view-only refusal is x11vnc's
+        own rather than a filter that could have a hole in it."""
+        monkeypatch.setattr(tz, "DISPLAY", ":77")
+        assert tz.vnc_port_for(tz.display_for(1), control=True) == 6078
+        assert tz.vnc_port_for(tz.display_for(1)) != tz.vnc_port_for(
+            tz.display_for(1), control=True
+        )
+
+    def test_a_display_elsewhere_has_neither(self, monkeypatch):
+        monkeypatch.setattr(tz, "DISPLAY", "127.0.0.1:77")
+        assert tz.vnc_port_for(tz.display_for(1), control=True) is None
+
     def test_a_display_somewhere_else_cannot_be_multiplied(self, monkeypatch):
         """``host:N`` is another machine's screen, and there is no second one."""
         monkeypatch.setattr(tz, "DISPLAY", "127.0.0.1:77")

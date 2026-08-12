@@ -298,6 +298,7 @@ def terminal_states(payload: TerminalStatesIn, db: Session = Depends(get_db)) ->
             # account's screen.
             "display": entry.display,
             "vnc_port": entry.vnc_port,
+            "vnc_control_port": entry.vnc_control_port,
         }
     db.commit()
 
