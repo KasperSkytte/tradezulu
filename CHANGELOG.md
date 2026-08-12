@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.29.1](https://github.com/KasperSkytte/tradezulu/compare/v1.29.0...v1.29.1) (2026-08-12)
+
+
+### Bug fixes
+
+* **chart:** put the fill arrows beside the candles, not on them ([c49a540](https://github.com/KasperSkytte/tradezulu/commit/c49a540e01b693774b2c21df305ae94826703285))
+* **demo:** a repeated day stopped the demo journal from seeding at all ([eeabcea](https://github.com/KasperSkytte/tradezulu/commit/eeabcea2aaa0b1ea84550f39a7150ac9cd8ffff4))
+
 ## [1.29.0](https://github.com/KasperSkytte/tradezulu/compare/v1.28.0...v1.29.0) (2026-08-12)
 
 
