@@ -317,14 +317,25 @@ NOTES = [
 
 
 def _seed_notes(db, rng: random.Random, trades: list[Trade]) -> None:
-    """A few days somebody wrote about, so the calendar shows its markers."""
+    """A few days somebody wrote about, so the calendar shows its markers.
+
+    One note per day, and the day is drawn at random -- so two draws can land
+    on the same one. The database was asked whether a note existed, which is
+    the right question and the wrong place to ask it: the session does not
+    autoflush, so notes added a moment earlier in this same loop were invisible
+    to it and the duplicate only surfaced as an IntegrityError at commit. That
+    took the whole seed down, and with it `docker compose run ... demo`, on
+    whichever dates the draw happened to collide.
+    """
     days = sorted({(t.closed_at or t.opened_at).date() for t in trades})
     if not days:
         return
+    taken = {note.day for note in db.scalars(select(DayNote))}
     for content, mood in NOTES:
         day = rng.choice(days[-40:])
-        if db.scalar(select(DayNote).where(DayNote.day == day)):
+        if day in taken:
             continue
+        taken.add(day)
         db.add(DayNote(day=day, content=content, mood=mood))
 
 
