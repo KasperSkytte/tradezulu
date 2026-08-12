@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -208,6 +208,30 @@ def _candle_seconds(charts: dict[str, Any]) -> int:
     return timeframes.seconds(name if name in timeframes.TIMEFRAMES else "M5")
 
 
+def _poll_seconds(db: Session, account: Account) -> int:
+    """How often this terminal should report in.
+
+    The master gets the fast rate too, whenever any slave is armed. It used to
+    be given the slow one on the grounds that nothing is asked of it -- but
+    every copy waits on it: a slave cannot be told to open a position the
+    server has not heard about yet, and the server only hears about it when
+    the master's next heartbeat arrives. Ten seconds there was ten seconds
+    added to every copy, and it was the largest part of the delay by far.
+
+    Slow again when no slave is armed, because then nothing is waiting and a
+    poll every two seconds is a request per second per terminal, all day, for
+    a journal that is only being written to.
+    """
+    if account.role == "slave":
+        return 2 if account.copy_enabled else 10
+    armed = db.scalar(
+        select(func.count())
+        .select_from(Account)
+        .where(Account.role == "slave", Account.copy_enabled.is_(True))
+    )
+    return 2 if armed else 10
+
+
 @router.post("/poll", response_model=AgentPollOut)
 def poll(payload: AgentPollIn, db: Session = Depends(get_db)) -> AgentPollOut:
     """One heartbeat from a terminal: here is my state, what should I do?"""
@@ -251,7 +275,7 @@ def poll(payload: AgentPollIn, db: Session = Depends(get_db)) -> AgentPollOut:
         enabled=bool(account.copy_enabled),
         dry_run=bool(account.copy_dry_run),
         halted=bool(account.copy_halted),
-        poll_seconds=2 if account.role == "slave" and account.copy_enabled else 10,
+        poll_seconds=_poll_seconds(db, account),
         history_before_seconds=_history_seconds(charts, "history_days_before"),
         history_after_seconds=_history_seconds(charts, "history_days_after"),
         candle_seconds=_candle_seconds(charts),

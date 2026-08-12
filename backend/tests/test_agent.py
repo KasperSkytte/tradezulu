@@ -181,13 +181,16 @@ class TestSlaveCommands:
                                     json=account_payload("9001", "Slave-Server"))
         assert response.json()["commands"] == []
 
-    def test_a_slave_polls_faster_than_a_master(self, auth_client, master, slave):
+    def test_both_ends_poll_fast_while_copying(self, auth_client, master, slave):
+        """The master used to be the slow one, and it is the one every copy
+        waits on: a slave cannot be told to open a position the server has not
+        heard about yet."""
         arm(auth_client, slave)
-        fast = auth_client.post("/api/agent/poll",
-                                json=account_payload("9001", "Slave-Server")).json()
-        slow = auth_client.post("/api/agent/poll",
-                                json=account_payload("5000", "Master-Server")).json()
-        assert fast["poll_seconds"] < slow["poll_seconds"]
+        slave_reply = auth_client.post("/api/agent/poll",
+                                       json=account_payload("9001", "Slave-Server")).json()
+        master_reply = auth_client.post("/api/agent/poll",
+                                        json=account_payload("5000", "Master-Server")).json()
+        assert slave_reply["poll_seconds"] == master_reply["poll_seconds"] == 2
 
 
 class TestResults:
@@ -884,3 +887,36 @@ class TestTheBrokersSymbolList:
         db.expire_all()
         refreshed = db.get(Account, master.id)
         assert (refreshed.balance, refreshed.equity) == (5_000.0, 5_120.0)
+
+
+class TestHowOftenATerminalReportsIn:
+    """The master's cadence is the copier's latency.
+
+    A slave cannot be told to open a position the server has not heard about,
+    and the server hears about it on the master's next heartbeat. Ten seconds
+    there was ten seconds on the front of every copy.
+    """
+
+    def test_the_master_is_slow_when_nothing_is_armed(self, auth_client, db, master, slave):
+        slave.copy_enabled = False
+        db.commit()
+        payload = account_payload("5000", "Master-Server")
+        assert auth_client.post("/api/agent/poll", json=payload).json()["poll_seconds"] == 10
+
+    def test_the_master_speeds_up_for_an_armed_slave(self, auth_client, db, master, slave):
+        slave.copy_enabled = True
+        db.commit()
+        payload = account_payload("5000", "Master-Server")
+        assert auth_client.post("/api/agent/poll", json=payload).json()["poll_seconds"] == 2
+
+    def test_an_armed_slave_is_fast(self, auth_client, db, slave):
+        slave.copy_enabled = True
+        db.commit()
+        payload = account_payload(slave.login, slave.server)
+        assert auth_client.post("/api/agent/poll", json=payload).json()["poll_seconds"] == 2
+
+    def test_a_disarmed_slave_is_slow(self, auth_client, db, slave):
+        slave.copy_enabled = False
+        db.commit()
+        payload = account_payload(slave.login, slave.server)
+        assert auth_client.post("/api/agent/poll", json=payload).json()["poll_seconds"] == 10
