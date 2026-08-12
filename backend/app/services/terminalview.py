@@ -63,22 +63,16 @@ def bridge_address() -> str:
     return ""
 
 
-def viewer_target(terminal_state: dict | None, control: bool = False) -> tuple[str, int] | None:
+def viewer_target(terminal_state: dict | None) -> tuple[str, int] | None:
     """Where to connect for this account's screen, if it has one yet.
 
-    Two ports, one display: the first server only shows the screen, the second
-    also accepts input. Asking for control is therefore a different socket
-    rather than a flag on this one -- whether a click can reach the terminal is
-    settled by which x11vnc answers, not by anything here choosing to forward
-    it or not.
-
-    The ports come from the provisioner rather than from arithmetic here. It is
-    what started the servers and knows which display each terminal is on, and a
+    The port comes from the provisioner rather than from arithmetic here. It is
+    what started the server and knows which display each terminal is on, and a
     port worked out independently in two places is a port that eventually
     disagrees.
     """
     state = terminal_state or {}
-    port = state.get("vnc_control_port" if control else "vnc_port")
+    port = state.get("vnc_port")
     if not port:
         return None
     host = bridge_address() or "127.0.0.1"

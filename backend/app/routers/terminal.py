@@ -9,11 +9,10 @@ on the host. A browser cannot speak RFB to a TCP socket, so this relays the
 two -- which is all websockify does, and it is not worth a second service to
 do it.
 
-Watching and driving are different sockets, not a flag. The provisioner runs
-two x11vnc servers on each display -- one ``-viewonly``, one not -- and a
-viewer that has not asked for control is connected to the first, which will
-not accept a click whatever the browser sends. Nothing here inspects the
-stream to decide; there is no filter of mine in the path to have a hole in it.
+The screen is live in both directions: the keyboard and mouse reach the
+terminal, because watching one stuck on a dialog and being unable to answer it
+is half a debugging session. The page says so in red for as long as it is
+open, and the socket needs the same session cookie as the rest of the API.
 """
 
 from __future__ import annotations
@@ -67,10 +66,6 @@ def viewable(account_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
         "account_id": account.id,
         "login": account.login,
         "available": target is not None,
-        # Whether this install can hand over a keyboard and mouse at all. An
-        # older provisioner runs one server per display and it is view-only,
-        # so the page has to know not to offer what cannot be given.
-        "can_control": viewer_target(state, control=True) is not None,
         "phase": state.get("phase") or "",
         "message_phase": _phase_message(state),
         "display": state.get("display") or "",
@@ -155,7 +150,7 @@ def _phase_message(state: dict) -> str:
 
 
 @router.websocket("/{account_id}/stream")
-async def stream(websocket: WebSocket, account_id: int, control: bool = False) -> None:
+async def stream(websocket: WebSocket, account_id: int) -> None:
     """Relay one account's screen to the browser.
 
     The RFB protocol is a byte stream in both directions and noVNC speaks it
@@ -173,7 +168,7 @@ async def stream(websocket: WebSocket, account_id: int, control: bool = False) -
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
         account = db.get(Account, account_id)
-        target = viewer_target(account.terminal_state if account else None, control=control)
+        target = viewer_target(account.terminal_state if account else None)
 
     if target is None:
         await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
@@ -188,10 +183,7 @@ async def stream(websocket: WebSocket, account_id: int, control: bool = False) -
         return
 
     await websocket.accept(subprotocol="binary")
-    log.info(
-        "%s account %s on %s:%s",
-        "driving" if control else "watching", account_id, host, port,
-    )
+    log.info("watching account %s on %s:%s", account_id, host, port)
 
     async def to_browser(data: bytes) -> None:
         await websocket.send_bytes(data)
@@ -203,9 +195,8 @@ async def stream(websocket: WebSocket, account_id: int, control: bool = False) -
         return await websocket.receive_bytes()
 
     async def to_terminal(data: bytes) -> None:
-        # Forwarded whole. On the watching port the far end is -viewonly and
-        # drops anything that is not a redraw request; on the control port the
-        # user asked for it to arrive.
+        # Redraw requests and, because the server is not view-only, whatever
+        # the person watching typed or clicked.
         writer.write(data)
         await writer.drain()
 

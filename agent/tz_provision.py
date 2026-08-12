@@ -59,12 +59,7 @@ DISPLAY = os.getenv("TZ_DISPLAY", ":77")
 #: server per display, so a viewer is connected to exactly one account.
 VNC_PORT_BASE = int(os.getenv("TZ_VNC_PORT_BASE", "5900"))
 
-#: And a second server on the same display, this one accepting input, at
-#: 6078 for :78. Two servers rather than one that is told what to allow: the
-#: refusal is then x11vnc's own -- a viewer connected to the first port cannot
-#: send a click no matter what it does, because that server will not take one.
-#: Which port a browser reaches is decided by the site, per connection.
-CONTROL_PORT_BASE = int(os.getenv("TZ_CONTROL_PORT_BASE", "6000"))
+
 
 
 def display_for(account_id: int) -> str:
@@ -82,16 +77,11 @@ def display_for(account_id: int) -> str:
     return f":{base + int(account_id)}"
 
 
-def vnc_port_for(display: str, control: bool = False) -> int | None:
-    """The port this display is served on, or None if it is not ours to serve.
-
-    Two ports per display: one that only ever shows, one that also accepts a
-    keyboard and mouse.
-    """
+def vnc_port_for(display: str) -> int | None:
+    """The port this display is served on, or None if it is not ours to serve."""
     if not display.startswith(":"):
         return None
-    base = CONTROL_PORT_BASE if control else VNC_PORT_BASE
-    return base + int(display[1:].split(".")[0])
+    return VNC_PORT_BASE + int(display[1:].split(".")[0])
 
 
 # --- talking to TradeZulu ----------------------------------------------------
@@ -242,29 +232,27 @@ def ensure_display(display: str = "", required: bool = True) -> bool:
     return True
 
 
-def ensure_vnc(display: str, bind: str) -> tuple[int | None, int | None]:
-    """Serve one display over VNC, for the web interface to show.
+def ensure_vnc(display: str, bind: str) -> int | None:
+    """Serve one display over VNC, for the web interface to show and drive.
 
     One display per account, which is what makes this safe to put on a web page
     at all: a viewer is connected to a single account's screen and there is no
     window on it belonging to anybody else.
 
-    Two servers on it. The first only ever shows the screen; the second also
-    accepts a keyboard and mouse. Two rather than one that is told what to
-    allow, because then the refusal is x11vnc's own: a browser on the first
-    port cannot send a click whatever it does, and there is no filtering of
-    mine in the path that could have a hole in it. Which port a browser is
-    given is the site's decision, made per connection.
+    Not ``-viewonly``. Watching a terminal stuck on a dialog and being unable
+    to answer it is half a debugging session, so the server takes a keyboard
+    and mouse and the page says so in red for as long as it is open. What
+    stops a stray click is that nobody has the page open by accident, not a
+    second server nobody used.
 
-    Both are bound to the address TradeZulu reported -- the host end of the
-    bridge its container sits on -- so the site can reach them and the network
-    the machine is on cannot. Never 0.0.0.0: these are logged-in trading
-    terminals, and x11vnc's own authentication is not worth relying on.
+    Bound to the address TradeZulu reported -- the host end of the bridge its
+    container sits on -- so the site can reach it and the network the machine
+    is on cannot. Never 0.0.0.0: these are logged-in trading terminals, and
+    x11vnc's own authentication is not worth relying on.
     """
-    watch = vnc_port_for(display)
-    control = vnc_port_for(display, control=True)
-    if watch is None or control is None or not bind:
-        return None, None
+    port = vnc_port_for(display)
+    if port is None or not bind:
+        return None
 
     if shutil.which("x11vnc") is None:
         log.warning(
@@ -272,33 +260,28 @@ def ensure_vnc(display: str, bind: str) -> tuple[int | None, int | None]:
             "interface. apt install x11vnc",
             display,
         )
-        return None, None
+        return None
 
-    for port, viewonly in ((watch, True), (control, False)):
-        if _vnc_running(port):
-            continue
-        log.info(
-            "serving %s on %s:%s (%s)",
-            display, bind, port, "view only" if viewonly else "with input",
-        )
-        subprocess.Popen(
-            [
-                "x11vnc",
-                "-display", display,
-                "-listen", bind,
-                "-rfbport", str(port),
-                *(["-viewonly"] if viewonly else []),
-                "-shared", "-forever", "-nopw", "-quiet",
-                # Without this it exits the moment the display it was started
-                # for blinks, and nothing would bring it back until the next
-                # cycle.
-                "-loop",
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-    return watch, control
+    if _vnc_running(port):
+        return port
+
+    log.info("serving %s on %s:%s", display, bind, port)
+    subprocess.Popen(
+        [
+            "x11vnc",
+            "-display", display,
+            "-listen", bind,
+            "-rfbport", str(port),
+            "-shared", "-forever", "-nopw", "-quiet",
+            # Without this it exits the moment the display it was started for
+            # blinks, and nothing would bring it back until the next cycle.
+            "-loop",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    return port
 
 
 def _vnc_running(port: int) -> bool:
@@ -1126,9 +1109,6 @@ def reconcile(plan: Plan, template: Path, expert: Path, settled: bool = True) ->
                 account_id=int(spec["account_id"]),
                 display=display_for(int(spec["account_id"])),
                 vnc_port=vnc_port_for(display_for(int(spec["account_id"]))),
-                vnc_control_port=vnc_port_for(
-                    display_for(int(spec["account_id"])), control=True
-                ),
                 **terminal_status(
                     spec,
                     bottle_for(int(spec["account_id"])),

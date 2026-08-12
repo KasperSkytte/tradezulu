@@ -142,9 +142,9 @@ sudo systemctl restart tradezulu-agent
 installs only what is missing, and leaves your prefixes, templates and database
 alone.
 
-Two ports per terminal are opened on the Docker bridge, both bound to that
-address alone: `59NN` to watch and `60NN` to drive, where `NN` is the display
-number. Nothing on your network can reach either.
+One port per terminal is opened on the Docker bridge and bound to that address
+alone -- `59NN`, where `NN` is the display number. Nothing on your network can
+reach it.
 
 Terminals that were already running are still on the old shared display, and
 nothing about them is unhealthy, so supervision would leave them there for
@@ -214,12 +214,10 @@ Set `TZ_LOG_LEVEL=DEBUG` for verbose output when something is misbehaving.
   served by x11vnc bound to the host end of the Docker bridge — reachable by
   the TradeZulu container and by nothing on your network — and the site relays
   it to the browser over the same authenticated session as the rest of the API.
-- Each display has *two* servers: one `-viewonly`, one that accepts a keyboard
-  and mouse. Inspect connects to the first. **Take control** reconnects to the
-  second, after a warning, and the header stays red for as long as you hold it.
-  Two servers rather than one that is told what to allow, so the refusal is
-  x11vnc's own: a viewer that has not asked for control cannot send a click
-  whatever the browser does.
+- The screen is live in both directions: your keyboard and mouse reach the
+  terminal, so a dialog it is stuck on can be answered. The viewer carries a
+  red banner saying so for as long as it is open. Treat opening it on a live
+  account the way you would treat sitting down at the terminal itself.
 - One screen per account is what makes that viewer safe to have at all: it
   shows one terminal because there is only one terminal on the display it is
   connected to. Note that accounts themselves are not owned by anybody yet —

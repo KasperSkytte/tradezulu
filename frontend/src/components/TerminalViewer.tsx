@@ -10,14 +10,14 @@
  * not in this component, which could not leak another account's screen if it
  * tried, because those pixels are not on the display it is connected to.
  *
- * Watching and driving are different sockets rather than a setting on one. The
- * provisioner runs two VNC servers on each display, one of them view-only, and
- * a viewer that has not asked for control is connected to that one -- so a
- * click cannot reach the terminal even if this file is wrong about everything.
+ * The screen is live in both directions. Watching a terminal stuck on a dialog
+ * and being unable to answer it is half a debugging session, so the keyboard
+ * and mouse reach it -- and the banner says so, in red, for as long as the
+ * viewer is open.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Hand, Monitor, RefreshCw, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Monitor, RefreshCw, X } from 'lucide-react'
 import RFB from '@novnc/novnc'
 import { api } from '../lib/api'
 import { Button } from './ui'
@@ -26,7 +26,6 @@ type Viewable = {
   account_id: number
   login: string
   available: boolean
-  can_control: boolean
   phase: string
   message_phase: string
   display: string
@@ -49,8 +48,6 @@ export function TerminalViewer({
   const [status, setStatus] = useState<Status>('asking')
   const [message, setMessage] = useState('')
   const [phaseNote, setPhaseNote] = useState('')
-  const [canControl, setCanControl] = useState(false)
-  const [control, setControl] = useState(false)
 
   useEffect(() => {
     let rfb: RFB | null = null
@@ -70,7 +67,6 @@ export function TerminalViewer({
         return
       }
       if (dropped) return
-      setCanControl(info.can_control)
       // An empty display is black, and black with nothing said over it reads
       // as a broken viewer rather than as a terminal that has not been built
       // yet. Kept beside the picture, not instead of it: the screen is still
@@ -84,15 +80,13 @@ export function TerminalViewer({
 
       setStatus('connecting')
       const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws'
-      const url =
-        `${scheme}://${window.location.host}/api/terminal/${accountId}/stream` +
-        (control ? '?control=true' : '')
+      const url = `${scheme}://${window.location.host}/api/terminal/${accountId}/stream`
       rfb = new RFB(screen.current!, url, { wsProtocols: ['binary'] })
       // The terminal's display is 1400x1000 and the panel is not, so the
       // picture is scaled to fit whatever size the panel has been dragged to.
       rfb.scaleViewport = true
       rfb.clipViewport = false
-      rfb.viewOnly = !control
+      rfb.viewOnly = false
       rfb.addEventListener('connect', () => !dropped && setStatus('watching'))
       rfb.addEventListener('disconnect', () => {
         if (dropped) return
@@ -108,9 +102,7 @@ export function TerminalViewer({
       // is left holding a client that nobody is looking at.
       rfb?.disconnect()
     }
-    // Control is part of this: taking it means a different socket, to the
-    // server on the display that accepts input, so the session is remade.
-  }, [accountId, control])
+  }, [accountId])
 
   // noVNC rescales its canvas when the *window* resizes, and the panel here
   // resizes on its own. Telling it the window changed is what its own handler
@@ -122,23 +114,6 @@ export function TerminalViewer({
     observer.observe(element)
     return () => observer.disconnect()
   }, [])
-
-  const takeControl = useCallback(() => {
-    if (control) {
-      setControl(false)
-      return
-    }
-    const ok = window.confirm(
-      `Take control of the terminal for ${login}?\n\n` +
-        'This is the real MetaTrader, logged into the real account. A click ' +
-        'can place, modify or close an order, and nothing here asks twice ' +
-        'before it does.\n\n' +
-        'The provisioner may also be driving this terminal at the same moment ' +
-        '— if it is part-way through a dialog, your clicks and its clicks land ' +
-        'on the same window.',
-    )
-    if (ok) setControl(true)
-  }, [control, login])
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
@@ -155,37 +130,31 @@ export function TerminalViewer({
           <div>
             <h2 className="text-sm font-semibold text-[var(--tz-text)]">Terminal for {login}</h2>
             <p className="text-xs text-[var(--tz-text-muted)]">
-              {status !== 'watching'
-                ? 'Not connected'
-                : control
-                  ? 'Live — your keyboard and mouse reach this terminal'
-                  : 'Live, view only'}
+              {status === 'watching'
+                ? 'Live — your keyboard and mouse reach this terminal'
+                : 'Not connected'}
             </p>
           </div>
 
-          <div className="ml-auto flex items-center gap-2">
-            {canControl && (
-              <Button
-                variant={control ? 'danger' : 'ghost'}
-                icon={<Hand size={14} />}
-                onClick={takeControl}
-              >
-                {control ? 'Give up control' : 'Take control'}
-              </Button>
-            )}
-            <button
-              onClick={onClose}
-              aria-label="Close"
-              className="rounded-md p-1.5 text-[var(--tz-text-muted)] hover:bg-[var(--tz-surface-raised)] hover:text-[var(--tz-text)]"
-            >
-              <X size={18} />
-            </button>
-          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="ml-auto rounded-md p-1.5 text-[var(--tz-text-muted)] hover:bg-[var(--tz-surface-raised)] hover:text-[var(--tz-text)]"
+          >
+            <X size={18} />
+          </button>
         </header>
 
-        {control && status === 'watching' && (
-          <p className="shrink-0 border-b border-[var(--tz-border)] bg-[var(--tz-loss)]/10 px-4 py-2 text-xs text-[var(--tz-loss)]">
-            You are driving a live terminal. A click here can place or close a real order.
+        {/* No confirmation to click through, because the warning is not about
+            one moment: it is true for as long as the window is open, and a
+            banner that stays is a better guard than a box that is dismissed
+            and forgotten. */}
+        {status === 'watching' && (
+          <p className="shrink-0 border-b border-[var(--tz-border)] bg-[var(--tz-loss)]/10 px-4 py-2 text-xs leading-relaxed text-[var(--tz-loss)]">
+            This is the live terminal for {login}. Your clicks and keystrokes reach it: an
+            order can be placed, changed or closed from here. Closing the chart the Expert
+            Advisor is attached to stops this account copying until the terminal is
+            restarted.
           </p>
         )}
 
