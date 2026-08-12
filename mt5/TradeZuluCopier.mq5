@@ -51,6 +51,7 @@ input ENUM_TIMEFRAMES CandleTimeframe = PERIOD_M5;   // Which timeframe to send 
 input int    CandlesBefore    = 288;   // Bars before the entry (until the server says)
 input int    CandlesAfter     = 288;   // Bars after the exit (until the server says)
 input int    CandleBackfillDays = 60;  // How far back to fetch charts for trades already journalled
+input bool   PlainChart       = true;  // Hide the bars on this chart and show only the status text
 
 //--- state ----------------------------------------------------------
 string g_status       = "starting";
@@ -105,6 +106,9 @@ int OnInit()
    if(!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED))
       Print("TradeZulu: algorithmic trading is switched off in this terminal. "
             "Reads will work; orders will be refused until you allow it.");
+
+   if(PlainChart)
+      StyleChart();
 
    g_poll_seconds = MathMax(1, PollSeconds);
    EventSetTimer(1);   // first tick promptly, then settle to the agreed rate
@@ -1064,6 +1068,59 @@ bool HttpPost(const string path, const string body, string &reply)
       return false;
    }
    return true;
+}
+
+//+------------------------------------------------------------------+
+//| Make this chart a background for the status text, nothing more.  |
+//|                                                                  |
+//| The chart the copier sits on is not there to be read. Nobody      |
+//| chose its symbol -- the provisioner opens EURUSD H1 because       |
+//| something has to hold the expert -- and now that the terminal can |
+//| be watched from the web interface, a wall of candles nobody asked |
+//| for is the first thing on screen. What is worth reading is the    |
+//| comment this EA writes, and that was competing with the bars      |
+//| behind it.                                                        |
+//|                                                                  |
+//| MetaTrader has no "hide the bars" switch, so they are painted in  |
+//| the background colour: the drawing still happens and there is     |
+//| nothing to see. The green is TradeZulu's own, so a glance at the  |
+//| terminal matches a glance at the site.                            |
+//+------------------------------------------------------------------+
+void StyleChart()
+{
+   const color background = C'18,176,111';   // --tz-gain, #12b06f
+   const color text       = C'255,255,255';
+
+   ChartSetInteger(0, CHART_COLOR_BACKGROUND, background);
+   ChartSetInteger(0, CHART_COLOR_FOREGROUND, text);
+
+   // Everything that draws price, in the colour of the thing behind it.
+   const int hidden[] = {
+      CHART_COLOR_GRID, CHART_COLOR_CHART_UP, CHART_COLOR_CHART_DOWN,
+      CHART_COLOR_CHART_LINE, CHART_COLOR_CANDLE_BULL, CHART_COLOR_CANDLE_BEAR,
+      CHART_COLOR_VOLUME, CHART_COLOR_BID, CHART_COLOR_ASK, CHART_COLOR_LAST,
+      CHART_COLOR_STOP_LEVEL
+   };
+   for(int i = 0; i < ArraySize(hidden); i++)
+      ChartSetInteger(0, (ENUM_CHART_PROPERTY_INTEGER)hidden[i], background);
+
+   // And everything that would draw furniture around them.
+   ChartSetInteger(0, CHART_SHOW_GRID, false);
+   ChartSetInteger(0, CHART_SHOW_VOLUMES, CHART_VOLUME_HIDE);
+   ChartSetInteger(0, CHART_SHOW_OHLC, false);
+   ChartSetInteger(0, CHART_SHOW_BID_LINE, false);
+   ChartSetInteger(0, CHART_SHOW_ASK_LINE, false);
+   ChartSetInteger(0, CHART_SHOW_LAST_LINE, false);
+   ChartSetInteger(0, CHART_SHOW_PERIOD_SEP, false);
+   ChartSetInteger(0, CHART_SHOW_OBJECT_DESCR, false);
+   ChartSetInteger(0, CHART_SHOW_TRADE_LEVELS, false);
+   ChartSetInteger(0, CHART_SHOW_PRICE_SCALE, false);
+   ChartSetInteger(0, CHART_SHOW_DATE_SCALE, false);
+   // The one-click panel and the symbol watermark would sit on the text.
+   ChartSetInteger(0, CHART_SHOW_ONE_CLICK, false);
+   ChartSetInteger(0, CHART_FOREGROUND, false);
+
+   ChartRedraw(0);
 }
 
 void ShowStatus()
