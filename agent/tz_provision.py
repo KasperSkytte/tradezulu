@@ -1174,6 +1174,22 @@ def ensure_terminal(
         return
 
     if is_running(bottle):
+        # A terminal started before this account had a screen of its own is
+        # still drawing on the shared one, and nothing about it being healthy
+        # will move it: Inspect would show whatever else is stacked there,
+        # which is the one thing per-account displays exist to prevent. Stopped
+        # once, on the pass after the upgrade, and the next cycle brings it
+        # back on its own screen. State written before an older version knew
+        # about displays reads as the old shared one, which is what it was.
+        was_on = str(state.get("display") or DISPLAY)
+        if was_on != display:
+            log.info(
+                "%s is on %s and now belongs on %s; stopping it so it comes "
+                "back on its own screen",
+                spec.get("login"), was_on, display,
+            )
+            stop_terminal(bottle)
+            return
         supervise(spec, plan, bottle, state, settled)
         return
 
@@ -1213,6 +1229,9 @@ def ensure_terminal(
         login=str(spec["login"]),
         server=str(spec.get("server") or ""),
         launched=datetime.now(timezone.utc).isoformat(),
+        # Which screen it was actually started on, so a later version moving
+        # the screens can tell what needs restarting and what does not.
+        display=display,
     )
     save_state(account_id, state)
 

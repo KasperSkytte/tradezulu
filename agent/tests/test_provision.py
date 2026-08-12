@@ -35,6 +35,12 @@ def bottles(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_waiting(monkeypatch):
+    """Nothing here is waiting for a real MetaTrader to reach a login."""
+    monkeypatch.setattr(tz.time, "sleep", lambda seconds: None)
+
+
+@pytest.fixture(autouse=True)
 def screens(monkeypatch):
     """Every account has a screen of its own; none of them is under test here.
 
@@ -658,7 +664,7 @@ class TestRestartingOneTerminal:
         stopped = []
         monkeypatch.setattr(tz, "is_running", lambda bottle: True)
         monkeypatch.setattr(tz, "stop_terminal", lambda bottle: stopped.append(bottle))
-        tz.save_state(1, {"login": "9"})
+        tz.save_state(1, {"login": "9", "display": tz.display_for(1)})
 
         tz.ensure_terminal(self._spec("2026-08-11T09:00:00"), tz.Plan("u", "k", [], {}),
                            Path("/template"), Path("/expert"))
@@ -673,7 +679,7 @@ class TestRestartingOneTerminal:
         monkeypatch.setattr(tz, "is_running", lambda bottle: True)
         monkeypatch.setattr(tz, "stop_terminal", lambda bottle: stopped.append(bottle))
         monkeypatch.setattr(tz, "supervise", lambda *a, **k: None)
-        tz.save_state(1, {"login": "9"})
+        tz.save_state(1, {"login": "9", "display": tz.display_for(1)})
 
         for _ in range(2):
             tz.ensure_terminal(self._spec("2026-08-11T09:00:00"), tz.Plan("u", "k", [], {}),
@@ -686,7 +692,64 @@ class TestRestartingOneTerminal:
         monkeypatch.setattr(tz, "is_running", lambda bottle: True)
         monkeypatch.setattr(tz, "stop_terminal", lambda bottle: pytest.fail("stopped"))
         monkeypatch.setattr(tz, "supervise", lambda *a, **k: None)
-        tz.save_state(1, {"login": "9"})
+        tz.save_state(1, {"login": "9", "display": tz.display_for(1)})
 
         tz.ensure_terminal(self._spec(), tz.Plan("u", "k", [], {}),
                            Path("/template"), Path("/expert"))
+
+
+class TestUpgradingFromOneSharedScreen:
+    """Terminals started before per-account displays are on the wrong one.
+
+    Nothing about such a terminal is unhealthy, so supervision leaves it alone
+    for ever -- and Inspect on the accounts page would show whatever else is
+    stacked on the shared screen, which is the one thing per-account displays
+    exist to prevent.
+    """
+
+    def _prefix(self):
+        prefix = tz.bottle_for(1)
+        prefix.mkdir(parents=True)
+        (prefix / "drive_c").mkdir()
+        (prefix / "drive_c/terminal64.exe").write_bytes(b"")
+        return prefix
+
+    def _run(self, monkeypatch, state):
+        self._prefix()
+        stopped = []
+        monkeypatch.setattr(tz, "DISPLAY", ":77")
+        monkeypatch.setattr(tz, "is_running", lambda bottle: True)
+        monkeypatch.setattr(tz, "stop_terminal", lambda bottle: stopped.append(bottle))
+        monkeypatch.setattr(tz, "supervise", lambda *a, **k: stopped.append("supervised"))
+        tz.save_state(1, state)
+        tz.ensure_terminal(
+            {"account_id": 1, "login": "9", "server": "S", "password": "p", "enabled": True},
+            tz.Plan("u", "k", [], {}), Path("/template"), Path("/expert"),
+        )
+        return stopped
+
+    def test_a_terminal_from_before_is_stopped_once(self, monkeypatch):
+        """No display recorded means it was started on the shared one."""
+        assert self._run(monkeypatch, {"login": "9"}) == [tz.bottle_for(1)]
+
+    def test_one_already_on_its_own_screen_is_left_alone(self, monkeypatch):
+        assert self._run(monkeypatch, {"login": "9", "display": ":78"}) == ["supervised"]
+
+    def test_the_screen_it_started_on_is_remembered(self, monkeypatch, tmp_path):
+        """Or the next upgrade cannot tell what needs moving."""
+        monkeypatch.setattr(tz, "DISPLAY", ":77")
+        monkeypatch.setattr(tz, "is_running", lambda bottle: False)
+        monkeypatch.setattr(tz, "stray_pids", lambda bottle: [])
+        monkeypatch.setattr(tz, "clear_strays", lambda bottle: None)
+        monkeypatch.setattr(tz, "install_expert", lambda *a: None)
+        monkeypatch.setattr(tz, "launch", lambda *a, **k: None)
+        monkeypatch.setattr(tz, "terminal_dir", lambda bottle: bottle / "drive_c")
+        self._prefix()
+        tz.save_state(1, {"login": "9"})
+
+        tz.ensure_terminal(
+            {"account_id": 1, "login": "9", "server": "S", "password": "p", "enabled": True},
+            tz.Plan("u", "k", [], {}), Path("/template"), Path("/expert"),
+        )
+
+        assert tz.load_state(1)["display"] == ":78"
