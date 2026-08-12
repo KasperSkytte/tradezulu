@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.28.0](https://github.com/KasperSkytte/tradezulu/compare/v1.27.0...v1.28.0) (2026-08-12)
+
+
+### Features
+
+* **accounts:** let a viewer take control of a terminal, with the warning first ([e3caf84](https://github.com/KasperSkytte/tradezulu/commit/e3caf84cc3eed39be94703e1ace08bd2a8ad3663))
+
+
+### Bug fixes
+
+* **accounts:** the terminal viewer drew its screen at zero by zero ([0fa7017](https://github.com/KasperSkytte/tradezulu/commit/0fa701730aa48ed567354ebb95bdff021dbb9480))
+
 ## [1.27.0](https://github.com/KasperSkytte/tradezulu/compare/v1.26.2...v1.27.0) (2026-08-12)
 
 
