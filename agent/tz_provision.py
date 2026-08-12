@@ -753,6 +753,35 @@ def write_startup(
     (terminal / "tzstart.ini").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def prune_charts(terminal: Path) -> int:
+    """Throw away the saved chart layout before starting.
+
+    The startup file names a symbol and an expert, and MetaTrader honours it by
+    opening a *new* chart every launch. It also saves the charts it had open
+    when it closed, so the next launch restores those and adds one more: a
+    terminal restarted thirty times comes up with thirty EURUSD windows.
+
+    Mostly that is clutter, and on a screen nobody looked at it went unnoticed
+    for a long time. It is not only clutter: MetaTrader saves a chart's expert
+    with the chart, and the copier has no single-instance guard -- so a
+    restored chart that kept its expert is a second copier on the same account,
+    acting on every command the server sends.
+
+    Cleared rather than counted, because the startup file puts back exactly the
+    one chart that matters. Anything opened by hand through the viewer goes
+    with it, which is the right trade for a terminal nobody sits at.
+    """
+    removed = 0
+    for profiles in terminal.glob("[Pp]rofiles"):
+        for chart in profiles.glob("[Cc]harts/*/chart*.chr"):
+            with suppress(OSError):
+                chart.unlink()
+                removed += 1
+    if removed:
+        log.info("cleared %d saved chart(s) from %s", removed, terminal.name)
+    return removed
+
+
 def launch(
     bottle: Path, terminal: Path, login: str, server: str, password: str, display: str = ""
 ) -> None:
@@ -764,6 +793,7 @@ def launch(
     """
     display = display or DISPLAY
     log.info("starting terminal for %s on %s (display %s)", login, server, display)
+    prune_charts(terminal)
     write_startup(terminal, login, server, password)
     script = (
         f'export WINEPREFIX="{bottle}" WINEDEBUG=-all DISPLAY={display}\n'

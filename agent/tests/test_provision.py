@@ -753,3 +753,54 @@ class TestUpgradingFromOneSharedScreen:
         )
 
         assert tz.load_state(1)["display"] == ":78"
+
+
+class TestChartsDoNotPileUp:
+    """One EURUSD window per restart, kept for ever by the saved profile.
+
+    The startup file names a symbol and an expert, so every launch opens a new
+    chart; MetaTrader saves what was open when it closed and restores it next
+    time. Thirty restarts, thirty windows -- and a restored chart keeps its
+    expert, which is a second copier on the same account.
+    """
+
+    def _terminal(self, charts=("chart01.chr", "chart02.chr")):
+        terminal = tz.bottle_for(1) / "drive_c/MT5"
+        default = terminal / "Profiles/Charts/Default"
+        default.mkdir(parents=True)
+        for name in charts:
+            (default / name).write_bytes(b"chart")
+        return terminal, default
+
+    def test_saved_charts_are_cleared(self):
+        terminal, default = self._terminal()
+        assert tz.prune_charts(terminal) == 2
+        assert list(default.glob("*.chr")) == []
+
+    def test_every_profile_is_cleared_not_just_the_default(self):
+        terminal, _ = self._terminal()
+        other = terminal / "Profiles/Charts/Market Overview"
+        other.mkdir(parents=True)
+        (other / "chart01.chr").write_bytes(b"chart")
+        assert tz.prune_charts(terminal) == 3
+
+    def test_anything_that_is_not_a_chart_is_left(self):
+        """The profile holds more than charts, and the rest is not ours."""
+        terminal, default = self._terminal()
+        (default / "order.wnd").write_bytes(b"window")
+        tz.prune_charts(terminal)
+        assert (default / "order.wnd").exists()
+
+    def test_a_terminal_with_no_profile_yet_is_not_an_error(self):
+        terminal = tz.bottle_for(1) / "drive_c/MT5"
+        terminal.mkdir(parents=True)
+        assert tz.prune_charts(terminal) == 0
+
+    def test_launching_clears_them(self, monkeypatch):
+        terminal, default = self._terminal()
+        monkeypatch.setattr(tz, "_flatpak_spawn", lambda script: None)
+        monkeypatch.setattr(tz, "_runner", lambda: Path("/wine"))
+
+        tz.launch(tz.bottle_for(1), terminal, "9", "S", "p", ":78")
+
+        assert list(default.glob("*.chr")) == []
