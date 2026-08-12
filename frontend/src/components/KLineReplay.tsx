@@ -134,6 +134,25 @@ registerOverlay<TradeExtras>({
   },
 })
 
+/** How far off the bar a fill's arrow sits, in pixels. Enough to clear the
+ *  wick and the one-pixel line at the end of it, and no more: an arrow that
+ *  floats is an arrow that has to be traced back to the bar it belongs to. */
+const GAP = 10
+
+/** The bar a moment falls in: the last one that had started by then.
+ *
+ *  Fills land wherever the market filled them, not on the minute a candle
+ *  opens, so the bar is the one whose period contains the fill rather than the
+ *  one whose timestamp matches it. */
+function barAt(bars: KLineData[], at: number): KLineData | undefined {
+  let found: KLineData | undefined
+  for (const bar of bars) {
+    if (bar.timestamp > at) break
+    found = bar
+  }
+  return found
+}
+
 /** One fill, at the minute it filled. */
 registerOverlay<{ label: string; color: string; above: boolean; family: string }>({
   name: 'tradezulu-fill',
@@ -146,8 +165,10 @@ registerOverlay<{ label: string; color: string; above: boolean; family: string }
     const extra = overlay.extendData
     if (!point || !extra) return []
     const { label, color, above, family } = extra
-    const tip = above ? point.y - 10 : point.y + 10
-    const base = above ? point.y - 2 : point.y + 2
+    // Measured from the bar's high or low, so the gap is between the arrow and
+    // the wick rather than between the arrow and a price inside the candle.
+    const base = above ? point.y - GAP : point.y + GAP
+    const tip = above ? base - 8 : base + 8
     return [
       {
         type: 'polygon',
@@ -372,17 +393,29 @@ export function KLineReplay({ trade, timeframe }: { trade: TradeDetail; timefram
     })
 
     for (const execution of trade.executions) {
+      const at = brokerEpoch(execution.time)
+      // A sell is marked above the bar and a buy below it, which is the
+      // convention every terminal uses and covers both ends of a trade in
+      // either direction: a long opens with a buy and closes with a sell, a
+      // short the other way round.
+      const above = execution.side === 'sell'
+      // Anchored to the bar's own high or low rather than to the price it
+      // filled at. The fill price is inside the candle by definition, so an
+      // arrow drawn there sits on top of the body -- covering the very bar it
+      // is pointing at. Clear of the wick, it points at the bar instead.
+      const bar = barAt(bars, at)
+      const anchor = bar ? (above ? bar.high : bar.low) : execution.price
       chart.createOverlay({
         name: 'tradezulu-fill',
         lock: true,
         zLevel: -1,
-        points: [{ timestamp: brokerEpoch(execution.time), value: execution.price }],
+        points: [{ timestamp: at, value: anchor }],
         extendData: {
           label: `${execution.kind === 'in' ? 'In' : 'Out'} ${execution.volume}`,
           family,
           color:
             execution.kind === 'in' ? entry : execution.profit >= 0 ? gain : loss,
-          above: execution.side === 'sell',
+          above,
         },
       })
     }
