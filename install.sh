@@ -165,11 +165,17 @@ MISSING=()
 # state uninstall.sh leaves behind. Re-installing after an uninstall therefore
 # skipped all four X packages and only said so much later, when building a
 # template failed on a missing xwininfo.
+# x11vnc serves each terminal's screen to the web interface. It used to be
+# optional -- looking at a terminal meant an SSH tunnel and your own viewer --
+# and is not any more: Inspect on the accounts page needs one running here.
 for entry in flatpak:flatpak xvfb:Xvfb xdotool:xdotool x11-utils:xwininfo \
-             openbox:openbox curl:curl; do
+             openbox:openbox x11vnc:x11vnc curl:curl; do
   command -v "${entry#*:}" >/dev/null 2>&1 || MISSING+=("${entry%%:*}")
 done
 if [ ${#MISSING[@]} -gt 0 ]; then
+  # Named before they are fetched, not after. This is the one step that puts
+  # packages on somebody's server, and "installing: xvfb x11vnc" ahead of it is
+  # the difference between a script that asks and a script that helps itself.
   say "installing: ${MISSING[*]}"
   ${SUDO} apt-get update -qq
   ${SUDO} apt-get install -y -qq "${MISSING[@]}"

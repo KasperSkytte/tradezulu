@@ -192,13 +192,19 @@ run rm -f "${BOTTLES}/.tz-last-maintenance"
 # the prefixes it describes.
 run rm -rf "${BOTTLES}/.tz-state"
 
-# The display the terminals drew on. Only ours -- :77 by default, and only if
-# nothing else is using it.
-if pgrep -f 'Xvfb :77' >/dev/null 2>&1; then
-  step "Stopping the virtual display"
-  run pkill -f 'Xvfb :77' || true
-  say "stopped :77"
-fi
+# The displays the terminals drew on, and the VNC servers on them. One per
+# account from :77 upwards, and only ever ours: the pattern is anchored so a
+# desktop session on :0 or somebody else's :1 is never matched.
+for n in $(seq 77 99); do
+  if pgrep -f "x11vnc -display :${n}\b" >/dev/null 2>&1; then
+    step "Stopping the viewer on :${n}"
+    run pkill -f "x11vnc -display :${n}\b" || true
+  fi
+  if pgrep -f "Xvfb :${n}\b" >/dev/null 2>&1; then
+    step "Stopping the virtual display :${n}"
+    run pkill -f "Xvfb :${n}\b" || true
+  fi
+done
 
 # --- the site ----------------------------------------------------------------
 
