@@ -31,7 +31,11 @@ entry = brokers.get(sys.argv[2])
 if not isinstance(entry, dict):
     known = [k for k, v in brokers.items() if isinstance(v, dict)]
     sys.exit("unknown broker {!r}; known: {}".format(sys.argv[2], ", ".join(known)))
-print(entry["installer"])
+# An empty installer is how a broker says it ships no terminal of its own --
+# it runs on the MetaQuotes build, which is what "default" carries. Passing
+# the empty string on to curl instead only produced "URL using bad/illegal
+# format", which reads like a broken link rather than a broker with no link.
+print(entry["installer"] or brokers["default"]["installer"])
 PY
 )" || die "$INSTALLER"
 
