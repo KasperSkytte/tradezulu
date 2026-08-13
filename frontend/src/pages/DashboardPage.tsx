@@ -163,11 +163,17 @@ export function DashboardPage() {
   // balance too, but marking twenty of them across two months buries the four
   // times money actually came in -- and the tooltip would have called them
   // deposits, which is the thing they are not.
+  const chartDays = summary.daily.map((day) => String(day.date).slice(0, 10))
   const flowByDay = new Map<string, number>()
   for (const flow of summary.cash_flows ?? []) {
     if (flow.kind === 'adjustment') continue
-    const key = String(flow.date).slice(0, 10)
-    flowByDay.set(key, (flowByDay.get(key) ?? 0) + flow.amount)
+    const on = String(flow.date).slice(0, 10)
+    // The axis only carries days that were traded, so money moved over a
+    // weekend has no column of its own. Mark it on the next day the chart
+    // does have -- the first place it can be seen -- rather than dropping it
+    // and leaving the step in the equity line unexplained.
+    const key = chartDays.find((day) => day >= on) ?? chartDays.at(-1)
+    if (key) flowByDay.set(key, (flowByDay.get(key) ?? 0) + flow.amount)
   }
 
   let running = 0
