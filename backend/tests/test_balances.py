@@ -270,3 +270,52 @@ class TestDailyReturns:
 
         assert days[0]["start_balance"] == pytest.approx(100.0)
         assert days[0]["return_pct"] == pytest.approx(100.0)
+
+
+class TestCreditIsPartOfTheArithmetic:
+    """A bonus the broker adds and takes away again.
+
+    It moves the balance exactly as a deposit does, so a reconstruction that
+    cannot see it walks off into numbers the account never had. On the
+    installation this was found on, five credit withdrawals in one evening
+    took the walk to minus 7.69 and twenty-two trades lost their percentages
+    with it -- every one of them came back once credit was counted.
+    """
+
+    def credit(self, db, account_id: int, when: datetime, amount: float) -> None:
+        db.add(
+            Deal(
+                account_id=account_id,
+                ticket=int(when.timestamp()) + 500_000,
+                deal_type=3,  # credit
+                profit=amount,
+                time=when,
+            )
+        )
+        db.flush()
+
+    def test_a_credit_that_is_taken_back_keeps_the_walk_on_its_feet(self, db):
+        row = account(db, balance=40.0)
+        # Funded small, propped up by credit, then the credit is pulled and
+        # the account trades on afterwards.
+        first = closed(db, row.id, datetime(2026, 6, 1, 10), -8.0)
+        self.credit(db, row.id, datetime(2026, 6, 1, 12), 30.0)
+        self.credit(db, row.id, datetime(2026, 6, 1, 18), -30.0)
+        deposit(db, row.id, datetime(2026, 6, 2, 9), 25.0)
+        second = closed(db, row.id, datetime(2026, 6, 3, 10), 3.0)
+
+        before = balance_before_trades(db, {row.id})
+
+        # Without credit in the walk the first trade lands below zero and is
+        # dropped; with it, both trades have the balance they really had.
+        assert before[first.id] == pytest.approx(20.0)
+        assert before[second.id] == pytest.approx(37.0)
+
+    def test_credit_moves_the_balance_like_a_deposit_does(self, db):
+        row = account(db, balance=100.0)
+        self.credit(db, row.id, datetime(2026, 6, 1, 9), 40.0)
+        after = closed(db, row.id, datetime(2026, 6, 2, 10), 10.0)
+
+        before = balance_before_trades(db, {row.id})
+
+        assert before[after.id] == pytest.approx(90.0)

@@ -35,9 +35,20 @@ from sqlalchemy.orm import Session
 
 from ..models import Account, Deal, EquityPoint, Trade
 
-#: MetaTrader's deal type for a balance operation -- a deposit, a withdrawal,
-#: or a credit adjustment. It moves the balance without being a trade.
+#: MetaTrader's deal type for a balance operation -- a deposit or a withdrawal.
+#: It moves the balance without being a trade.
 DEAL_TYPE_BALANCE = 2
+
+#: And credit: a bonus the broker adds to the balance and can take away again.
+#: It moves the balance exactly as a deposit does, so leaving it out of the
+#: reconstruction breaks the arithmetic -- an account here walked to minus
+#: 7.69 because five credit withdrawals in one evening were invisible to it,
+#: and twenty-two trades lost their percentages as a result.
+#:
+#: It is still not the account's money. It cannot be withdrawn, so it is
+#: counted while reconstructing what the broker's balance *was* and then taken
+#: back out of what the account is *worth*.
+DEAL_TYPE_CREDIT = 3
 
 
 @dataclass(frozen=True)
@@ -49,6 +60,9 @@ class Event:
     amount: float
     #: The trade it was, if it was one. Balance operations are not trades.
     trade_id: int | None
+    #: Credit rather than money: it moved the broker's balance and it is not
+    #: the account's to keep.
+    credit: bool = False
 
 
 def current_balance(db: Session, account: Account | None) -> float | None:
@@ -119,16 +133,34 @@ def _events(db: Session, account_id: int) -> list[Event]:
         )
     ]
     events += [
-        Event(time, time.date(), float(profit or 0.0), None)
-        for time, profit in db.execute(
-            select(Deal.time, Deal.profit).where(
-                Deal.account_id == account_id, Deal.deal_type == DEAL_TYPE_BALANCE
+        Event(time, time.date(), float(profit or 0.0), None, deal_type == DEAL_TYPE_CREDIT)
+        for time, profit, deal_type in db.execute(
+            select(Deal.time, Deal.profit, Deal.deal_type).where(
+                Deal.account_id == account_id,
+                Deal.deal_type.in_((DEAL_TYPE_BALANCE, DEAL_TYPE_CREDIT)),
             )
         )
         if time is not None
     ]
     events.sort(key=lambda event: (event.when, event.trade_id or 0))
     return events
+
+
+def _outstanding_credit(events: list[Event]) -> dict[int, float]:
+    """How much credit is sitting in the balance at each event, by position.
+
+    Walked forwards from nothing, because that is the only direction credit
+    makes sense in: it starts at zero, the broker adds some, the broker takes
+    it back. Keyed by index rather than by time so two events in the same
+    second keep their order.
+    """
+    running = 0.0
+    out: dict[int, float] = {}
+    for index, event in enumerate(events):
+        out[index] = running
+        if event.credit:
+            running += event.amount
+    return out
 
 
 def _walk(db: Session, account_id: int) -> list[tuple[Event, float | None]]:
@@ -171,6 +203,11 @@ def _walk(db: Session, account_id: int) -> list[tuple[Event, float | None]]:
             out.append((event, None))
             continue
         before = running - event.amount
+        # A reconstruction that still crosses zero with every balance event
+        # counted means the history is short of one -- money left without a
+        # record of it -- and that is unknown rather than zero. Credit taking
+        # the account underwater is a different thing and is handled where the
+        # money figure is worked out, not here.
         out.append((event, before if before > 0 else None))
         running = before
     out.reverse()

@@ -7,7 +7,6 @@ just an HTTP client, so the entire loop can be driven from a test.
 from __future__ import annotations
 
 import asyncio
-
 from datetime import date, datetime
 
 import pytest
