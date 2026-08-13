@@ -12,7 +12,7 @@ from sqlalchemy import select
 from ..deps import AppConfig, CurrentUser, DateRangeDep, DbSession, get_default_account
 from ..models import DayNote, EquityPoint, Trade
 from ..services.aggregation import resolve_account_size
-from ..services.balances import attach_daily_returns, opening_balance
+from ..services.balances import attach_daily_returns, equity_at_open, opening_balance
 from ..services.metrics import breakdowns, distributions, rolling_metrics, summarize
 from ..services.queries import TradeFilters, TradeFiltersDep, fetch_trades
 
@@ -84,6 +84,7 @@ def summary(
         period_start=range_.start,
         period_end=range_.end,
         single_account=single,
+        equity_at_open=equity_at_open(db, trades),
     )
     out["opening_balance"] = round(opening, 2) if single else None
     out["return_pct"] = (

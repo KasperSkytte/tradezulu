@@ -22,6 +22,19 @@ import { Gauge, Sparkline, StatTile, WinLossBar } from '../components/StatTile'
 import { ZuluScoreCard } from '../components/ZuluScoreCard'
 import { Card, CardHeader, DirectionBadge, EmptyState, ErrorState, Hint, Skeleton } from '../components/ui'
 
+/** Risk as a share of the equity each trade was opened against.
+ *
+ *  Worked out per trade on the server and averaged there, rather than by
+ *  dividing one median by one account size here: an account that grew tenfold
+ *  over a period risked a different fraction in January than in June, and one
+ *  denominator for the lot describes neither. Null when no trade in the period
+ *  had both a stop and a known equity behind it.
+ */
+function riskShare(summary: Summary, median: boolean): string | null {
+  const value = median ? summary.typical_risk_pct : summary.avg_risk_pct
+  return value == null ? null : `${num(value, 2)}%`
+}
+
 export function DashboardPage() {
   const { params, filters, accounts } = useFilters()
   const { currency, showAmounts, settings } = useSettings()
@@ -293,7 +306,11 @@ export function DashboardPage() {
           // instrument trading at 4,011 -- moved the average across four
           // hundred trades from six to twenty-four, and "what do I usually
           // risk" is a question about the middle of the distribution.
-          sub={`${typical} risk ${cash(median ? summary.typical_risk : summary.avg_risk)}`}
+          // The percentage comes from the server rather than from dividing
+          // this median by one account size: each trade is measured against
+          // the equity it was opened with, so an account that grew tenfold
+          // over the period is not judged by what it is worth today.
+          sub={`${typical} risk ${riskShare(summary, median) ?? cash(median ? summary.typical_risk : summary.avg_risk)}`}
           className="col-span-2 xl:col-span-1"
         />
       </div>
@@ -493,8 +510,11 @@ export function DashboardPage() {
                 decide either figure. */}
             <Row
               label={`${typical} planned risk`}
-              hint="What you set out to lose if the trade went against you, from its stop."
-              value={cash(median ? summary.typical_risk : summary.avg_risk)}
+              hint="What you set out to lose if the trade went against you, from its stop, as a share of the equity each trade was opened against."
+              value={
+                riskShare(summary, median) ??
+                cash(median ? summary.typical_risk : summary.avg_risk)
+              }
             />
             <Row
               label={`${typical} realised risk`}

@@ -22,7 +22,7 @@ from ..schemas import (
     TradeUpdate,
 )
 from ..services.aggregation import compute_derived, resolve_account_size
-from ..services.balances import balance_before_trades
+from ..services.balances import equity_at_open
 from ..services.queries import TradeFiltersDep, build_query, fetch_trades
 
 router = APIRouter(prefix="/trades", tags=["trades"])
@@ -74,11 +74,15 @@ def list_trades(
     # closed. Attached here rather than stored: it depends on everything that
     # closed before it, so it would go stale the moment a trade was edited or
     # a missing one imported.
-    before = balance_before_trades(db, {t.account_id for t in items})
+    # Equity at the moment each trade was opened -- what it actually risked.
+    # A balance says nothing about an account sitting underwater on positions
+    # that have not closed, and a figure taken at the close is measured against
+    # money this trade had already moved.
+    behind = equity_at_open(db, items)
     out = []
     for trade in items:
         row = TradeOut.model_validate(trade)
-        start = before.get(trade.id, 0.0)
+        start = behind.get(trade.id, 0.0)
         row.balance_before = start or None
         row.return_pct = round(trade.net_pnl / start * 100.0, 4) if start > 0 else None
         out.append(row)

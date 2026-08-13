@@ -491,6 +491,7 @@ def summarize(
     period_start: date | None = None,
     period_end: date | None = None,
     single_account: bool = True,
+    equity_at_open: dict[int, float] | None = None,
 ) -> dict[str, Any]:
     """The full statistics payload for one period.
 
@@ -570,6 +571,17 @@ def summarize(
     consistency = consistency_score(daily)
 
     risks = [t.risk_amount for t in sets.all_closed if t.risk_amount]
+    # Risk as a share of what the trade actually had behind it, worked out per
+    # trade against the equity at its own open rather than by dividing one
+    # median by one account size. An account that grew tenfold over the period
+    # risked a different fraction in January than in June, and one number for
+    # the lot describes neither.
+    behind = equity_at_open or {}
+    risk_pcts = [
+        t.risk_amount / behind[t.id] * 100.0
+        for t in sets.all_closed
+        if t.risk_amount and behind.get(t.id)
+    ]
     slipped = [t for t in losses if t.realized_r is not None and t.realized_r <= SLIPPAGE_R]
 
     summary: dict[str, Any] = {
@@ -635,6 +647,12 @@ def summarize(
         # -- it is how much of your risk lives in a handful of trades.
         "typical_risk": _r(_median(risks)),
         "avg_risk": _r(_mean(risks)),
+        # The same two, as a share of the equity each trade was opened against.
+        "typical_risk_pct": _r(_median(risk_pcts), 3),
+        "avg_risk_pct": _r(_mean(risk_pcts), 3),
+        #: How many trades that share could be worked out for, so a figure
+        #: computed over half the period is not read as the whole of it.
+        "risk_pct_trades": len(risk_pcts),
         # What a loss actually cost, against what one was meant to cost. The
         # gap between them is whether the stops held: a typical loss bigger
         # than a typical planned risk is slippage, a widened stop, or a trade

@@ -179,6 +179,11 @@ export interface Summary {
   avg_realized_r: number | null
   plan_adherence: number | null
   avg_risk: number | null
+  /** The same two as a share of the equity each trade was opened against, and
+   *  how many trades that could be worked out for. */
+  typical_risk_pct: number | null
+  avg_risk_pct: number | null
+  risk_pct_trades: number
   /** The middle trade's risk, which one mistyped stop cannot move. */
   typical_risk: number | null
   /** What a losing trade actually cost, as the middle one; and in R, where

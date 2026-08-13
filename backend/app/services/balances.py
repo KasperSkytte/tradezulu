@@ -26,8 +26,10 @@ it has been watching reconstructs exactly.
 
 from __future__ import annotations
 
+from bisect import bisect_left
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select
@@ -301,3 +303,98 @@ def attach_daily_returns(
 
 def _as_date(value: Any) -> date:
     return value if isinstance(value, date) else date.fromisoformat(str(value)[:10])
+
+
+def _money_timeline(db: Session, account_id: int) -> list[tuple[datetime, float]]:
+    """What the account was worth, in order, at each thing that moved it.
+
+    Worth, not balance: credit is counted while reconstructing the broker's
+    figure and then taken back out, because it cannot be withdrawn. Floored at
+    zero -- an account can be underwater on credit, and a negative denominator
+    turns a loss into a positive percentage.
+    """
+    events = _events(db, account_id)
+    credit = _outstanding_credit(events)
+    out: list[tuple[datetime, float]] = []
+    for index, (event, before) in enumerate(_walk(db, account_id)):
+        if before is None:
+            continue
+        out.append((event.when, max(before - credit.get(index, 0.0), 0.0)))
+    return out
+
+
+def equity_at_open(db: Session, trades: Sequence[Trade]) -> dict[int, float]:
+    """What each trade had behind it at the moment it was opened.
+
+    Equity rather than balance, and at the open rather than at the close,
+    because that is what the trade actually risked. A balance says nothing
+    about an account sitting ten per cent underwater on positions that have
+    not closed yet, and a figure taken at the close is measured against money
+    the trade itself had already moved.
+
+    Recorded equity when there is a sample near enough to mean it. Otherwise
+    the reconstruction, which for a trade opened with nothing else running is
+    not an approximation at all: the only floating profit an account has at
+    that moment belongs to positions that are open, and there are none.
+    """
+    by_account: dict[int, list[Trade]] = {}
+    for trade in trades:
+        if trade.opened_at is not None:
+            by_account.setdefault(trade.account_id, []).append(trade)
+
+    out: dict[int, float] = {}
+    for account_id, rows in by_account.items():
+        samples = [
+            (when, equity)
+            for when, equity in db.execute(
+                select(EquityPoint.time, EquityPoint.equity)
+                .where(EquityPoint.account_id == account_id)
+                .order_by(EquityPoint.time)
+            )
+            if when is not None and equity
+        ]
+        timeline = _money_timeline(db, account_id)
+        times = [when for when, _ in samples]
+
+        for trade in rows:
+            when = trade.opened_at
+            found = _nearest_sample(samples, times, when)
+            if found is not None:
+                out[trade.id] = round(found, 2)
+                continue
+            worth = _worth_at(timeline, when)
+            if worth is not None:
+                out[trade.id] = round(worth, 2)
+    return out
+
+
+#: How far from a trade's open a recorded sample may be and still be taken as
+#: that trade's equity. Terminals report every poll, so in practice this is
+#: sub-second; the tolerance is for a heartbeat that was missed rather than
+#: for guessing across a gap.
+SAMPLE_TOLERANCE = timedelta(minutes=5)
+
+
+def _nearest_sample(
+    samples: list[tuple[datetime, float]], times: list[datetime], when: datetime
+) -> float | None:
+    if not samples:
+        return None
+    index = bisect_left(times, when)
+    best: tuple[timedelta, float] | None = None
+    for candidate in (index - 1, index):
+        if 0 <= candidate < len(samples):
+            gap = abs(samples[candidate][0] - when)
+            if gap <= SAMPLE_TOLERANCE and (best is None or gap < best[0]):
+                best = (gap, samples[candidate][1])
+    return best[1] if best else None
+
+
+def _worth_at(timeline: list[tuple[datetime, float]], when: datetime) -> float | None:
+    """The reconstruction, read at a moment rather than at an event."""
+    if not timeline:
+        return None
+    index = bisect_left([point[0] for point in timeline], when)
+    if index < len(timeline):
+        return timeline[index][1]
+    return timeline[-1][1]
