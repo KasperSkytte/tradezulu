@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.31.0](https://github.com/KasperSkytte/tradezulu/compare/v1.30.0...v1.31.0) (2026-08-13)
+
+
+### Features
+
+* **dashboard:** mark money in and out on the curve, and total it beside ([3e3b680](https://github.com/KasperSkytte/tradezulu/commit/3e3b6804b8958a22bae4233e4f6912fca1d77955))
+* **stats:** measure risk against the equity a trade was opened with ([3ee02b2](https://github.com/KasperSkytte/tradezulu/commit/3ee02b2acf0bea7257d88138213df44fda2dc6be))
+* **stats:** report what was paid in and taken out, apart from the trading ([0b3b223](https://github.com/KasperSkytte/tradezulu/commit/0b3b2233ef6f0a271bc6c5556d2b90ff6006270c))
+
+
+### Bug fixes
+
+* **stats:** count credit when reconstructing what an account was worth ([af997f4](https://github.com/KasperSkytte/tradezulu/commit/af997f43142b68f035e79f8c566651b23af85772))
+
+
+### Performance
+
+* **copier:** push commands down a held connection, and refuse a stale one ([ab939e4](https://github.com/KasperSkytte/tradezulu/commit/ab939e415817571e206bd047099c8845ee38113f))
+* **copier:** report a trade the moment it happens, and poll in milliseconds ([73bbbbf](https://github.com/KasperSkytte/tradezulu/commit/73bbbbf4f0131caeec0cb94edde1bd3cde867f60))
+* **copier:** stop making every copy wait ten seconds on the master ([f58c6e6](https://github.com/KasperSkytte/tradezulu/commit/f58c6e68741306596fcb217d69e1e4c4d6762003))
+* **mt5:** journal a deal when it happens, not a minute later ([65fbd1c](https://github.com/KasperSkytte/tradezulu/commit/65fbd1c4418fb67eac70c9282a528cebd2e48851))
+
 ## [1.30.0](https://github.com/KasperSkytte/tradezulu/compare/v1.29.1...v1.30.0) (2026-08-12)
 
 
