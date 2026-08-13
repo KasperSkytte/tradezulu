@@ -19,6 +19,13 @@ from ..models import Account, CopyEvent, CopyLink, Deal, EquityPoint, Trade
 def single_master(db: Session) -> Account | None:
     """Leave exactly one account holding the master role, and return it.
 
+    Exactly one includes the case of none. A fresh install is given a
+    placeholder master to adopt, but Forget deletes it, and the placeholder is
+    only ever created on an empty database -- so on an install that also has a
+    slave, entering credentials again left the master with nowhere to land.
+    The interface said the account was configured, the provisioner was never
+    told to start a terminal for it, and nothing anywhere said why.
+
     There is only ever one account trades are copied *from*, and until now
     nothing enforced that. The role column defaults to "master", and two paths
     created accounts without saying otherwise -- a terminal reporting a login
@@ -36,11 +43,31 @@ def single_master(db: Session) -> Account | None:
     """
     from .credentials import credentials_status
 
+    stored = credentials_status(db)
     masters = list(db.scalars(select(Account).where(Account.role == "master")))
-    if len(masters) <= 1:
-        return masters[0] if masters else None
 
-    wanted = str(credentials_status(db).get("login") or "").strip()
+    if not masters:
+        if not stored.get("login"):
+            return None
+        # Named after the account it is for rather than "Default account":
+        # this one is not a placeholder waiting to be filled in, it is the
+        # account whose credentials have just been stored.
+        master = Account(
+            login=str(stored.get("login") or ""),
+            server=str(stored.get("server") or ""),
+            name=f"Account {stored.get('login')}",
+            currency="USD",
+            role="master",
+            is_default=db.scalar(select(Account.id).where(Account.is_default)) is None,
+        )
+        db.add(master)
+        db.flush()
+        return master
+
+    if len(masters) == 1:
+        return masters[0]
+
+    wanted = str(stored.get("login") or "").strip()
     keep = next((a for a in masters if a.login.strip() == wanted and wanted), None)
     keep = keep or next((a for a in masters if a.is_default), None) or masters[0]
 

@@ -280,6 +280,59 @@ class TestOnlyOneMaster:
         assert auth_client.delete(f"/api/accounts/{second.id}").status_code == 200
 
 
+class TestTheMasterComesBack:
+    """Credentials entered after a Forget have to have an account to land on.
+
+    The placeholder master a fresh install is given is created only when the
+    database holds no account at all, and Forget deletes it. On an install that
+    also has a slave -- which is every install that copies anything -- entering
+    credentials again therefore had nowhere to go: the credentials card said
+    "configured", no terminal was ever started, and nothing said why.
+    """
+
+    def _forget_the_master(self, auth_client, db):
+        master = db.scalar(select(Account).where(Account.role == "master"))
+        auth_client.delete(f"/api/accounts/{master.id}")
+        db.expire_all()
+
+    def test_entering_credentials_again_recreates_it(self, auth_client, db, slave):
+        self._forget_the_master(auth_client, db)
+
+        auth_client.put(
+            "/api/mt5/credentials",
+            json={"login": "5000123", "server": "Test-Server", "password": "investor"},
+        )
+        auth_client.get("/api/accounts")
+
+        db.expire_all()
+        master = db.scalar(select(Account).where(Account.role == "master"))
+        assert master is not None
+        assert (master.login, master.server) == ("5000123", "Test-Server")
+
+    def test_the_provisioner_is_told_to_start_its_terminal(self, auth_client, db, slave):
+        """The symptom that led here: a configured account and no terminal."""
+        self._forget_the_master(auth_client, db)
+        auth_client.put(
+            "/api/mt5/credentials",
+            json={"login": "5000123", "server": "Test-Server", "password": "investor"},
+        )
+
+        wanted = auth_client.get(
+            "/api/agent/terminals", headers={"X-API-Key": "test-ingest-token"}
+        ).json()["terminals"]
+
+        assert [t["login"] for t in wanted if t["role"] == "master"] == ["5000123"]
+
+    def test_no_credentials_means_no_invented_account(self, auth_client, db, slave):
+        """An empty journal must not grow a master nobody asked for."""
+        self._forget_the_master(auth_client, db)
+
+        auth_client.get("/api/accounts")
+
+        db.expire_all()
+        assert db.scalar(select(Account).where(Account.role == "master")) is None
+
+
 class TestTheBrokersClock:
     """How far the broker's clock runs from UTC has to reach the browser.
 
