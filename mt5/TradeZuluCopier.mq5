@@ -30,7 +30,12 @@ input int    RequestTimeoutMs = 15000;                          // WebRequest ti
 // master moves, so there is no interval between a fill there and a copy here.
 // The hold has to outlive the server's own, or the terminal hangs up on the
 // answer it was waiting for; 0 turns it off and goes back to asking on a timer.
-input int    HoldSeconds     = 25;                             // Keep one request open, waiting for the master (0 = poll instead)
+// Ten rather than longer: while the request is held this terminal is inside
+// WebRequest, and its own events -- a manual trade here, a deal to journal --
+// are queued until it returns. Copying does not care, because the master's
+// move is what ends the hold, but a trade placed by hand on this account waits
+// for it. Ten seconds is inside what the journal is allowed to lag.
+input int    HoldSeconds     = 10;                             // Keep one request open, waiting for the master (0 = poll instead)
 
 input group "Behaviour"
 input int    PollSeconds      = 2;     // How often to report in, in seconds. The server can ask for faster or slower.
@@ -40,7 +45,7 @@ input bool   Verbose          = true;  // Log every command to the Experts tab
 
 input group "Journal"
 input bool   SendHistory      = true;  // Send closed deals so the journal fills itself
-input int    HistorySeconds   = 60;    // How often to look for new ones
+input int    HistorySeconds   = 60;    // Safety net: how often to look anyway, in case an event was missed
 input int    SymbolsSeconds   = 300;   // How often to send the broker's symbol list
 input int    FirstSyncDays    = 730;   // How far back to go the first time
 input int    DealsPerRequest  = 200;   // Batch size; a long history is sent in pieces
@@ -67,6 +72,7 @@ int    g_poll_seconds = 0;
 int    g_poll_ms      = 0;    // what the timer actually runs at
 int    g_max_age_ms   = 500;  // how old a command may be before it is refused
 int    g_hold_seconds = 0;    // how long the server may keep our request
+uint   g_last_history = 0;    // GetTickCount() of the last history send
 string g_role         = "";   // master or slave, as the server sees us
 bool   g_enabled      = false;// whether this account is armed to copy
 uint   g_asked_at     = 0;    // GetTickCount() when the request went out
@@ -156,9 +162,13 @@ void OnTimer()
    // The journal runs on its own clock. Copying is worth doing every couple of
    // seconds; history is not, and walking it that often would spend the whole
    // timer on deals that have not changed.
+   // The safety net. Deals arrive on their own event now, so this is here for
+   // what that event cannot catch: a terminal that was closed when the trade
+   // closed, or a send that failed while the server was restarting.
    if(SendHistory && TimeCurrent() >= g_next_history)
    {
       g_next_history = TimeCurrent() + (datetime)MathMax(10, HistorySeconds);
+      g_last_history = GetTickCount();
       SendClosedDeals();
    }
 
@@ -1230,6 +1240,16 @@ void OnTradeTransaction(const MqlTradeTransaction &transaction,
       return;
 
    Poll();
+
+   // And the journal, on the same event rather than on its own clock. A deal
+   // is the only thing that puts a trade in the journal, so there is nothing
+   // to wait for once one has landed: the timer below stays only as a safety
+   // net for whatever happened while this terminal was not running.
+   if(SendHistory && GetTickCount() - g_last_history >= 250)
+   {
+      g_last_history = GetTickCount();
+      SendClosedDeals();
+   }
 }
 
 void ShowStatus()
