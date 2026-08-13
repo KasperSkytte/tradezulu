@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.31.2](https://github.com/KasperSkytte/tradezulu/compare/v1.31.1...v1.31.2) (2026-08-13)
+
+
+### Bug fixes
+
+* **agent:** build a template for a broker that ships no installer of its own ([37d4640](https://github.com/KasperSkytte/tradezulu/commit/37d46400dcc505063ada8e54e354be199d9d2526))
+
 ## [1.31.1](https://github.com/KasperSkytte/tradezulu/compare/v1.31.0...v1.31.1) (2026-08-13)
 
 
