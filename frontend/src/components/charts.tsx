@@ -91,6 +91,10 @@ export interface CumulativePoint {
   extra?: string
   /** Optional second series: equity, when the account has samples. */
   equity?: number
+  /** Money paid in or taken out on this day, if any. Marked rather than
+   *  plotted: it moves the equity line without being performance, and a step
+   *  with no explanation is the kind of thing people spend an evening on. */
+  flow?: number
 }
 
 export function CumulativeChart({
@@ -141,6 +145,26 @@ export function CumulativeChart({
           }
         />
         <ReferenceLine y={0} stroke="var(--tz-border-strong)" />
+        {/* A tick under every day money went in or out. The equity line steps
+            at these, and without a mark the step looks like a trading result
+            -- which is the one thing it is not. */}
+        {data
+          .filter((point) => point.flow)
+          .map((point) => (
+            <ReferenceLine
+              key={`flow-${point.label}`}
+              x={point.label}
+              stroke="var(--tz-text-faint)"
+              strokeDasharray="2 3"
+              strokeWidth={1}
+              label={{
+                value: (point.flow ?? 0) > 0 ? '▲' : '▼',
+                position: 'insideBottom',
+                fill: 'var(--tz-text-faint)',
+                fontSize: 9,
+              }}
+            />
+          ))}
         <Tooltip
           cursor={{ stroke: 'var(--tz-border-strong)', strokeWidth: 1 }}
           content={({ active, payload, label }) =>
@@ -167,6 +191,15 @@ export function CumulativeChart({
                           value: format(
                             Number(payload[0].payload.equity) - Number(payload[0].value),
                           ),
+                        },
+                      ]
+                    : []),
+                  ...(payload[0].payload?.flow
+                    ? [
+                        {
+                          label: Number(payload[0].payload.flow) > 0 ? 'Paid in' : 'Taken out',
+                          value: format(Number(payload[0].payload.flow)),
+                          color: 'var(--tz-text-faint)',
                         },
                       ]
                     : []),

@@ -222,6 +222,14 @@ export interface Summary {
     avg: number | null
   }
   account_size: number | null
+  /** Money in and out over the period, and the dated flows behind them. Never
+   *  part of any performance figure: a deposit is not a good day. */
+  deposits?: number
+  withdrawals?: number
+  /** The broker moving credit into the balance -- it raises what the account
+   *  is worth without anybody funding it, so it is counted apart. */
+  adjustments?: number
+  cash_flows?: { time: string; date: string; amount: number; kind: string }[]
   /** False when the trades span several accounts, in which case every figure
    *  that needs one account's money or one account's equity curve is null. */
   single_account?: boolean
