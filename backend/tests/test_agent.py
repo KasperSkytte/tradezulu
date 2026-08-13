@@ -6,6 +6,8 @@ just an HTTP client, so the entire loop can be driven from a test.
 
 from __future__ import annotations
 
+import asyncio
+
 from datetime import date, datetime
 
 import pytest
@@ -930,3 +932,159 @@ class TestHowOftenATerminalReportsIn:
             "/api/agent/poll", json=account_payload(slave.login, slave.server)
         ).json()
         assert reply["poll_seconds"] == 1
+
+
+class TestNothingCopiesUntilItIsArmed:
+    """A new slave placing orders nobody asked for is the worst thing this
+    software could do, so every gate on the way is checked rather than assumed.
+
+    Prompted by a report of exactly that: an account added and, without being
+    armed, apparently trading.
+    """
+
+    def test_a_new_slave_is_off_and_rehearsing(self, auth_client):
+        created = auth_client.post(
+            "/api/accounts",
+            json={"login": "7777", "server": "New-Server", "name": "New", "password": "p"},
+        ).json()
+        assert created["copy_enabled"] is False
+        assert created["copy_dry_run"] is True
+
+    def test_it_cannot_be_armed_by_creating_it(self, auth_client):
+        """Even asked outright. The field is not on the create payload, and the
+        row is written disabled whatever arrives."""
+        created = auth_client.post(
+            "/api/accounts",
+            json={"login": "7778", "server": "New-Server", "name": "New", "password": "p",
+                  "copy_enabled": True, "copy_dry_run": False, "enabled": True},
+        ).json()
+        assert created["copy_enabled"] is False
+        assert created["copy_dry_run"] is True
+
+    def test_it_cannot_be_armed_by_saving_its_settings(self, auth_client, db):
+        created = auth_client.post(
+            "/api/accounts",
+            json={"login": "7779", "server": "New-Server", "name": "New", "password": "p"},
+        ).json()
+        auth_client.put(
+            f"/api/accounts/{created['id']}",
+            json={"login": "7779", "server": "New-Server", "name": "New",
+                  "copy_enabled": True, "copy_dry_run": False,
+                  "settings": {"mode": "balance_ratio"}},
+        )
+        db.expire_all()
+        account = db.get(Account, created["id"])
+        assert account.copy_enabled is False
+        assert account.copy_dry_run is True
+
+    def test_an_unarmed_slave_is_sent_nothing_while_the_master_trades(
+        self, auth_client, master, slave
+    ):
+        auth_client.post("/api/agent/poll", json=master_payload(positions=[position()]))
+        reply = auth_client.post(
+            "/api/agent/poll", json=account_payload("9001", "Slave-Server")
+        ).json()
+        assert reply["commands"] == []
+        assert reply["enabled"] is False
+
+    def test_a_rehearsing_slave_is_sent_nothing_either(self, auth_client, master, slave):
+        """Dry run is not a quieter kind of trading: no command leaves the
+        server at all, so there is nothing for the terminal to act on."""
+        arm(auth_client, slave, dry_run=True)
+        auth_client.post("/api/agent/poll", json=master_payload(positions=[position()]))
+        reply = auth_client.post(
+            "/api/agent/poll", json=account_payload("9001", "Slave-Server")
+        ).json()
+        assert reply["commands"] == []
+        assert reply["dry_run"] is True
+
+    def test_going_live_needs_a_password_that_can_trade(self, auth_client, db, slave):
+        slave.password_enc = ""
+        db.commit()
+        refused = auth_client.post(
+            f"/api/accounts/{slave.id}/arm", json={"enabled": True, "dry_run": False}
+        )
+        assert refused.status_code == 400
+        db.expire_all()
+        assert db.get(Account, slave.id).copy_enabled is False
+
+    def test_an_account_that_reported_itself_in_is_not_armed(self, auth_client, db):
+        """A terminal reporting a login nobody configured creates a row. It has
+        to be a quiet one: nobody asked for it, so nothing may be copied to it."""
+        auth_client.post(
+            "/api/mt5/ingest",
+            json={"account": {"login": "8888", "server": "Unknown-Server", "name": "Stranger",
+                              "currency": "USD", "balance": 500.0, "equity": 500.0},
+                  "deals": []},
+            headers={"X-API-Key": "test-ingest-token"},
+        )
+        stranger = db.scalar(select(Account).where(Account.login == "8888"))
+        assert stranger is not None
+        assert stranger.copy_enabled is False
+        assert stranger.copy_dry_run is True
+
+
+class TestHoldingASlaveOpen:
+    """The command channel with no interval in it.
+
+    A slave opens one request the server does not answer yet; the master's own
+    report -- itself event-driven -- answers it. What is measured here is that
+    the wake happens and that the answer carries the work, not how many
+    milliseconds it took: that is a property of the network, not of this code.
+    """
+
+    def test_a_held_request_returns_when_nothing_happens(self, auth_client, master, slave):
+        """It is a keep-alive, not an interval: it comes back empty-handed."""
+        arm(auth_client, slave)
+        from app.routers import agent as agent_router
+
+        agent_router.HOLD_SECONDS = 0.2
+        reply = auth_client.post(
+            "/api/agent/poll?wait=0.2", json=account_payload("9001", "Slave-Server")
+        ).json()
+        assert reply["commands"] == []
+
+    def test_the_master_wakes_it(self, auth_client, master, slave):
+        """The whole point: a fill on the master reaches a waiting slave
+        without either of them being on a timer."""
+        from app.services.copier.waiting import wait_for_work, waiting_count, wake
+
+        async def hold_then_wake():
+            waiter = asyncio.create_task(wait_for_work(slave.id, 5.0))
+            for _ in range(200):          # let the waiter register
+                await asyncio.sleep(0.005)
+                if waiting_count(slave.id):
+                    break
+            assert waiting_count(slave.id) == 1
+            assert wake([slave.id]) == 1
+            return await waiter
+
+        assert asyncio.run(hold_then_wake()) is True
+
+    def test_a_waiter_that_is_never_woken_gives_up(self):
+        from app.services.copier.waiting import wait_for_work, waiting_count
+
+        assert asyncio.run(wait_for_work(4242, 0.05)) is False
+        # And leaves nothing behind, or every timeout would be a slow leak.
+        assert waiting_count(4242) == 0
+
+    def test_waking_an_account_nobody_is_waiting_on_is_harmless(self):
+        from app.services.copier.waiting import wake
+
+        assert wake([9999]) == 0
+
+    def test_an_unarmed_slave_is_not_held(self, auth_client, master, slave):
+        """Nothing will ever be sent to it, so holding the connection would be
+        a promise that cannot be kept."""
+        reply = auth_client.post(
+            "/api/agent/poll?wait=5", json=account_payload("9001", "Slave-Server")
+        ).json()
+        assert reply["enabled"] is False
+        assert reply["commands"] == []
+
+    def test_the_master_is_never_held(self, auth_client, master, slave):
+        arm(auth_client, slave)
+        reply = auth_client.post(
+            "/api/agent/poll?wait=5", json=master_payload(positions=[position()])
+        ).json()
+        assert reply["role"] == "master"
