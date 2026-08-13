@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.31.3](https://github.com/KasperSkytte/tradezulu/compare/v1.31.2...v1.31.3) (2026-08-13)
+
+
+### Bug fixes
+
+* **accounts:** bring the master back when credentials are entered again ([a29fa75](https://github.com/KasperSkytte/tradezulu/commit/a29fa753fde4a26f4e320d3e81197a49255c83e6))
+* **charts:** draw the higher timeframes after the collected one changes ([ffc8801](https://github.com/KasperSkytte/tradezulu/commit/ffc88018cab673c609cfd07a68f3b6d3f8a1276e))
+
 ## [1.31.2](https://github.com/KasperSkytte/tradezulu/compare/v1.31.1...v1.31.2) (2026-08-13)
 
 
