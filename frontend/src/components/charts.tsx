@@ -91,7 +91,7 @@ export interface CumulativePoint {
   extra?: string
   /** Optional second series: equity, when the account has samples. */
   equity?: number
-  /** Money paid in or taken out on this day, if any. Marked rather than
+  /** Deposits and withdrawals on this day, if any. Marked rather than
    *  plotted: it moves the equity line without being performance, and a step
    *  with no explanation is the kind of thing people spend an evening on. */
   flow?: number
@@ -197,7 +197,7 @@ export function CumulativeChart({
                   ...(payload[0].payload?.flow
                     ? [
                         {
-                          label: Number(payload[0].payload.flow) > 0 ? 'Paid in' : 'Taken out',
+                          label: Number(payload[0].payload.flow) > 0 ? 'Deposit' : 'Withdrawal',
                           value: format(Number(payload[0].payload.flow)),
                           color: 'var(--tz-text-faint)',
                         },
