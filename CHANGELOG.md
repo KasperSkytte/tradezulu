@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.31.1](https://github.com/KasperSkytte/tradezulu/compare/v1.31.0...v1.31.1) (2026-08-13)
+
+
+### Bug fixes
+
+* **dashboard:** call deposits and withdrawals by their names ([43269e3](https://github.com/KasperSkytte/tradezulu/commit/43269e3410df8f38ed6433dae6c701a3367948ca))
+* **dashboard:** mark money moved on a day nobody traded ([c746809](https://github.com/KasperSkytte/tradezulu/commit/c746809dd0017a22b66ee0602ac8e296219a81c5))
+* **dashboard:** name the funding line after deposits and withdrawals ([762445e](https://github.com/KasperSkytte/tradezulu/commit/762445e2fcc6f625a6640c121dff834e2be56c1d))
+
 ## [1.31.0](https://github.com/KasperSkytte/tradezulu/compare/v1.30.0...v1.31.0) (2026-08-13)
 
 
