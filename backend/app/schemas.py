@@ -623,6 +623,11 @@ class AgentPollOut(BaseModel):
     #: an Expert Advisor from before this field existed.
     poll_seconds: int = 5
     poll_ms: int = 5_000
+    #: How long a command stays worth carrying out, measured by the terminal
+    #: from the moment it asked. A copy is worth having because it is the same
+    #: trade as the master's; late enough and it is a different trade at a
+    #: different price, and not placing it is the better answer.
+    command_max_age_ms: int = 500
     #: How much history to send around each closed trade, in seconds either
     #: side. Seconds rather than a bar count so the terminal can divide by
     #: whatever timeframe it is set to collect, and so changing the setting

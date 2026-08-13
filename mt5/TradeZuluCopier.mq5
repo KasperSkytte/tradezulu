@@ -26,6 +26,11 @@ input group "Connection"
 input string ServerUrl        = "http://192.168.1.10:8420/api"; // TradeZulu API base URL (ends with /api)
 input string ApiKey           = "";                             // TZ_INGEST_TOKEN from the server's .env
 input int    RequestTimeoutMs = 15000;                          // WebRequest timeout (ms)
+// A slave holds one request open and the server answers it the moment the
+// master moves, so there is no interval between a fill there and a copy here.
+// The hold has to outlive the server's own, or the terminal hangs up on the
+// answer it was waiting for; 0 turns it off and goes back to asking on a timer.
+input int    HoldSeconds     = 25;                             // Keep one request open, waiting for the master (0 = poll instead)
 
 input group "Behaviour"
 input int    PollSeconds      = 2;     // How often to report in, in seconds. The server can ask for faster or slower.
@@ -60,6 +65,11 @@ int    g_done         = 0;
 int    g_failed       = 0;
 int    g_poll_seconds = 0;
 int    g_poll_ms      = 0;    // what the timer actually runs at
+int    g_max_age_ms   = 500;  // how old a command may be before it is refused
+int    g_hold_seconds = 0;    // how long the server may keep our request
+string g_role         = "";   // master or slave, as the server sees us
+bool   g_enabled      = false;// whether this account is armed to copy
+uint   g_asked_at     = 0;    // GetTickCount() when the request went out
 uint   g_last_poll    = 0;    // GetTickCount() of the last poll, for debouncing
 
 //--- journal --------------------------------------------------------
@@ -354,9 +364,28 @@ string PollBody()
 void Poll()
 {
    g_last_poll = GetTickCount();
+   // Everything that follows is measured from here: the round trip, the
+   // planning at the other end, and whatever the terminal was busy with in
+   // between. A command older than the budget is refused rather than filled.
+   g_asked_at = g_last_poll;
+
+   // Held open while this terminal is a slave with copying armed: the server
+   // keeps the request until the master reports something worth passing on, so
+   // the command arrives on the fill rather than on the next tick of a clock.
+   // Everything else -- the master, an idle slave, the journal -- asks and is
+   // answered at once.
+   string path = "/agent/poll";
+   int timeout = RequestTimeoutMs;
+   if(g_hold_seconds > 0 && g_role == "slave" && g_enabled)
+   {
+      path += "?wait=" + IntegerToString(g_hold_seconds);
+      // Longer than the hold, or the terminal gives up on the answer it asked
+      // to wait for and the server is left talking to nobody.
+      timeout = (g_hold_seconds + 10) * 1000;
+   }
 
    string reply;
-   if(!HttpPost("/agent/poll", PollBody(), reply))
+   if(!HttpPostFor(path, PollBody(), reply, timeout))
    {
       g_status = "server unreachable";
       return;
@@ -380,6 +409,10 @@ void Poll()
    // How much chart history the journal wants around each trade. It is a
    // setting there, in days, so widening it reaches every terminal on the next
    // heartbeat instead of waiting for a restart.
+   int max_age = (int)StringToInteger(JsonValue(reply, "command_max_age_ms"));
+   if(max_age > 0)
+      g_max_age_ms = max_age;
+
    g_history_before = (int)StringToInteger(JsonValue(reply, "history_before_seconds"));
    g_history_after  = (int)StringToInteger(JsonValue(reply, "history_after_seconds"));
 
@@ -389,9 +422,11 @@ void Poll()
    if(bar > 0)
       g_candle_tf = TimeframeOf(bar);
 
-   string role = JsonValue(reply, "role");
-   bool   halted = JsonValue(reply, "halted") == "true";
-   g_status = halted ? "halted by the server" : role;
+   g_role   = JsonValue(reply, "role");
+   g_enabled = JsonValue(reply, "enabled") == "true";
+   g_hold_seconds = MathMax(0, HoldSeconds);
+   bool halted = JsonValue(reply, "halted") == "true";
+   g_status = halted ? "halted by the server" : g_role;
 
    RunCommands(reply);
 }
@@ -416,6 +451,30 @@ void RunCommands(const string reply)
    }
 }
 
+//| One command's outcome, held until the next poll rather than sent on
+//| its own: one round trip instead of two, and a dropped result simply
+//| repeats on the following one.
+void QueueResult(const string id, const string action, const bool ok,
+                 const long ticket, const long master, const string symbol,
+                 const string dirn, const double volume, const double price,
+                 const int retcode, const string message)
+{
+   string r = "{" + JStr("id", id) + "," + JStr("action", action);
+   r += "," + JBool("ok", ok);
+   r += "," + JInt("ticket", ticket);
+   r += "," + JInt("master_position_id", master);
+   r += "," + JStr("symbol", symbol);
+   r += "," + JStr("direction", dirn);
+   r += "," + JNum("volume", volume, 2);
+   r += "," + JNum("price", price, 8);
+   r += "," + JInt("retcode", retcode);
+   r += "," + JStr("message", message);
+   r += "}";
+   if(StringLen(g_pending) > 0)
+      g_pending += ",";
+   g_pending += r;
+}
+
 void Execute(const string cmd)
 {
    string id      = JsonValue(cmd, "id");
@@ -431,6 +490,25 @@ void Execute(const string cmd)
 
    if(StringLen(id) == 0 || StringLen(action) == 0)
       return;
+
+   // Too late to be this trade any more. A copy is worth having because it is
+   // the master's position at the master's price; one placed a second after
+   // the fact is a different trade nobody chose, and the terminal is the only
+   // place that knows how long it actually took to get here -- the round trip,
+   // the planning, and whatever it was busy with in between.
+   //
+   // Closes are exempt. Being late out of a position is a reason to hurry, not
+   // a reason to stay in it.
+   uint age = GetTickCount() - g_asked_at;
+   if(g_max_age_ms > 0 && (int)age > g_max_age_ms &&
+      (action == "open" || action == "modify"))
+   {
+      string late = StringFormat("refused: %dms old, over the %dms budget",
+                                 (int)age, g_max_age_ms);
+      Print("TradeZulu: ", late, " -- ", action, " ", symbol);
+      QueueResult(id, action, false, 0, master, symbol, dirn, volume, 0.0, 0, late);
+      return;
+   }
 
    if(Verbose)
       Print("TradeZulu: ", action, " ", symbol, " ", DoubleToString(volume, 2),
@@ -453,22 +531,8 @@ void Execute(const string cmd)
 
    if(ok) g_done++; else g_failed++;
 
-   // Held until the next poll rather than sent immediately: one round trip
-   // instead of two, and a dropped result simply repeats.
-   string r = "{" + JStr("id", id) + "," + JStr("action", action);
-   r += "," + JBool("ok", ok);
-   r += "," + JInt("ticket", (long)got_ticket);
-   r += "," + JInt("master_position_id", master);
-   r += "," + JStr("symbol", symbol);
-   r += "," + JStr("direction", dirn);
-   r += "," + JNum("volume", volume, 2);
-   r += "," + JNum("price", got_price, 8);
-   r += "," + JInt("retcode", retcode);
-   r += "," + JStr("message", message);
-   r += "}";
-   if(StringLen(g_pending) > 0)
-      g_pending += ",";
-   g_pending += r;
+   QueueResult(id, action, ok, (long)got_ticket, master, symbol, dirn,
+               volume, got_price, retcode, message);
 }
 
 //--- trading --------------------------------------------------------
@@ -1049,6 +1113,11 @@ void SendClosedDeals()
 
 bool HttpPost(const string path, const string body, string &reply)
 {
+   return HttpPostFor(path, body, reply, RequestTimeoutMs);
+}
+
+bool HttpPostFor(const string path, const string body, string &reply, const int timeout_ms)
+{
    string url = ServerUrl + path;
    string headers = "Content-Type: application/json\r\nX-API-Key: " + ApiKey + "\r\n";
 
@@ -1061,7 +1130,7 @@ bool HttpPost(const string path, const string body, string &reply)
    ArrayResize(post, len);
 
    ResetLastError();
-   int status = WebRequest("POST", url, headers, RequestTimeoutMs, post, result, result_headers);
+   int status = WebRequest("POST", url, headers, timeout_ms, post, result, result_headers);
    if(status == -1)
    {
       int error = GetLastError();

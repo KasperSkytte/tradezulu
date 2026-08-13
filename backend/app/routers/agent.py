@@ -21,11 +21,12 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from ..config import settings
 from ..db import get_db
@@ -45,6 +46,7 @@ from ..services.copier.agent import (
     record_result,
     update_account_state,
 )
+from ..services.copier.waiting import wait_for_work, wake
 from ..services.credentials import credentials_status, get_credentials
 from ..services.crypto import decrypt
 from ..services.terminalview import bridge_address
@@ -208,6 +210,13 @@ def _candle_seconds(charts: dict[str, Any]) -> int:
     return timeframes.seconds(name if name in timeframes.TIMEFRAMES else "M5")
 
 
+#: How long a command is worth carrying out, from the terminal asking for it
+#: to the terminal acting on it. Beyond this it is refused rather than filled:
+#: the whole value of a copy is that it is the master's trade, and one placed a
+#: second late at a price the master never saw is a different trade that nobody
+#: chose. Reported back so the refusal is visible rather than silent.
+COMMAND_MAX_AGE_MS = 500
+
 #: What a terminal is asked for while copying is live, in milliseconds. Half a
 #: second is the floor under every copy that is not event-driven -- the slave
 #: cannot act on a command it has not been given -- and at this rate a handful
@@ -249,9 +258,40 @@ def _poll_seconds(db: Session, account: Account) -> int:
     return max(1, _poll_ms(db, account) // 1000)
 
 
+#: The longest a held request is kept before it is answered with nothing. Not
+#: an interval -- no work waits on it -- but a connection held for ever is one
+#: nobody notices has died, so it comes back often enough to prove the path.
+HOLD_SECONDS = 25.0
+
+
 @router.post("/poll", response_model=AgentPollOut)
-def poll(payload: AgentPollIn, db: Session = Depends(get_db)) -> AgentPollOut:
-    """One heartbeat from a terminal: here is my state, what should I do?"""
+async def poll(
+    payload: AgentPollIn,
+    wait: Annotated[float, Query(ge=0, le=HOLD_SECONDS)] = 0,
+    db: Session = Depends(get_db),
+) -> AgentPollOut:
+    """One heartbeat from a terminal: here is my state, what should I do?
+
+    With ``wait`` the request is held open until the master reports something
+    worth passing on, or until the hold expires. The terminal reopens it at
+    once, so an armed slave has a connection standing by at all times and a
+    copy leaves within a round trip of the fill that caused it -- no interval
+    anywhere in the chain.
+    """
+    reply = await run_in_threadpool(_handle_poll, payload, db)
+    if not wait or reply.commands or reply.role != "slave" or not reply.enabled:
+        return reply
+
+    # Nothing to do yet. Let go of the database while waiting -- the session is
+    # a connection, and holding one per idle terminal is how a pool runs out --
+    # then ask again on whatever woke us.
+    db.close()
+    if not await wait_for_work(reply.account_id, min(wait, HOLD_SECONDS)):
+        return reply
+    return await run_in_threadpool(_handle_poll, payload, db)
+
+
+def _handle_poll(payload: AgentPollIn, db: Session) -> AgentPollOut:
     account = _find_account(db, payload.login, payload.server) or _adopt_master(
         db, payload.login, payload.server
     )
@@ -285,6 +325,20 @@ def poll(payload: AgentPollIn, db: Session = Depends(get_db)) -> AgentPollOut:
     account.last_sync_source = "agent"
     db.commit()
 
+    # The master has just said what it holds, and somewhere a slave is holding
+    # a request open waiting for exactly that. Woken after the commit, so the
+    # planning it wakes into reads what was written rather than racing it.
+    if account.role == "master":
+        wake(
+            list(
+                db.scalars(
+                    select(Account.id).where(
+                        Account.role == "slave", Account.copy_enabled.is_(True)
+                    )
+                )
+            )
+        )
+
     charts = get_app_settings(db)["charts"]
     return AgentPollOut(
         account_id=account.id,
@@ -294,6 +348,7 @@ def poll(payload: AgentPollIn, db: Session = Depends(get_db)) -> AgentPollOut:
         halted=bool(account.copy_halted),
         poll_seconds=_poll_seconds(db, account),
         poll_ms=_poll_ms(db, account),
+        command_max_age_ms=COMMAND_MAX_AGE_MS,
         history_before_seconds=_history_seconds(charts, "history_days_before"),
         history_after_seconds=_history_seconds(charts, "history_days_after"),
         candle_seconds=_candle_seconds(charts),
