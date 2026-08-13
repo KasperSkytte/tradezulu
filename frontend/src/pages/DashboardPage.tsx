@@ -162,7 +162,7 @@ export function DashboardPage() {
   // Deposits and withdrawals only. The broker's credit write-offs move the
   // balance too, but marking twenty of them across two months buries the four
   // times money actually came in -- and the tooltip would have called them
-  // "paid in", which is the thing they are not.
+  // deposits, which is the thing they are not.
   const flowByDay = new Map<string, number>()
   for (const flow of summary.cash_flows ?? []) {
     if (flow.kind === 'adjustment') continue
@@ -336,7 +336,7 @@ export function DashboardPage() {
         <Card className="xl:col-span-2">
           <CardHeader
             title="Cumulative net P&L"
-            hint="Net P&L accumulated day by day across the selected period. Money paid in or taken out is marked on the line but never counted: a deposit is not a good day."
+            hint="Net P&L accumulated day by day across the selected period. Deposits and withdrawals are marked on the line but never counted: a deposit is not a good day."
             action={
               <span className={`tabular text-sm font-semibold ${pnlClass(summary.net_pnl)}`}>
                 {cash(summary.net_pnl, { sign: true })}
@@ -348,9 +348,9 @@ export function DashboardPage() {
               the period is not given a row of zeroes to read past. */}
           {(summary.deposits || summary.withdrawals || summary.adjustments) && (
             <p className="-mt-1 mb-1 text-xs text-[var(--tz-text-muted)]">
-              {summary.deposits ? <>Paid in {cash(summary.deposits)}</> : null}
+              {summary.deposits ? <>Deposits {cash(summary.deposits)}</> : null}
               {summary.deposits && summary.withdrawals ? ' · ' : null}
-              {summary.withdrawals ? <>taken out {cash(Math.abs(summary.withdrawals))}</> : null}
+              {summary.withdrawals ? <>withdrawals {cash(Math.abs(summary.withdrawals))}</> : null}
               {summary.adjustments ? (
                 <>
                   {summary.deposits || summary.withdrawals ? ' · ' : null}
@@ -362,7 +362,7 @@ export function DashboardPage() {
                 ? ' — not counted in any figure above.'
                 : // With money hidden these are shares of the balance the period
                   // opened with, like everything else on the page. Said out loud,
-                  // because "paid in 487%" on its own reads like a result.
+                  // because "deposits 487%" on its own reads like a result.
                   ' of the opening balance — not counted in any figure above.'}
             </p>
           )}
