@@ -494,10 +494,21 @@ def get_candles(
     start = start.replace(tzinfo=None) if start.tzinfo else start
     end = end.replace(tzinfo=None) if end.tzinfo else end
 
+    # Only what this window actually holds. Which timeframe is collected is a
+    # setting, and a setting can be changed, so a symbol traded before and
+    # after the change has M15 bars around the old trades and M5 bars around
+    # the new ones. Asked across the whole symbol, the largest divisor wins and
+    # a recent trade gets answered out of bars that exist only months earlier
+    # -- an empty chart on every timeframe above the collected one, while the
+    # collected one drew perfectly.
     stored = [
         row
         for row in db.scalars(
-            select(distinct(Candle.timeframe)).where(Candle.symbol == symbol)
+            select(distinct(Candle.timeframe)).where(
+                Candle.symbol == symbol,
+                Candle.time >= start,
+                Candle.time <= end,
+            )
         )
         if row
     ]

@@ -209,3 +209,107 @@ class TestDerivedTimeframes:
         ).json()
 
         assert daily["candles"], "the window has to widen with the timeframe"
+
+
+class TestWhenTheCollectedTimeframeChanged:
+    """A symbol can hold bars of one length here and another length there.
+
+    The terminal collects whatever the settings say, and that setting can be
+    changed -- so a symbol traded before and after the change has M15 bars
+    around the old trades and M5 bars around the new ones. Which timeframe to
+    fold from was decided from every timeframe the symbol had ever been stored
+    at, so a recent trade asked for H1 was answered out of M15 bars that exist
+    only months earlier: an empty chart on every timeframe above the one
+    collected, while the collected one drew perfectly.
+    """
+
+    @pytest.fixture()
+    def trade_after_the_change(self, client, trade_with_candles):
+        """The M15 fixture, plus a later trade with only M5 bars around it."""
+        auth_client, _ = trade_with_candles
+        later = BASE + timedelta(days=30)
+        client.post(
+            "/api/mt5/ingest",
+            json={
+                "account": {"login": "5000123", "server": "TestBroker"},
+                "deals": [
+                    {
+                        "ticket": 9001, "position_id": 9001, "symbol": "EURUSD", "type": 0,
+                        "entry": 0, "volume": 1.0, "price": 1.2000, "time": iso(later),
+                        "value_per_unit": 100_000, "sl": 1.1980, "digits": 5,
+                    },
+                    {
+                        "ticket": 9002, "position_id": 9001, "symbol": "EURUSD", "type": 1,
+                        "entry": 1, "volume": 1.0, "price": 1.2040, "profit": 400.0,
+                        "time": iso(later + timedelta(hours=2)), "value_per_unit": 100_000,
+                        "digits": 5,
+                    },
+                ],
+                "candles": [
+                    {
+                        "symbol": "EURUSD",
+                        "timeframe": "M5",
+                        "candles": [
+                            {
+                                "time": iso(later - timedelta(minutes=5 * (60 - index))),
+                                "open": 1.2000 + index * 0.0001,
+                                "high": 1.2005 + index * 0.0001,
+                                "low": 1.1995 + index * 0.0001,
+                                "close": 1.2002 + index * 0.0001,
+                                "volume": 100 + index,
+                            }
+                            for index in range(120)
+                        ],
+                    }
+                ],
+            },
+            headers=INGEST_HEADERS,
+        )
+        trade_id = auth_client.get(
+            "/api/trades", params={"start": "2026-07-01", "end": "2026-07-02"}
+        ).json()["items"][0]["id"]
+        return auth_client, trade_id
+
+    def test_an_hour_is_folded_from_the_bars_that_are_there(self, trade_after_the_change):
+        auth_client, trade_id = trade_after_the_change
+
+        body = auth_client.get(
+            "/api/mt5/candles", params={"trade_id": trade_id, "timeframe": "H1"}
+        ).json()
+
+        assert body["candles"], "the reported symptom: empty above the collected timeframe"
+        assert body["source"] == "M5"
+
+    def test_the_collected_timeframe_still_draws(self, trade_after_the_change):
+        """It always did -- which is what made the fault look like a chart bug."""
+        auth_client, trade_id = trade_after_the_change
+
+        body = auth_client.get(
+            "/api/mt5/candles", params={"trade_id": trade_id, "timeframe": "M5"}
+        ).json()
+
+        assert body["candles"]
+        assert body["source"] == "local"
+
+    def test_the_older_trade_is_unaffected(self, trade_after_the_change, trade_with_candles):
+        """Its own window has M15 bars, and folding those is still right."""
+        auth_client, older_id = trade_with_candles
+
+        body = auth_client.get(
+            "/api/mt5/candles", params={"trade_id": older_id, "timeframe": "H1"}
+        ).json()
+
+        assert body["candles"]
+        assert body["source"] == "M15"
+
+    def test_the_offered_timeframes_are_the_ones_this_window_can_draw(
+        self, trade_after_the_change
+    ):
+        """M5 is offered for this trade even though the symbol also holds M15."""
+        auth_client, trade_id = trade_after_the_change
+
+        body = auth_client.get(
+            "/api/mt5/candles", params={"trade_id": trade_id, "timeframe": "M5"}
+        ).json()
+
+        assert body["available"][0] == "M5"
