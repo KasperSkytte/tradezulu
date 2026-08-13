@@ -12,7 +12,12 @@ from sqlalchemy import select
 from ..deps import AppConfig, CurrentUser, DateRangeDep, DbSession, get_default_account
 from ..models import DayNote, EquityPoint, Trade
 from ..services.aggregation import resolve_account_size
-from ..services.balances import attach_daily_returns, equity_at_open, opening_balance
+from ..services.balances import (
+    attach_daily_returns,
+    cash_flows,
+    equity_at_open,
+    opening_balance,
+)
 from ..services.metrics import breakdowns, distributions, rolling_metrics, summarize
 from ..services.queries import TradeFilters, TradeFiltersDep, fetch_trades
 
@@ -86,6 +91,18 @@ def summary(
         single_account=single,
         equity_at_open=equity_at_open(db, trades),
     )
+    # What was paid in and taken out over the period. Never part of any
+    # figure above it: a deposit is not a good day and a withdrawal is not a
+    # loss. It is here so the page can say what the account was given, beside
+    # what the trading did with it.
+    flows = cash_flows(db, account_id, range_.start, range_.end) if single else []
+    out["cash_flows"] = flows
+    out["deposits"] = round(sum(f["amount"] for f in flows if f["kind"] == "deposit"), 2)
+    out["withdrawals"] = round(sum(f["amount"] for f in flows if f["kind"] == "withdrawal"), 2)
+    # The broker's own credit-to-cash write-offs, kept apart from funding:
+    # they raise what the account is worth without anybody paying anything in.
+    out["adjustments"] = round(sum(f["amount"] for f in flows if f["kind"] == "adjustment"), 2)
+
     out["opening_balance"] = round(opening, 2) if single else None
     out["return_pct"] = (
         round((out.get("net_pnl") or 0.0) / opening * 100.0, 4)

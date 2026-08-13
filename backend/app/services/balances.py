@@ -398,3 +398,65 @@ def _worth_at(timeline: list[tuple[datetime, float]], when: datetime) -> float |
     if index < len(timeline):
         return timeline[index][1]
     return timeline[-1][1]
+
+
+def cash_flows(
+    db: Session, account_id: int | None, start: date, end: date
+) -> list[dict[str, Any]]:
+    """Money in and out of the account in this window, oldest first.
+
+    Three kinds, kept apart because they answer different questions. A deposit
+    is money paid in and a withdrawal is money taken out. An *adjustment* is
+    neither: this broker writes debt off by moving it out of credit and into
+    the balance, one deal on each side, to the cent and to the second -- twenty
+    of them here, every one paired. It does raise what the account is worth,
+    since credit cannot be withdrawn and cash can, but nobody funded anything
+    and calling it a deposit would say they had. Left out of the funding total
+    on this installation, that is 78.02 of "deposits" that were not.
+
+    Credit itself never appears: it moves the broker's balance and it is not
+    the account's money.
+
+    Never counted as performance anywhere. This is here so the equity line can
+    say why it stepped, and so a period can show what was paid in against what
+    the trading did with it.
+    """
+    if account_id is None:
+        return []
+    window = (
+        Deal.time >= datetime.combine(start, datetime.min.time()),
+        Deal.time <= datetime.combine(end, datetime.max.time()),
+    )
+    rows = db.execute(
+        select(Deal.time, Deal.profit)
+        .where(Deal.account_id == account_id, Deal.deal_type == DEAL_TYPE_BALANCE, *window)
+        .order_by(Deal.time)
+    )
+    credits = [
+        (when, float(amount or 0.0))
+        for when, amount in db.execute(
+            select(Deal.time, Deal.profit).where(
+                Deal.account_id == account_id, Deal.deal_type == DEAL_TYPE_CREDIT, *window
+            )
+        )
+        if when is not None
+    ]
+
+    def offsets_a_credit(when: datetime, amount: float) -> bool:
+        """Is this the other half of a credit movement rather than funding?"""
+        return any(
+            abs(amount + credit) < 0.005 and abs((when - at).total_seconds()) <= 5
+            for at, credit in credits
+        )
+
+    out: list[dict[str, Any]] = []
+    for when, raw in rows:
+        if when is None or not raw:
+            continue
+        amount = round(float(raw), 2)
+        if offsets_a_credit(when, amount):
+            kind = "adjustment"
+        else:
+            kind = "deposit" if amount > 0 else "withdrawal"
+        out.append({"time": when, "date": when.date(), "amount": amount, "kind": kind})
+    return out
