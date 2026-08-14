@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.34.0](https://github.com/KasperSkytte/tradezulu/compare/v1.33.0...v1.34.0) (2026-08-14)
+
+
+### Features
+
+* **news:** mark where the week has got to ([e9d7a51](https://github.com/KasperSkytte/tradezulu/commit/e9d7a519936e54569b837cc3c406e6f4d27e4f4d))
+
+
+### Bug fixes
+
+* **ui:** correct and complete the explanations behind the info icons ([b6f4d1a](https://github.com/KasperSkytte/tradezulu/commit/b6f4d1a0247027914b11175069b92e6d577993ec))
+* **ui:** define the accent colour seven components already used ([c74fc32](https://github.com/KasperSkytte/tradezulu/commit/c74fc32344fa1466721eda156a05d0d037402f58))
+
 ## [1.33.0](https://github.com/KasperSkytte/tradezulu/compare/v1.32.0...v1.33.0) (2026-08-14)
 
 
