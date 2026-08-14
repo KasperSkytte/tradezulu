@@ -115,11 +115,15 @@ export function ForexFactoryCalendar({
         />
       ) : (
         <div className="divide-y divide-[var(--tz-border)]">
-          {[...byDay.entries()].map(([day, rows]) => (
+          {[...byDay.entries()].map(([day, rows], group, days) => (
             <div key={day}>
               <div
                 className={
                   'sticky top-0 z-10 bg-[var(--tz-surface-2)] px-4 py-1.5 text-xs font-medium sm:px-5 ' +
+                  // The first bar sits in the card's own top corners when
+                  // nothing is above it, and a square background over a
+                  // rounded corner squares the corner off.
+                  (group === 0 && !title ? 'rounded-t-[var(--radius-card)] ' : '') +
                   (day === today ? 'text-[var(--tz-accent)]' : 'text-[var(--tz-text-muted)]')
                 }
               >
@@ -133,7 +137,17 @@ export function ForexFactoryCalendar({
                   target="_blank"
                   rel="noreferrer noopener"
                   title="Open this day on ForexFactory"
-                  className="flex items-baseline gap-3 px-4 py-2 text-sm transition-colors hover:bg-[var(--tz-surface-hover)] sm:px-5"
+                  className={
+                    'flex items-baseline gap-3 px-4 py-2 text-sm transition-colors ' +
+                    'hover:bg-[var(--tz-surface-hover)] sm:px-5 ' +
+                    // Same at the bottom, where the hover background would
+                    // otherwise square the last two corners.
+                    (group === days.length - 1 &&
+                    index === rows.length - 1 &&
+                    !data?.stale
+                      ? 'rounded-b-[var(--radius-card)]'
+                      : '')
+                  }
                 >
                   <span className="tabular w-16 shrink-0 text-xs text-[var(--tz-text-muted)]">
                     {new Date(event.time).toLocaleTimeString(clock, {
