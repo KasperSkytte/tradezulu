@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.32.0](https://github.com/KasperSkytte/tradezulu/compare/v1.31.3...v1.32.0) (2026-08-14)
+
+
+### Features
+
+* **agent:** add Dukascopy Bank ([d90226d](https://github.com/KasperSkytte/tradezulu/commit/d90226d35bf920637425a64a2a92b8d8a10d41d7))
+* **copier:** one lot limit, a stop the risk modes cannot work without ([8e4c690](https://github.com/KasperSkytte/tradezulu/commit/8e4c690336f9f1dfda4d8594e79c8bf7b2be4217))
+* **news:** ForexFactory's stories beside its calendar ([724481e](https://github.com/KasperSkytte/tradezulu/commit/724481efd3c24dd4dafb3d0c00fd8fae65d8c3ad))
+
+
+### Bug fixes
+
+* **accounts:** stop the slave settings jumping, and group them by question ([da654d3](https://github.com/KasperSkytte/tradezulu/commit/da654d3b575cedc1ebea39fdddb7101ac25ccb63))
+* **dashboard:** stop a stray 0 appearing above the cumulative chart ([ca24899](https://github.com/KasperSkytte/tradezulu/commit/ca24899263b81dbf84fea8a165dd9c1cbd2603f8))
+* **news:** keep the day bar inside the card's rounded corners ([4bf1c5f](https://github.com/KasperSkytte/tradezulu/commit/4bf1c5f289e28eb391ad74867945b9325e846433))
+* **news:** show red, orange and yellow stories by default ([9b7d3f1](https://github.com/KasperSkytte/tradezulu/commit/9b7d3f10cfe01d8e47c385a9af27116ff75dc51b))
+* **trades:** drop the Net ROI column when it repeats the P&L column ([b3b5f90](https://github.com/KasperSkytte/tradezulu/commit/b3b5f9088edfc4490f18ceeadf91b1cc87011132))
+* **trades:** hide lot sizes along with the money ([10f515f](https://github.com/KasperSkytte/tradezulu/commit/10f515f149cc8e2e156dc5c44458d0916369f666))
+* **trades:** say what a trade cost without saying what the account is worth ([8a22517](https://github.com/KasperSkytte/tradezulu/commit/8a225176926dfdcd3400b895008aa048330ba838))
+
+
+### Documentation
+
+* retake the screenshots ([2bc53df](https://github.com/KasperSkytte/tradezulu/commit/2bc53df00176c8f00a0bfb414becfe9ae34c1ddc))
+
 ## [1.31.3](https://github.com/KasperSkytte/tradezulu/compare/v1.31.2...v1.31.3) (2026-08-13)
 
 
