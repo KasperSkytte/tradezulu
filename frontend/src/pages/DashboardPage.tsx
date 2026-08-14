@@ -352,7 +352,11 @@ export function DashboardPage() {
           {/* What the account was given, beside what the trading did with it.
               Shown only when there was any, so an account nobody funded during
               the period is not given a row of zeroes to read past. */}
-          {(summary.deposits || summary.withdrawals || summary.adjustments) && (
+          {/* Boolean, not the numbers themselves: JSX renders a leading 0
+              rather than nothing when every one of them is zero, which put a
+              stray "0" above the chart on any account nobody had funded
+              during the period. */}
+          {Boolean(summary.deposits || summary.withdrawals || summary.adjustments) && (
             <p className="-mt-1 mb-1 text-xs text-[var(--tz-text-muted)]">
               {summary.deposits ? <>Deposits {cash(summary.deposits)}</> : null}
               {summary.deposits && summary.withdrawals ? ' · ' : null}
