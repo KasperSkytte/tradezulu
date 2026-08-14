@@ -46,16 +46,18 @@ const EMPTY: CopySettings = {
   fixed_lot: 0.01,
   risk_percent: 1,
   max_lot: 0,
+  max_lot_refuses: false,
   min_lot: 0,
   mirror_stops: true,
   max_risk_percent_per_trade: 2,
-  max_lot_per_trade: 0,
   require_stop_loss: false,
   min_stop_distance_points: 0,
   max_open_positions: 0,
   max_same_direction: 0,
   max_positions_per_symbol: 0,
   max_total_lots: 0,
+  pause_drawdown_percent: 0,
+  pause_drawdown_basis: 'peak',
   max_daily_drawdown_percent: 0,
   equity_stop_percent: 0,
   equity_stop_amount: 0,
@@ -90,6 +92,10 @@ export function SlaveForm({
 
   const set = <K extends keyof CopySettings>(key: K, value: CopySettings[K]) =>
     setSettings((current) => ({ ...current, [key]: value }))
+
+  // Sizing by a share of the account needs a stop to measure that share
+  // against, so those modes refuse a naked trade whatever the toggle says.
+  const needsStop = RISK_MODES.has(settings.mode)
 
   const save = useMutation({
     mutationFn: () => {
@@ -239,25 +245,50 @@ export function SlaveForm({
                 {RISK_MODES.has(settings.mode) && (
                   <Num label="Risk per trade (%)" value={settings.risk_percent} onChange={(v) => set('risk_percent', v)} step={0.1} />
                 )}
+                {/* One number and one decision. There used to be a second
+                    limit that refused instead of capping, so both could be set
+                    to different values and only the smaller ever spoke. */}
                 <Num
-                  label="Max position size (lots)"
+                  label="Largest position (lots)"
                   value={settings.max_lot}
                   onChange={(v) => set('max_lot', v)}
                   step={0.01}
-                  zero="no cap"
+                  zero="no limit"
                 />
+                {settings.max_lot > 0 && (
+                  <Field label="At that size">
+                    <select
+                      className="tz-input"
+                      value={settings.max_lot_refuses ? 'refuse' : 'cap'}
+                      onChange={(event) =>
+                        set('max_lot_refuses', event.target.value === 'refuse')
+                      }
+                    >
+                      <option value="cap">Trade it smaller</option>
+                      <option value="refuse">Skip the trade</option>
+                    </select>
+                  </Field>
+                )}
                 {/* Sizing rounds down and never up, so a slave a hair smaller
                     than the master computes 0.00998 lots and refuses the trade
                     outright. This is the way out, and it was previously stored
                     but never shown. */}
                 <Num
-                  label="Min position size (lots)"
+                  label="Smallest position (lots)"
                   value={settings.min_lot}
                   onChange={(v) => set('min_lot', v)}
                   step={0.01}
                   zero="the broker's own minimum"
                 />
               </div>
+
+              {needsStop && (
+                <p className="rounded-lg border border-[var(--tz-border)] bg-[var(--tz-surface-2)] px-3 py-2 text-xs text-[var(--tz-text-muted)]">
+                  A percentage is only a percentage if there is a stop to measure it against, so
+                  this mode skips any master trade without one. There is no size that risks{' '}
+                  {settings.risk_percent || 1}% of nothing.
+                </p>
+              )}
 
               <Toggle
                 checked={settings.mirror_stops}
@@ -269,14 +300,9 @@ export function SlaveForm({
           </section>
 
           <section>
-            <h3 className="tz-label">Refuse a trade when…</h3>
+            <h3 className="tz-label">Skip a trade when…</h3>
             <div className="grid gap-3 sm:grid-cols-3">
               <Num label="Risk over (% equity)" value={settings.max_risk_percent_per_trade} onChange={(v) => set('max_risk_percent_per_trade', v)} step={0.1} zero="no limit" />
-              <Num label="Size over (lots)" value={settings.max_lot_per_trade} onChange={(v) => set('max_lot_per_trade', v)} step={0.01} zero="no limit" />
-              <Num label="Open positions at" value={settings.max_open_positions} onChange={(v) => set('max_open_positions', v)} step={1} zero="no limit" />
-              <Num label="Same direction at" value={settings.max_same_direction} onChange={(v) => set('max_same_direction', v)} step={1} zero="no limit" />
-              <Num label="Per symbol at" value={settings.max_positions_per_symbol} onChange={(v) => set('max_positions_per_symbol', v)} step={1} zero="no limit" />
-              <Num label="Total exposure (lots)" value={settings.max_total_lots} onChange={(v) => set('max_total_lots', v)} step={0.1} zero="no limit" />
               {/* The size is worked out from the master's stop distance and the
                   copy is filled at its own price, so a tight stop is widened by
                   whatever the two brokers disagree about -- and the loss with
@@ -286,12 +312,30 @@ export function SlaveForm({
             </div>
             <div className="mt-3">
               <Toggle
-                checked={settings.require_stop_loss}
+                checked={needsStop || settings.require_stop_loss}
+                disabled={needsStop}
                 onChange={(value) => set('require_stop_loss', value)}
                 label="Require a stop loss"
-                description="Skip any master trade that has none, rather than copying it naked."
+                description={
+                  needsStop
+                    ? 'Always on while sizing by percentage risk, which cannot work without one.'
+                    : 'Skip any master trade that has none, rather than copying it naked.'
+                }
               />
             </div>
+          </section>
+
+          <section>
+            <h3 className="tz-label">How much may be open at once</h3>
+            <div className="grid gap-3 sm:grid-cols-4">
+              <Num label="Open positions" value={settings.max_open_positions} onChange={(v) => set('max_open_positions', v)} step={1} zero="no limit" />
+              <Num label="Same direction" value={settings.max_same_direction} onChange={(v) => set('max_same_direction', v)} step={1} zero="no limit" />
+              <Num label="Per symbol" value={settings.max_positions_per_symbol} onChange={(v) => set('max_positions_per_symbol', v)} step={1} zero="no limit" />
+              <Num label="Total lots" value={settings.max_total_lots} onChange={(v) => set('max_total_lots', v)} step={0.1} zero="no limit" />
+            </div>
+            <p className="mt-2 text-xs text-[var(--tz-text-faint)]">
+              Counted across everything this account holds, not only what was copied here.
+            </p>
           </section>
 
           <section>
@@ -313,6 +357,35 @@ export function SlaveForm({
             <p className="mt-2 text-xs text-[var(--tz-text-faint)]">
               Base names, separated by spaces or commas — the broker's own prefix and suffix are
               worked out for you, so <code>EURUSD</code> matches <code>EURUSD+</code> too.
+            </p>
+          </section>
+
+          <section>
+            <h3 className="tz-label">Pause while under water</h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Num
+                label="No new trades when down (%)"
+                value={settings.pause_drawdown_percent}
+                onChange={(v) => set('pause_drawdown_percent', v)}
+                step={0.5}
+                zero="off"
+              />
+              {settings.pause_drawdown_percent > 0 && (
+                <Field label="Measured from">
+                  <select
+                    className="tz-input"
+                    value={settings.pause_drawdown_basis}
+                    onChange={(event) => set('pause_drawdown_basis', event.target.value)}
+                  >
+                    <option value="peak">The account's best ever equity</option>
+                    <option value="day">What it was worth this morning</option>
+                  </select>
+                </Field>
+              )}
+            </div>
+            <p className="mt-2 text-xs text-[var(--tz-text-faint)]">
+              This one lets go by itself: copying resumes as soon as the account climbs back
+              above the line. Everything below stops the account until you clear it by hand.
             </p>
           </section>
 

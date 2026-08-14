@@ -525,10 +525,10 @@ export interface CopySettings {
   fixed_lot: number
   risk_percent: number
   max_lot: number
+  max_lot_refuses: boolean
   min_lot: number
   mirror_stops: boolean
   max_risk_percent_per_trade: number
-  max_lot_per_trade: number
   require_stop_loss: boolean
   /** Points between entry and stop, below which a copy is refused. */
   min_stop_distance_points: number
@@ -536,6 +536,8 @@ export interface CopySettings {
   max_same_direction: number
   max_positions_per_symbol: number
   max_total_lots: number
+  pause_drawdown_percent: number
+  pause_drawdown_basis: string
   max_daily_drawdown_percent: number
   equity_stop_percent: number
   equity_stop_amount: number

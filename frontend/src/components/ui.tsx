@@ -279,20 +279,23 @@ export function Field({
   children: ReactNode
   className?: string
 }) {
+  const text = hint ?? define(label)
   return (
-    <div className={className}>
-      <div className="flex items-center gap-1.5">
-        <span className="tz-label">{label}</span>
+    // A column with the input pushed to the bottom, so a label that wraps onto
+    // two lines lifts its own text rather than dropping its input half a line
+    // below every other input in the row.
+    <div className={clsx('flex h-full flex-col', className)}>
+      {/* Fixed height, because the icon comes and goes: fields explain
+          themselves only while they read zero, and a label row that grows by
+          an icon's height moves the input under it as the value is typed. */}
+      <div className="flex min-h-[1.25rem] items-center gap-1.5">
+        <span className="tz-label !mb-0">{label}</span>
         {/* An explicit hint wins; otherwise the glossary answers for the
             label, so a term like "Kelly fraction" is explained wherever it
             appears rather than only where somebody remembered. */}
-        {(hint ?? define(label)) && (
-          <span className="mb-1.5">
-            <Hint text={hint ?? define(label)!} />
-          </span>
-        )}
+        {text && <Hint text={text} />}
       </div>
-      {children}
+      <div className="mt-1.5 flex flex-1 flex-col justify-end">{children}</div>
     </div>
   )
 }
