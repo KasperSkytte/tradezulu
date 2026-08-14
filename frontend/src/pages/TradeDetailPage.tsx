@@ -4,6 +4,7 @@ import { ArrowLeft, Ban, Check, RotateCcw, Star, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import clsx from 'clsx'
 import { api } from '../lib/api'
+import { define } from '../lib/glossary'
 import { useSettings } from '../lib/settings'
 import {
   amount,
@@ -24,6 +25,7 @@ import {
   DirectionBadge,
   ErrorState,
   Field,
+  Hint,
   OutcomeBadge,
   Skeleton,
 } from '../components/ui'
@@ -391,9 +393,16 @@ export function TradeDetailPage() {
 }
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
+  // The glossary already explains gross, commission, swap, net and the R
+  // figures; these rows just never asked it, so the one page where somebody
+  // is looking at a single trade explained none of its own numbers.
+  const explains = define(label)
   return (
     <div className="flex items-center justify-between gap-3">
-      <dt className="text-[var(--tz-text-muted)]">{label}</dt>
+      <dt className="flex items-center gap-1.5 text-[var(--tz-text-muted)]">
+        {label}
+        {explains && <Hint text={explains} />}
+      </dt>
       <dd className="tabular font-medium">{value}</dd>
     </div>
   )

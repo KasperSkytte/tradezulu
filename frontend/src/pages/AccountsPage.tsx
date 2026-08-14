@@ -512,7 +512,7 @@ function JournalAccounts() {
             </Field>
             <Field
               label={`Starting balance (${currency})`}
-              hint="The deposit this account began with. Drawdown percentages and percentage risk are measured against it."
+              hint="The deposit this account began with, worked out from your deposits when it is blank. Drawdown, Sharpe and the equity curve are measured from it. Per-trade risk is not — that is measured against the equity at the moment each trade was opened."
             >
               <NumberField
                 value={account.initial_balance}

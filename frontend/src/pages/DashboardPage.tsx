@@ -237,7 +237,7 @@ export function DashboardPage() {
         )}
         <StatTile
           label="Net P&L"
-          hint="Sum of every closed trade in the period, including commission and swap."
+          hint="Sum of every closed trade in the period, after commission and swap — unless you have switched those off under Settings → Costs and R."
           value={cash(summary.net_pnl, { sign: true })}
           accent={
             (summary.net_pnl ?? 0) === 0

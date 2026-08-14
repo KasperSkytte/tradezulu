@@ -12,6 +12,7 @@ import { useMutation } from '@tanstack/react-query'
 import { Loader2, X } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import type { CopySettings, SlaveAccount } from '../lib/types'
+import { define } from '../lib/glossary'
 import { Button, Field, Toggle } from './ui'
 import { BrokerServerPicker } from './BrokerServerPicker'
 
@@ -502,8 +503,16 @@ function Num({
   step?: number
   zero?: string
 }) {
+  // What zero means belongs *with* the explanation rather than instead of it.
+  // Passing it as the hint meant every limit on this form explained itself as
+  // "no limit" and nothing else -- and only while it read zero, so the icon
+  // came and went as the field was typed in.
+  const explains = define(label)
+  const meaning = zero ? `0 means ${zero}.` : ''
+  const hint = [explains, meaning].filter(Boolean).join(' ') || undefined
+
   return (
-    <Field label={label} hint={zero && value === 0 ? zero : undefined}>
+    <Field label={label} hint={hint}>
       <input
         type="number"
         className="tz-input tabular"
