@@ -12,9 +12,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from .risk import BreachAction, RiskConfig
+from .risk import BreachAction, DrawdownBasis, RiskConfig
 from .sizing import SizingConfig, SizingMode
 from .symbols import SymbolRules, detect_affixes
+
+#: The sizing modes that express risk as a share of the account. Both need a
+#: stop on the master to size against, so both imply that a stopless trade is
+#: refused rather than sized some other way.
+RISK_MODES = {SizingMode.RISK_PERCENT.value, SizingMode.RISK_PERCENT_BALANCE.value}
+
+
+def mode_needs_stop(data: dict[str, Any]) -> bool:
+    return str(data.get("mode", "")).strip().lower() in RISK_MODES
 
 
 def _float(source: dict[str, Any], key: str, default: float) -> float:
@@ -62,14 +71,58 @@ def sizing_from(settings: dict[str, Any] | None) -> SizingConfig:
     except ValueError:
         mode = SizingMode.BALANCE_RATIO
 
+    largest, refuses = _largest_position(data)
     return SizingConfig(
         mode=mode,
         fixed_lot=_float(data, "fixed_lot", 0.01),
         multiplier=_float(data, "multiplier", 1.0),
         risk_percent=_float(data, "risk_percent", 1.0),
-        max_lot=_float(data, "max_lot", 0.0),
+        max_lot=largest,
+        max_lot_refuses=refuses,
         min_lot=_float(data, "min_lot", 0.0),
     )
+
+
+LEGACY_LOT_REFUSAL = "max_lot_per_trade"
+
+
+def _largest_position(data: dict[str, Any]) -> tuple[float, bool]:
+    """The one lot limit, and whether reaching it refuses or caps.
+
+    There were two settings for this: ``max_lot`` cut the order down to size
+    and ``max_lot_per_trade`` threw it away. Both could be set, to different
+    numbers, and then only the smaller ever had an effect -- with nothing on
+    the form to say which.
+
+    The old key wins while it is still there, because an account that was
+    refusing must not quietly start trading a smaller size instead. It stops
+    being there the moment the settings are saved: :func:`migrate` folds it in
+    and drops it, so this only reads documents nobody has opened since.
+    """
+    cap = _float(data, "max_lot", 0.0)
+    legacy = _float(data, LEGACY_LOT_REFUSAL, 0.0)
+    if legacy > 0:
+        return (min(cap, legacy) if cap > 0 else legacy), True
+    return cap, _bool(data, "max_lot_refuses", False)
+
+
+def migrate(settings: dict[str, Any] | None) -> dict[str, Any]:
+    """Bring a stored settings document up to the current shape.
+
+    Applied wherever settings are saved, so an old document is rewritten once
+    rather than reinterpreted for ever. It has to happen on the way in: the
+    API answers with every current field, defaults included, so a form that
+    round-trips an old document would otherwise hand back a fresh
+    ``max_lot_refuses: false`` beside the old key it was meant to replace --
+    and the account would come out of the edit capping trades it used to
+    refuse, with nobody having chosen that.
+    """
+    data = dict(settings or {})
+    if LEGACY_LOT_REFUSAL in data:
+        largest, refuses = _largest_position(data)
+        data.pop(LEGACY_LOT_REFUSAL)
+        data["max_lot"], data["max_lot_refuses"] = largest, refuses
+    return data
 
 
 def risk_from(settings: dict[str, Any] | None) -> RiskConfig:
@@ -80,15 +133,31 @@ def risk_from(settings: dict[str, Any] | None) -> RiskConfig:
     except ValueError:
         action = BreachAction.CLOSE_ALL
 
+    raw_basis = str(data.get("pause_drawdown_basis", DrawdownBasis.PEAK.value)).strip().lower()
+    try:
+        basis = DrawdownBasis(raw_basis)
+    except ValueError:
+        basis = DrawdownBasis.PEAK
+
+    largest, refuses = _largest_position(data)
     return RiskConfig(
         max_risk_percent_per_trade=_float(data, "max_risk_percent_per_trade", 0.0),
-        max_lot_per_trade=_float(data, "max_lot_per_trade", 0.0),
-        require_stop_loss=_bool(data, "require_stop_loss", False),
+        max_lot=largest,
+        max_lot_refuses=refuses,
+        # A percentage of equity or balance is only a percentage if there is a
+        # stop to measure it against, so the two risk modes carry this whether
+        # or not the toggle is on. The form shows it as implied rather than
+        # letting somebody turn off a rule the mode cannot work without.
+        require_stop_loss=(
+            _bool(data, "require_stop_loss", False) or mode_needs_stop(data)
+        ),
         min_stop_distance_points=_float(data, "min_stop_distance_points", 0.0),
         max_open_positions=_int(data, "max_open_positions", 0),
         max_same_direction=_int(data, "max_same_direction", 0),
         max_positions_per_symbol=_int(data, "max_positions_per_symbol", 0),
         max_total_lots=_float(data, "max_total_lots", 0.0),
+        pause_drawdown_percent=_float(data, "pause_drawdown_percent", 0.0),
+        pause_drawdown_basis=basis,
         max_daily_drawdown_percent=_float(data, "max_daily_drawdown_percent", 0.0),
         equity_stop_percent=_float(data, "equity_stop_percent", 0.0),
         equity_stop_amount=_float(data, "equity_stop_amount", 0.0),
@@ -154,16 +223,18 @@ def defaults() -> dict[str, Any]:
         "fixed_lot": 0.01,
         "risk_percent": 1.0,
         "max_lot": 0.0,
+        "max_lot_refuses": False,
         "min_lot": 0.0,
         "mirror_stops": True,
         "max_risk_percent_per_trade": 2.0,
-        "max_lot_per_trade": 0.0,
         "require_stop_loss": False,
         "min_stop_distance_points": 0.0,
         "max_open_positions": 0,
         "max_same_direction": 0,
         "max_positions_per_symbol": 0,
         "max_total_lots": 0.0,
+        "pause_drawdown_percent": 0.0,
+        "pause_drawdown_basis": DrawdownBasis.PEAK.value,
         "max_daily_drawdown_percent": 0.0,
         "equity_stop_percent": 0.0,
         "equity_stop_amount": 0.0,

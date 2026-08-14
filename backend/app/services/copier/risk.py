@@ -29,6 +29,13 @@ class Verdict(str, Enum):
     HALT = "halt"
 
 
+class DrawdownBasis(str, Enum):
+    #: Below the highest equity this account has ever reached.
+    PEAK = "peak"
+    #: Below the equity it started today with.
+    DAY = "day"
+
+
 class BreachAction(str, Enum):
     #: Stop opening but keep mirroring stops and closes on what is open.
     STOP_OPENING = "stop_opening"
@@ -75,8 +82,11 @@ class RiskConfig:
     # -- per trade --------------------------------------------------------
     #: Refuse a copy whose stop-loss risk exceeds this share of equity.
     max_risk_percent_per_trade: float = 0.0
-    #: Refuse a copy larger than this, in lots.
-    max_lot_per_trade: float = 0.0
+    #: The largest position allowed, in lots -- the same number sizing caps at.
+    #: It refuses here only when the user chose refusing over capping; sizing
+    #: has already cut the order down otherwise.
+    max_lot: float = 0.0
+    max_lot_refuses: bool = False
     #: Refuse a copy with no stop loss at all.
     require_stop_loss: bool = False
     #: Refuse a copy whose stop is closer than this many points to the entry.
@@ -94,6 +104,15 @@ class RiskConfig:
     max_total_lots: float = 0.0
 
     # -- account guards ---------------------------------------------------
+    #: Stop opening while equity is this far below the mark below, and start
+    #: again by itself once it recovers. Unlike everything else in this block
+    #: it does not latch: it is a pause, not a stop, so a bad morning stops
+    #: costing money without needing anybody to come and clear a halt.
+    pause_drawdown_percent: float = 0.0
+    #: What that drawdown is measured from: the high-water mark, or the equity
+    #: the day opened at. They answer different questions -- "how far off my
+    #: best" against "how bad is today" -- so the user picks.
+    pause_drawdown_basis: DrawdownBasis = DrawdownBasis.PEAK
     #: Stop for the day after losing this share of the day's opening equity.
     max_daily_drawdown_percent: float = 0.0
     #: Stop for good below this share of peak equity.
@@ -177,6 +196,23 @@ def check_account_guards(snapshot: SlaveSnapshot, config: RiskConfig) -> Decisio
                 "max_daily_drawdown_percent",
             )
 
+    # Last of the equity rules, so a real breach halts rather than pauses: the
+    # halts above are the ones that have to be cleared by hand, and reaching
+    # this line means none of them tripped.
+    if config.pause_drawdown_percent > 0:
+        peak = config.pause_drawdown_basis is DrawdownBasis.PEAK
+        base = snapshot.peak_equity if peak else snapshot.day_start_equity
+        if base > 0:
+            floor = base * (1 - config.pause_drawdown_percent / 100.0)
+            if equity <= floor:
+                against = "the peak" if peak else "the day's opening equity"
+                return Decision(
+                    Verdict.SKIP,
+                    f"equity {equity:,.2f} is {config.pause_drawdown_percent:g}% below "
+                    f"{against} of {base:,.2f} -- no new trades until it recovers",
+                    "pause_drawdown",
+                )
+
     if config.daily_profit_target_percent > 0 and snapshot.day_start_equity > 0:
         target = snapshot.day_start_equity * (config.daily_profit_target_percent / 100.0)
         if snapshot.day_realised_pnl >= target:
@@ -254,11 +290,11 @@ def check_trade_gates(
                 "min_stop_distance",
             )
 
-    if config.max_lot_per_trade > 0 and volume > config.max_lot_per_trade:
+    if config.max_lot_refuses and config.max_lot > 0 and volume > config.max_lot:
         return Decision(
             Verdict.SKIP,
-            f"{volume:g} lots is over the {config.max_lot_per_trade:g} per-trade cap",
-            "max_lot_per_trade",
+            f"{volume:g} lots is over the {config.max_lot:g} limit",
+            "max_lot",
         )
 
     if config.max_risk_percent_per_trade > 0:

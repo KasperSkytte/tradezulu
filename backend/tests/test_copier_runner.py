@@ -319,7 +319,9 @@ class TestRefusals:
 
     def test_a_per_trade_limit_is_recorded_with_its_rule(self, db, accounts):
         master, slave = accounts
-        slave.copy_settings = {"mode": "balance_ratio", "max_lot_per_trade": 0.01}
+        slave.copy_settings = {
+            "mode": "balance_ratio", "max_lot": 0.01, "max_lot_refuses": True,
+        }
         db.commit()
 
         run_cycle(db, master, slave, FakeBroker(), [master_row()], TODAY)
@@ -327,7 +329,7 @@ class TestRefusals:
 
         event = db.scalar(select(CopyEvent).where(CopyEvent.slave_account_id == slave.id))
         assert event.outcome == "skipped"
-        assert event.rule == "max_lot_per_trade"
+        assert event.rule == "max_lot"
 
 
 class TestBrokerFailures:

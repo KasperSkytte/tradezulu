@@ -261,11 +261,13 @@ class TestSizingMode:
         pair.master_holds(position(volume=9.0, price=1.1000, sl=1.0900))
         assert only_open(pair.slave_polls())["volume"] == 0.1
 
-    def test_risk_percent_falls_back_without_a_stop(self, pair):
+    def test_risk_percent_refuses_a_trade_with_no_stop(self, pair):
+        """The mode cannot size without one, so it declines to guess."""
         pair.configure(mode="risk_percent", risk_percent=1.0)
         pair.arm()
         pair.master_holds(position(volume=2.0, sl=0.0))
-        assert only_open(pair.slave_polls())["volume"] == 0.2
+        assert pair.slave_polls() == []
+        assert pair.last_skip().rule == "require_stop_loss"
 
 
 class TestSizingLimits:
@@ -309,8 +311,8 @@ class TestPerTradeRisk:
         pair.master_holds(position(sl=1.0900))
         assert only_open(pair.slave_polls())["volume"] == 0.1
 
-    def test_max_lot_per_trade_refuses_rather_than_shrinking(self, pair):
-        pair.configure(mode="fixed_lot", fixed_lot=2.0, max_lot_per_trade=1.0)
+    def test_the_lot_limit_refuses_rather_than_shrinking_when_told_to(self, pair):
+        pair.configure(mode="fixed_lot", fixed_lot=2.0, max_lot=1.0, max_lot_refuses=True)
         pair.arm()
         pair.master_holds(position())
         assert pair.slave_polls() == []
@@ -684,3 +686,55 @@ class TestDryRun:
         )
         pair.master_holds(position())
         assert pair.slave_polls() == []
+
+
+class TestTheOneLotLimit:
+    """One number, one decision -- and settings written before that still work.
+
+    There were two: ``max_lot`` cut the order down and ``max_lot_per_trade``
+    threw it away. Both could hold different numbers, only the smaller ever
+    spoke, and the form gave no clue which was in charge.
+    """
+
+    def test_an_old_refusal_setting_still_refuses(self, pair):
+        pair.configure(mode="fixed_lot", fixed_lot=2.0, max_lot_per_trade=1.0)
+        pair.arm()
+        pair.master_holds(position())
+
+        assert pair.slave_polls() == []
+        assert pair.last_skip().rule == "max_lot"
+
+    def test_an_old_cap_still_caps(self, pair):
+        pair.configure(mode="fixed_lot", fixed_lot=5.0, max_lot=0.75)
+        pair.arm()
+        pair.master_holds(position())
+
+        assert only_open(pair.slave_polls())["volume"] == 0.75
+
+    def test_with_both_set_the_stricter_behaviour_is_kept(self, pair):
+        """Refusing outranks capping: it is what the account was already doing."""
+        pair.configure(mode="fixed_lot", fixed_lot=2.0, max_lot=1.5, max_lot_per_trade=1.0)
+        pair.arm()
+        pair.master_holds(position())
+
+        assert pair.slave_polls() == []
+        assert pair.last_skip().rule == "max_lot"
+
+    def test_the_old_key_is_gone_once_the_settings_are_saved(self, pair, db):
+        """Rewritten once, rather than reinterpreted on every read."""
+        pair.configure(mode="fixed_lot", fixed_lot=2.0, max_lot_per_trade=1.0)
+
+        db.expire_all()
+        stored = db.get(Account, pair.slave.id).copy_settings
+
+        assert "max_lot_per_trade" not in stored
+        assert (stored["max_lot"], stored["max_lot_refuses"]) == (1.0, True)
+
+    def test_choosing_cap_afterwards_sticks(self, pair):
+        """The account edited once must not go back to refusing on the next save."""
+        pair.configure(mode="fixed_lot", fixed_lot=5.0, max_lot_per_trade=1.0)
+        pair.configure(max_lot=0.75, max_lot_refuses=False)
+        pair.arm()
+        pair.master_holds(position())
+
+        assert only_open(pair.slave_polls())["volume"] == 0.75

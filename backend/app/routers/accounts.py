@@ -36,6 +36,7 @@ from ..schemas import (
 )
 from ..services.accounts import purge_account, single_master
 from ..services.copier.config import defaults as copy_defaults
+from ..services.copier.config import migrate as migrate_settings
 from ..services.credentials import clear_credentials, credentials_status
 from ..services.crypto import decrypt, encrypt
 
@@ -48,7 +49,7 @@ def _as_out(account: Account, db: Session) -> SlaveAccountOut:
             CopyLink.slave_account_id == account.id, CopyLink.status == "open"
         )
     )
-    settings = {**copy_defaults(), **(account.copy_settings or {})}
+    settings = {**copy_defaults(), **migrate_settings(account.copy_settings)}
     return SlaveAccountOut(
         id=account.id,
         login=account.login,
@@ -122,7 +123,7 @@ def add_slave(payload: SlaveAccountIn, db: Session = Depends(get_db)) -> SlaveAc
         symbol_prefix=payload.symbol_prefix.strip(),
         symbol_suffix=payload.symbol_suffix.strip(),
         symbol_map=payload.symbol_map or {},
-        copy_settings={**copy_defaults(), **(payload.settings or {})},
+        copy_settings={**copy_defaults(), **migrate_settings(payload.settings)},
         # Never live on creation, whatever the caller asked for.
         copy_enabled=False,
         copy_dry_run=True,
@@ -158,7 +159,7 @@ def update_account(
             account.copy_enabled = False
 
     if payload.settings is not None:
-        account.copy_settings = {**copy_defaults(), **payload.settings}
+        account.copy_settings = {**copy_defaults(), **migrate_settings(payload.settings)}
 
     db.commit()
     db.refresh(account)
@@ -405,4 +406,4 @@ def halt_account(db: Session, account: Account, reason: str, rule: str = "") -> 
 
 
 def settings_payload(account: Account) -> dict[str, Any]:
-    return {**copy_defaults(), **(account.copy_settings or {})}
+    return {**copy_defaults(), **migrate_settings(account.copy_settings)}

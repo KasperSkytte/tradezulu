@@ -122,12 +122,19 @@ class TestRiskPercent:
         wide = MasterTrade("EURUSD", "long", 1.0, 1.1000, 1.0900)  # 100 pips
         assert size(config, AccountState(50_000, 50_000), trade=wide).volume == pytest.approx(0.5)
 
-    def test_falls_back_when_the_master_has_no_stop(self):
+    def test_a_trade_with_no_stop_is_refused_rather_than_sized_another_way(self):
+        """Asking for 1% and getting a balance-scaled lot is a different trade.
+
+        It used to fall back to the balance ratio and say so in the reason,
+        which is a line in a log nobody reads against a size on an account
+        somebody owns.
+        """
         config = SizingConfig(mode=SizingMode.RISK_PERCENT, risk_percent=1.0)
         no_stop = MasterTrade("EURUSD", "long", 1.0, 1.1000, None)
         result = size(config, AccountState(10_000, 10_000), trade=no_stop)
-        assert result.volume == pytest.approx(0.10)  # balance ratio
-        assert "no stop" in result.reason
+        assert result.volume == 0.0
+        assert result.capped_by == "require_stop_loss"
+        assert "no stop loss" in result.reason
 
     def test_refuses_without_contract_data(self):
         config = SizingConfig(mode=SizingMode.RISK_PERCENT, risk_percent=1.0)

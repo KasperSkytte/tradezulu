@@ -8,6 +8,7 @@ import pytest
 
 from app.services.copier.risk import (
     BreachAction,
+    DrawdownBasis,
     OpenPosition,
     RiskConfig,
     SlaveSnapshot,
@@ -170,10 +171,15 @@ class TestPerTradeGates:
         assert result.verdict is Verdict.SKIP
         assert result.rule == "max_risk_percent_per_trade"
 
-    def test_max_lot_per_trade(self):
-        config = RiskConfig(max_lot_per_trade=1.5)
+    def test_the_lot_limit_refuses_when_it_is_set_to_refuse(self):
+        config = RiskConfig(max_lot=1.5, max_lot_refuses=True)
         assert check_trade_gates(TRADE, 1.5, EURUSD, snapshot(), config).allowed
         assert check_trade_gates(TRADE, 1.6, EURUSD, snapshot(), config).verdict is Verdict.SKIP
+
+    def test_the_lot_limit_says_nothing_here_when_it_caps(self):
+        """Sizing has already cut the order down, so there is nothing to refuse."""
+        config = RiskConfig(max_lot=1.5, max_lot_refuses=False)
+        assert check_trade_gates(TRADE, 1.6, EURUSD, snapshot(), config).allowed
 
     def test_require_stop_loss(self):
         config = RiskConfig(require_stop_loss=True)
@@ -289,13 +295,15 @@ class TestPrecedence:
         assert result.rule == "equity_stop_amount"
 
     def test_consistency_is_checked_before_per_trade_rules(self):
-        config = RiskConfig(max_day_share_of_profit_percent=10.0, max_lot_per_trade=0.001)
+        config = RiskConfig(
+            max_day_share_of_profit_percent=10.0, max_lot=0.001, max_lot_refuses=True
+        )
         state = snapshot(day_realised_pnl=5_000.0, realised_by_day={date(2026, 7, 26): 100.0})
         assert evaluate(TRADE, 1.0, EURUSD, state, config, TODAY).verdict is Verdict.HALT
 
     def test_a_skip_is_not_a_halt(self):
         """A refused trade must not stop the account from copying others."""
-        config = RiskConfig(max_lot_per_trade=0.5)
+        config = RiskConfig(max_lot=0.5, max_lot_refuses=True)
         assert evaluate(TRADE, 1.0, EURUSD, snapshot(), config, TODAY).verdict is Verdict.SKIP
 
 
@@ -428,3 +436,56 @@ class TestMinimumStopDistance:
         """This rule is about how far away a stop is, not whether there is one."""
         config = RiskConfig(min_stop_distance_points=100.0)
         assert check_trade_gates(self._trade(None), 1.0, EURUSD, snapshot(), config).allowed
+
+
+class TestThePauseWhileUnderWater:
+    """Refusing new trades while down, without latching a halt.
+
+    Every other equity rule here stops the account until somebody clears it by
+    hand, which is right for a limit that must not be breached twice and wrong
+    for "not while I am having a bad morning". This one lets go by itself.
+    """
+
+    def test_it_refuses_below_the_mark_and_says_so(self):
+        config = RiskConfig(pause_drawdown_percent=5.0)
+        state = snapshot(equity=47_000.0, peak_equity=50_000.0)
+
+        result = check_account_guards(state, config)
+
+        assert result.verdict is Verdict.SKIP
+        assert result.rule == "pause_drawdown"
+
+    def test_it_is_not_a_halt(self):
+        """A halt survives the recovery; this must not."""
+        config = RiskConfig(pause_drawdown_percent=5.0)
+        under = check_account_guards(snapshot(equity=47_000.0), config)
+        recovered = check_account_guards(snapshot(equity=49_000.0), config)
+
+        assert under.verdict is Verdict.SKIP
+        assert recovered.allowed
+
+    def test_the_day_basis_measures_from_this_morning(self):
+        """Well off the peak but flat today, so only the peak basis refuses."""
+        state = snapshot(equity=45_000.0, day_start_equity=45_000.0, peak_equity=50_000.0)
+
+        from_peak = check_account_guards(
+            state, RiskConfig(pause_drawdown_percent=5.0, pause_drawdown_basis=DrawdownBasis.PEAK)
+        )
+        from_today = check_account_guards(
+            state, RiskConfig(pause_drawdown_percent=5.0, pause_drawdown_basis=DrawdownBasis.DAY)
+        )
+
+        assert from_peak.verdict is Verdict.SKIP
+        assert from_today.allowed
+
+    def test_a_real_breach_still_halts(self):
+        """The pause must never stand in for a limit that has to be cleared."""
+        config = RiskConfig(pause_drawdown_percent=1.0, equity_stop_percent=5.0)
+
+        result = check_account_guards(snapshot(equity=40_000.0), config)
+
+        assert result.verdict is Verdict.HALT
+        assert result.rule == "equity_stop_percent"
+
+    def test_off_by_default(self):
+        assert check_account_guards(snapshot(equity=1.0), RiskConfig()).allowed

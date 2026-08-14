@@ -69,8 +69,13 @@ class SizingConfig:
     fixed_lot: float = 0.01
     multiplier: float = 1.0
     risk_percent: float = 1.0
-    #: Hard ceiling regardless of what the mode computes. 0 disables.
+    #: The largest position allowed, in lots. 0 disables.
     max_lot: float = 0.0
+    #: What to do at that size: cut the order down to it, or refuse the trade.
+    #: One number, one decision -- there used to be a separate limit for each
+    #: behaviour, so both could be set to different values and only the smaller
+    #: one ever spoke.
+    max_lot_refuses: bool = False
     #: Never send an order smaller than this; 0 means the broker's minimum.
     min_lot: float = 0.0
 
@@ -113,10 +118,18 @@ def compute_volume(
     raw, reason = _raw_volume(master, master_account, slave_account, spec, config)
 
     if raw <= 0:
-        return SizingResult(0.0, reason, capped_by="sizing")
+        # A percentage risk with no stop to measure it against is the one
+        # refusal here that is a rule the user set rather than arithmetic that
+        # did not work out, so it is named after that rule and reads the same
+        # as the gate of the same name.
+        rule = "require_stop_loss" if "no stop loss" in reason else "sizing"
+        return SizingResult(0.0, reason, capped_by=rule)
 
     capped_by: str | None = None
-    if config.max_lot > 0 and raw > config.max_lot:
+    # When the limit refuses rather than caps, the size is left alone here and
+    # the risk gate turns it away by name -- so the log says "over the limit"
+    # rather than quietly showing a smaller trade than the master's.
+    if config.max_lot > 0 and raw > config.max_lot and not config.max_lot_refuses:
         raw = config.max_lot
         capped_by = "max_lot"
     if raw > spec.volume_max:
@@ -186,15 +199,13 @@ def _raw_volume(
         against = "balance" if on_balance else "equity"
 
         if master.stop_loss is None or master.stop_loss <= 0:
-            # No stop means no risk to size against; fall back rather than
-            # guess, and say so in the reason so the log explains itself.
-            if master_account.balance > 0:
-                ratio = slave_account.balance / master_account.balance
-                return (
-                    master.volume * ratio,
-                    f"no stop on the master, fell back to balance ratio {ratio:.3f}",
-                )
-            return 0.0, "no stop on the master and no balance to scale by"
+            # There is no size that risks 1% of anything without a stop, so
+            # there is nothing honest to send. This used to fall back to the
+            # balance ratio and say so in the log, which meant asking for 1%
+            # and getting a balance-scaled lot instead -- a different trade
+            # under the name of the one that was configured, and nothing on
+            # screen to say the setting had not applied.
+            return 0.0, "the master trade has no stop loss, so a percentage risk cannot be sized"
 
         distance = abs(master.entry_price - master.stop_loss)
         if distance <= 0 or spec.value_per_unit <= 0:

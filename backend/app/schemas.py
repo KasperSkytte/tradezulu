@@ -412,12 +412,13 @@ class CopySettingsOut(BaseModel):
     fixed_lot: float = 0.01
     risk_percent: float = 1.0
     max_lot: float = 0.0
+    #: Whether reaching ``max_lot`` refuses the trade or cuts it down to size.
+    max_lot_refuses: bool = False
     min_lot: float = 0.0
     scale: float = 1.0
     mirror_stops: bool = True
 
     max_risk_percent_per_trade: float = 0.0
-    max_lot_per_trade: float = 0.0
     require_stop_loss: bool = False
     #: Points, one unit of the last digit the broker quotes. 0 disables.
     min_stop_distance_points: float = 0.0
@@ -426,6 +427,10 @@ class CopySettingsOut(BaseModel):
     max_positions_per_symbol: int = 0
     max_total_lots: float = 0.0
 
+    #: Pauses new copies while under water, and lets go by itself. Everything
+    #: below it latches until somebody clears the halt.
+    pause_drawdown_percent: float = 0.0
+    pause_drawdown_basis: str = "peak"
     max_daily_drawdown_percent: float = 0.0
     equity_stop_percent: float = 0.0
     equity_stop_amount: float = 0.0
