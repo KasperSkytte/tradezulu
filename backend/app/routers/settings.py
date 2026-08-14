@@ -22,6 +22,7 @@ from ..schemas import (
 from ..services import news, stories
 from ..services.aggregation import recompute_all
 from ..services.appsettings import DEFAULT_SETTINGS, get_app_settings, save_app_settings
+from ..services.tagcolors import next_color
 
 router = APIRouter(tags=["settings"])
 
@@ -158,12 +159,56 @@ def create_tag(payload: TagIn, _user: CurrentUser, db: DbSession) -> Tag:
     existing = db.scalar(select(Tag).where(func.lower(Tag.name) == payload.name.strip().lower()))
     if existing:
         raise HTTPException(status.HTTP_409_CONFLICT, "A tag with that name already exists")
-    tag = Tag(**payload.model_dump())
+    fields = payload.model_dump()
+    # Nobody should have to keep twenty colours distinct by hand, in a picker,
+    # while trying to name a mistake. One is chosen from the category's own
+    # range, avoiding whatever the other tags already use.
+    if not fields.get("color"):
+        fields["color"] = next_color(db.scalars(select(Tag.color)), payload.category)
+    tag = Tag(**fields)
     tag.name = tag.name.strip()
     db.add(tag)
     db.commit()
     db.refresh(tag)
     return tag
+
+
+@router.post("/tags/recolour", response_model=list[TagOut])
+def recolour_tags(_user: CurrentUser, db: DbSession) -> list[Tag]:
+    """Give every tag that shares a colour with another one of its own.
+
+    New tags colour themselves, which does nothing for the install that has
+    been collecting tags since before that -- and a colour used twice is worth
+    fixing precisely because nobody notices it until two habits sit on top of
+    each other in a report.
+
+    Only the duplicates move. A tag whose colour is already unique keeps it,
+    including one somebody chose deliberately, so this is safe to press.
+    """
+    tags = list(db.scalars(select(Tag).order_by(Tag.category, Tag.sort_order, Tag.id)))
+    seen: set[str] = set()
+    changed: list[Tag] = []
+
+    for tag in tags:
+        colour = (tag.color or "").strip().lower()
+        if colour and colour not in seen:
+            seen.add(colour)
+            continue
+        # Every colour in use anywhere, not just the ones already passed:
+        # choosing against what came before would hand this tag a colour a
+        # later one holds, which then has to move as well, and one duplicate
+        # would recolour half the list.
+        taken = seen | {
+            (other.color or "").strip().lower() for other in tags if other is not tag
+        }
+        tag.color = next_color(taken, tag.category)
+        seen.add(tag.color.lower())
+        changed.append(tag)
+
+    db.commit()
+    for tag in changed:
+        db.refresh(tag)
+    return changed
 
 
 @router.patch("/tags/{tag_id}", response_model=TagOut)
@@ -172,6 +217,10 @@ def update_tag(tag_id: int, payload: TagIn, _user: CurrentUser, db: DbSession) -
     if tag is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Tag not found")
     for key, value in payload.model_dump().items():
+        # An update that says nothing about the colour keeps the one it has,
+        # rather than resetting it to a default nobody asked for.
+        if key == "color" and not value:
+            continue
         setattr(tag, key, value)
     tag.name = tag.name.strip()
     db.commit()

@@ -1093,7 +1093,6 @@ function TagsSection() {
   const TAG_CATEGORIES = useTagCategories()
   const queryClient = useQueryClient()
   const [name, setName] = useState('')
-  const [color, setColor] = useState('#7c5cff')
   const [category, setCategory] = useState('mistake')
   const [error, setError] = useState<string | null>(null)
 
@@ -1112,7 +1111,9 @@ function TagsSection() {
   }
 
   const create = useMutation({
-    mutationFn: () => api.post<Tag>('/tags', { name: name.trim(), color, category }),
+    // No colour: the server picks one the other tags in this category are
+    // not using, which is the whole point of not asking here.
+    mutationFn: () => api.post<Tag>('/tags', { name: name.trim(), category }),
     onSuccess: () => {
       setName('')
       setError(null)
@@ -1141,6 +1142,19 @@ function TagsSection() {
     },
   })
 
+  const recolour = useMutation({
+    mutationFn: () => api.post<Tag[]>('/tags/recolour', {}),
+    onSuccess: () => {
+      invalidate()
+      void queryClient.invalidateQueries({ queryKey: ['trades'] })
+    },
+  })
+
+  // Tags made before colours were automatic, or coloured by hand into a
+  // collision. Offered only when there is one, because a button that fixes
+  // nothing is a button that has to be understood.
+  const clashes = tags.length - new Set(tags.map((tag) => tag.color.toLowerCase())).size
+
   return (
     <div className="space-y-4">
       <TagCategoriesCard />
@@ -1148,7 +1162,18 @@ function TagsSection() {
     <Card>
       <CardHeader
         title="Tags"
-        hint="Tag every trade honestly and the Reports page will tell you exactly what each habit costs."
+        hint="Tag every trade honestly and the Reports page will tell you exactly what each habit costs. Colours are chosen for you from the category's own range, avoiding the ones already in use — click a swatch to overrule it."
+        action={
+          clashes > 0 ? (
+            <Button
+              onClick={() => recolour.mutate()}
+              loading={recolour.isPending}
+              title="Two tags the same colour sit on top of each other in a report"
+            >
+              Fix {clashes} repeated {clashes === 1 ? 'colour' : 'colours'}
+            </Button>
+          ) : null
+        }
       />
 
       <div className="mb-5 flex flex-wrap items-end gap-2 rounded-lg bg-[var(--tz-surface-2)] p-3">
@@ -1175,14 +1200,6 @@ function TagsSection() {
               </option>
             ))}
           </select>
-        </Field>
-        <Field label="Colour">
-          <input
-            type="color"
-            className="tz-input h-9 w-14 p-1"
-            value={color}
-            onChange={(event) => setColor(event.target.value)}
-          />
         </Field>
         <Button
           variant="primary"

@@ -78,7 +78,9 @@ class UserOut(ORMModel):
 
 class TagIn(BaseModel):
     name: str = Field(min_length=1, max_length=64)
-    color: str = Field(default="#7c8cf8", max_length=16)
+    #: Omitted means "pick one" -- the server chooses a colour nothing else in
+    #: the category is using. On an update it means "leave it alone".
+    color: str | None = Field(default=None, max_length=16)
     category: str = Field(default="custom", max_length=24)
     sort_order: int = 0
 
