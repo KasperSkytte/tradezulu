@@ -93,15 +93,22 @@ export function ForexFactoryStories({ title = 'News' }: { title?: string | null 
         </div>
       ) : (
         <ul className="divide-y divide-[var(--tz-border)] border-t border-[var(--tz-border)]">
-          {data.stories.map((story) => {
+          {data.stories.map((story, index) => {
             const folder = IMPACT[story.impact]
+            // The hover background on the last row would square off the
+            // card's bottom corners, the same way the calendar's did.
+            const last = index === data.stories.length - 1
             return (
               <li key={story.id}>
                 <a
                   href={story.url}
                   target="_blank"
                   rel="noreferrer noopener"
-                  className="group flex gap-3 px-4 py-3 transition-colors hover:bg-[var(--tz-surface-hover)] sm:px-5"
+                  className={
+                    'group flex gap-3 px-4 py-3 transition-colors ' +
+                    'hover:bg-[var(--tz-surface-hover)] sm:px-5 ' +
+                    (last ? 'rounded-b-[var(--radius-card)]' : '')
+                  }
                 >
                   {/* The folder colour, in the same place the calendar puts
                       it, so the two panels scan as one thing. */}

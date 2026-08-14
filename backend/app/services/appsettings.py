@@ -137,11 +137,14 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "currencies": ["USD"],
         "impacts": ["High"],
         # The stories panel beside the calendar, filtered by ForexFactory's own
-        # rating on each headline. Empty means everything, which is the default
-        # here where the calendar defaults to red folders only: two thirds of
-        # the wire carries no rating at all, and filtering to red would leave a
-        # panel with one story in it most of the day.
-        "story_impacts": [],
+        # rating on each headline. All three ratings by default rather than the
+        # red folders the calendar defaults to: a red-folder *story* is rare
+        # enough that the panel would sit near empty for most of the day.
+        #
+        # This does leave out the unrated -- about two thirds of the wire, the
+        # analysis and commentary rather than the events. Clearing the list
+        # entirely is what shows those too.
+        "story_impacts": ["High", "Medium", "Low"],
         # Whether the stories panel is shown at all. ForexFactory only: the
         # TradingView provider is one embedded widget with no room in it.
         "stories": True,
