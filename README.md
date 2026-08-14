@@ -52,14 +52,14 @@ docker compose run --rm --service-ports -e TZ_DEMO=1 tradezulu demo
 ## Features
 
 **Journal** — Track and improve your performance
- - Synchronize trades from any MetaTrader5 account through a virtual terminal
- - See key statistics for a chosen time period, like win rate, profit factor, average R etc
- - Track your overall performance by a combined "Zulu score" that includes key metrics
- - Understand your mistakes, behavior, and setups by adding tags to individual trades alongside notes
- - Trade setup replay for each trade (from terminal or TradingView)
- - See detailed reports about which times of day, setups, tags, etc, that work the best for you
- - Did you follow your plan? See planned vs realised stats in R-multiples
- - Integrated high-impact news calendar, from TradingView or ForexFactory
+ - Instantly synchronize trades from any MetaTrader5 account
+ - See key statistics for a chosen time period, like win rate, profit factor, average R, your usual risk/position size distribution, etc
+ - Track your overall performance by a combined "Zulu score" that includes 6 key metrics
+ - Understand your mistakes, behavior, and setups by adding tags to individual trades alongside notes for each trade or trading session/day
+ - Trade setup replay for each trade (KLineCharts or TradingView)
+ - See detailed reports about which times of day, setups, tags, etc, that work the best for you, and what to stop doing
+ - Did you follow your plan? See planned vs realised stats in R-multiples and percentages
+ - Integrated high-impact news calendar, from TradingView or ForexFactory, AND see sudden, unscheduled, breaking news, like updates on geopolitical situations etc (pulled live from ForexFactory)
 
 **Copier** — one master account, any number of slaves, any broker.
 
@@ -79,6 +79,8 @@ docker compose run --rm --service-ports -e TZ_DEMO=1 tradezulu demo
  - Every slave starts disabled and in dry-run, recording what it *would* have
   done. You arm them one at a time to start copying trades.
 
+And much more!
+
 ## Connect MetaTrader 5
 
 **Accounts → Master account credentials**, three fields:
@@ -91,7 +93,7 @@ docker compose run --rm --service-ports -e TZ_DEMO=1 tradezulu demo
 
 A MetaTrader terminal is created for the account,
 logged in, and given an Expert Advisor that reports back — automatically,
-within a minute or so. Nothing to install, no files to copy, no URL to type.
+within a minute or so. Nothing to install, no files to copy, no URL to type. Each MetaTrader terminal runs in a virtual desktop, which you can view from the site.
 
 For journaling only, just use the **investor password** for the account instead of the master password: it is read-only, so TradeZulu
 cannot trade your account even by accident. Copying to a slave account does
@@ -103,7 +105,7 @@ hour, rather than a broker's new build stopping a terminal mid-week behind a
 dialog nobody is there to answer. Sunday at 3am by default, and adjustable on
 the same page — worth changing if you trade crypto through the weekend.
 
-### How that actually works, and why it is a bit of a hack
+### How this actually works, and why it is a bit of a hack
 
 Worth knowing before you trust it with an account.
 
@@ -113,18 +115,16 @@ priced accordingly — for a business, not for one trader with one account. The
 only software that can speak to a broker's MT5 server is MetaTrader itself.
 
 So TradeZulu runs MetaTrader. Each account gets a real terminal on a virtual
-display nobody ever looks at, logged in automatically, with an Expert Advisor
-inside it reporting every deal back over plain HTTP. One setting cannot be
-reached any other way — the terminal keeps its WebRequest allowlist encrypted
-in its own config — so the provisioner opens the Options dialog on that
-display, measures where it is, and clicks through it.
+display, logged in automatically, with an Expert Advisor
+inside it reporting every deal back over plain HTTP. A provisioner handling all terminals opens the Options dialog on that
+display, measures where things are, and clicks through it.
 
 Clicking buttons on a screen nobody is watching is not elegant. It is made as
 honest as it can be: nothing counts as done because a click seemed to land,
 only because that account's Expert Advisor actually reached the server; a
 terminal that starts but never reports is restarted, then rebuilt, then given
 up on loudly rather than left looking healthy. You can watch the display
-yourself with `agent/tz-view.sh watch`.
+yourself with `agent/tz-view.sh watch` or through the app through a simple VNC window.
 
 MetaTrader runs on the host rather than in a container, which is also not for
 want of trying — [docs/metatrader.md](docs/metatrader.md) covers how the whole
