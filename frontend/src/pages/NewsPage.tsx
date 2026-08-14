@@ -14,6 +14,7 @@
  */
 
 import { ForexFactoryCalendar } from '../components/ForexFactoryCalendar'
+import { ForexFactoryStories } from '../components/ForexFactoryStories'
 import { NewsCalendar } from '../components/NewsCalendar'
 import { useSettings } from '../lib/settings'
 import { SegmentedControl } from '../components/ui'
@@ -23,6 +24,7 @@ export function NewsPage() {
   const news = settings.news
   const provider = news?.provider ?? 'forexfactory'
   const range = news?.range ?? 'upcoming'
+  const stories = news?.stories ?? true
 
   return (
     <div className="space-y-4">
@@ -56,7 +58,15 @@ export function NewsPage() {
       </div>
 
       {provider === 'forexfactory' ? (
-        <ForexFactoryCalendar upcomingOnly={range === 'upcoming'} />
+        /* Calendar and stories side by side on a desktop, and the calendar
+           first on a phone: two columns of a week's releases and a wire feed
+           in a 375px window leaves neither readable, and the calendar is what
+           the page is for. ForexFactory only -- TradingView's provider is one
+           embedded widget with nothing to put beside it. */
+        <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+          <ForexFactoryCalendar upcomingOnly={range === 'upcoming'} />
+          {stories && <ForexFactoryStories />}
+        </div>
       ) : (
         /* Tall here, where it is the whole page, rather than the panel-sized
            box it was on the dashboard: the point of a calendar is seeing the

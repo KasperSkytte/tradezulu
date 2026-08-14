@@ -391,6 +391,9 @@ export interface AppSettings {
     currencies: string[]
     /** ForexFactory: folder colours by name — High is the red one. */
     impacts: string[]
+    /** Which ratings the stories panel shows, and whether it is shown. */
+    story_impacts: string[]
+    stories: boolean
     /** 'upcoming' hides what has already happened this week. */
     range: 'upcoming' | 'week'
   }
@@ -646,6 +649,31 @@ export interface NewsEvent {
   impact: 'High' | 'Medium' | 'Low' | 'Holiday' | string
   forecast: string
   previous: string
+}
+
+export interface NewsStory {
+  id: number
+  title: string
+  url: string
+  source: string
+  time: string
+  /** ForexFactory's own rating: High, Medium, Low, or "" for the unrated
+   *  bulk of the wire. */
+  impact: string
+  preview: string
+  comments: number
+  /** Tied to a calendar release rather than commentary about one. */
+  scheduled: boolean
+}
+
+export interface NewsStories {
+  source: string
+  stories: NewsStory[]
+  updated_at: string | null
+  stale: boolean
+  error: string | null
+  age_seconds: number | null
+  outdated: boolean
 }
 
 export interface NewsCalendar {

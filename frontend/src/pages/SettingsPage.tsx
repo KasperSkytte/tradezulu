@@ -208,6 +208,14 @@ function SavedFlag({ saved }: { saved: boolean }) {
 //: events that belong to none, and is never a choice -- those always show.
 const FF_CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD', 'NZD', 'CNY']
 
+/** Stories are rated High, Medium and Low, with no Holiday among them --
+ *  a holiday is something on a calendar, not something that happened. */
+const STORY_IMPACTS = [
+  { value: 'High', label: 'Red' },
+  { value: 'Medium', label: 'Orange' },
+  { value: 'Low', label: 'Yellow' },
+]
+
 const FF_IMPACTS = [
   { value: 'High', label: 'Red' },
   { value: 'Medium', label: 'Orange' },
@@ -430,6 +438,24 @@ function GeneralSection() {
               selected={settings.news?.impacts ?? ['High']}
               onChange={(impacts) => void apply({ news: { impacts } })}
             />
+          </Field>
+          <Field
+            label="ForexFactory: news stories"
+            hint="The headlines beside the calendar, rated by ForexFactory the same way its releases are. Most of the wire carries no rating at all, so clearing every folder here shows everything rather than nothing."
+          >
+            <ChipPicker
+              options={STORY_IMPACTS}
+              selected={settings.news?.story_impacts ?? []}
+              onChange={(story_impacts) => void apply({ news: { story_impacts } })}
+            />
+            <div className="mt-3">
+              <Toggle
+                checked={settings.news?.stories ?? true}
+                onChange={(stories) => void apply({ news: { stories } })}
+                label="Show stories beside the calendar"
+                description="Off leaves the calendar the full width of the page."
+              />
+            </div>
           </Field>
         </div>
       ) : (

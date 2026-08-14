@@ -46,6 +46,8 @@ const FALLBACK: AppSettings = {
     importance: 1,
     currencies: ['USD'],
     impacts: ['High'],
+    story_impacts: [],
+    stories: true,
     range: 'upcoming',
   },
   tags: {

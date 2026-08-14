@@ -19,7 +19,7 @@ from ..schemas import (
     TagIn,
     TagOut,
 )
-from ..services import news
+from ..services import news, stories
 from ..services.aggregation import recompute_all
 from ..services.appsettings import DEFAULT_SETTINGS, get_app_settings, save_app_settings
 
@@ -53,6 +53,25 @@ def news_calendar(
     return news.calendar(
         _split(currencies) or list(saved.get("currencies") or ["USD"]),
         _split(impacts) or list(saved.get("impacts") or ["High"]),
+    )
+
+
+@router.get("/news/stories")
+def news_stories(
+    _user: CurrentUser,
+    config: AppConfig,
+    impacts: str | None = None,
+    limit: int = 40,
+) -> dict[str, Any]:
+    """The headlines beside the calendar, filtered the same way.
+
+    ForexFactory only: the TradingView provider is an embedded widget with a
+    calendar in it and nothing to add stories to.
+    """
+    saved = config.get("news", {})
+    return stories.stories(
+        _split(impacts) or list(saved.get("story_impacts") or []),
+        limit=max(1, min(limit, 100)),
     )
 
 
