@@ -7,6 +7,7 @@
  *  somebody else's typography.
  */
 
+import { Fragment, useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle } from 'lucide-react'
 import { api } from '../lib/api'
@@ -34,6 +35,41 @@ function dayLink(iso: string): string {
   return `https://www.forexfactory.com/calendar?day=${month}${when.getDate()}.${when.getFullYear()}`
 }
 
+/** Where "now" falls among the week's releases.
+ *
+ *  Re-read every half minute rather than once per render: this page is the
+ *  one people leave open while they wait for a release, which is exactly when
+ *  a line that stopped moving an hour ago is worst.
+ */
+function useNow(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!active) return
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [active])
+  return now
+}
+
+/** Where the week is up to: everything above has happened, nothing below has.
+ *
+ *  Drawn as a line rather than a highlighted row because it falls *between*
+ *  two releases -- often between two days -- and belongs to neither.
+ */
+function NowLine({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-2 px-4 py-1 sm:px-5" aria-label={`Now, ${label}`}>
+      <span className="tabular w-16 shrink-0 text-right text-[11px] font-medium text-[var(--tz-accent)]">
+        {label}
+      </span>
+      <span className="h-px flex-1 bg-[var(--tz-accent)] opacity-70" />
+      <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--tz-accent)]">
+        now
+      </span>
+    </div>
+  )
+}
+
 export function ForexFactoryCalendar({
   title = null,
   /** Hide what has already happened, which is most of what a Friday holds. */
@@ -43,6 +79,7 @@ export function ForexFactoryCalendar({
   upcomingOnly?: boolean
 }) {
   const { settings, hour12 } = useSettings()
+  const now = useNow(!upcomingOnly)
   const timezone = settings.general.timezone
   // These rows need the configured timezone, which the date-fns helpers do not
   // take, so they format their own times -- and then have to match the rest of
@@ -79,6 +116,23 @@ export function ForexFactoryCalendar({
     })
     byDay.set(day, [...(byDay.get(day) ?? []), event])
   }
+
+  // The first release still to come. The line goes immediately above it, so
+  // it reads as the boundary between what has happened and what has not --
+  // which on a Wednesday afternoon is the only thing being looked for.
+  // Only in whole-week mode: with the past hidden, every row is upcoming and
+  // a line above all of them says nothing.
+  const nextUp = upcomingOnly
+    ? null
+    : (events.find((event) => new Date(event.time).getTime() > now) ?? null)
+  // Nothing left this week, so it belongs after everything rather than nowhere.
+  const nowAtTheEnd = !upcomingOnly && events.length > 0 && nextUp === null
+  const clockTime = new Date(now).toLocaleTimeString(clock, {
+    timeZone: timezone,
+    hour: hour12 ? 'numeric' : '2-digit',
+    minute: '2-digit',
+    hour12,
+  })
 
   const today = new Date().toLocaleDateString(undefined, {
     timeZone: timezone,
@@ -131,8 +185,9 @@ export function ForexFactoryCalendar({
                 {day === today && ' · today'}
               </div>
               {rows.map((event, index) => (
+                <Fragment key={`${event.time}-${event.title}-${index}`}>
+                {event === nextUp && <NowLine label={clockTime} />}
                 <a
-                  key={`${event.time}-${event.title}-${index}`}
                   href={dayLink(event.time)}
                   target="_blank"
                   rel="noreferrer noopener"
@@ -179,7 +234,11 @@ export function ForexFactoryCalendar({
                     </span>
                   )}
                 </a>
+                </Fragment>
               ))}
+              {/* Everything this week has been and gone, so the line sits at
+                  the bottom rather than not appearing at all. */}
+              {nowAtTheEnd && group === days.length - 1 && <NowLine label={clockTime} />}
             </div>
           ))}
         </div>
