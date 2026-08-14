@@ -65,6 +65,13 @@
     --tz-text-faint: #8b93a7;
     --tz-shadow: 0 1px 2px rgb(16 19 28 / 0.06), 0 8px 24px -12px rgb(16 19 28 / 0.14);
     --tz-grid: #e7eaf2;
+    /* The brand green, for the few places that point at something rather than
+       report a result: today's date, a selected chip, a focus ring, the line
+       marking where the week has got to. Referred to by seven components and
+       defined by none of them until now, so every one of those fell back to
+       plain text colour -- an invisible focus ring and a "today" that was not
+       marked at all. */
+    --tz-accent: var(--color-zulu-600);
     color-scheme: light;
 
     /* Chart marks (validated against this surface) and their text steps. */
@@ -122,6 +129,7 @@
     --tz-text-faint: #6b7489;
     --tz-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -16px rgb(0 0 0 / 0.7);
     --tz-grid: #1f2532;
+    --tz-accent: var(--color-zulu-400);
     color-scheme: dark;
 
     --tz-gain: #12b06f;
