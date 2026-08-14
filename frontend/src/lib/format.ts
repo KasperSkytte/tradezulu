@@ -36,6 +36,36 @@ export function num(
   return options.sign && value > 0 ? `+${text}` : text
 }
 
+/** A money figure, or what it was worth to the account that took it.
+ *
+ * The whole journal can be read without saying what any account is worth:
+ * every currency figure has a share of something behind it, and with amounts
+ * hidden that share is what gets printed. Costs go through here too --
+ * commission and swap are real money leaving the account, so they belong in
+ * the result rather than being dropped from it, and a percentage says what
+ * they cost without saying what they cost *of*.
+ *
+ * A figure with no base is the one case that cannot be answered: nothing is
+ * known to divide by, and falling back to the amount would put the number on
+ * screen that all of this exists to keep off it.
+ */
+export function amount(
+  value: number | null | undefined,
+  base: number | null | undefined,
+  currency: string,
+  options: { showAmounts: boolean; sign?: boolean; decimals?: number } = {
+    showAmounts: true,
+  },
+): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—'
+  if (options.showAmounts) {
+    return money(value, currency, { sign: options.sign, decimals: options.decimals })
+  }
+  if (!base || base <= 0) return '—'
+  const share = (value / base) * 100
+  return `${options.sign && share > 0 ? '+' : ''}${num(share, 2)}%`
+}
+
 export function percent(value: number | null | undefined, decimals = 1): string {
   if (value === null || value === undefined || Number.isNaN(value)) return '—'
   return `${value.toFixed(decimals)}%`

@@ -8,9 +8,9 @@ import { BulkTagMenu } from '../components/BulkTagMenu'
 import { useFilters } from '../lib/filters'
 import { useSettings } from '../lib/settings'
 import {
+  amount,
   dateOnly,
   duration,
-  money,
   num,
   outcomeClass,
   pnlClass,
@@ -178,7 +178,10 @@ export function TradesPage() {
             <MiniStat label="Trades" value={String(data.total)} />
             <MiniStat
               label="Net P&L"
-              value={money(data.totals.net_pnl, currency, { sign: true })}
+              value={amount(data.totals.net_pnl, data.totals.opening_equity, currency, {
+                showAmounts,
+                sign: true,
+              })}
               className={pnlClass(data.totals.net_pnl)}
             />
             <MiniStat label="Total R" value={rMultiple(data.totals.total_r)} />
@@ -373,7 +376,10 @@ function TradeRow({
         {price(trade.exit_price, trade.digits)}
       </td>
       <td className="tabular hidden px-3 py-2 text-right lg:table-cell">
-        {money(trade.risk_amount, currency, { decimals: 0 })}
+        {amount(trade.risk_amount, trade.balance_before, currency, {
+          showAmounts: showSize,
+          decimals: 0,
+        })}
       </td>
       <td className="tabular hidden px-3 py-2 text-right text-[var(--tz-text-muted)] lg:table-cell">
         {trade.planned_r === null ? '—' : `${trade.planned_r.toFixed(1)}R`}
@@ -382,7 +388,10 @@ function TradeRow({
         {rMultiple(trade.realized_r)}
       </td>
       <td className={clsx('tabular px-3 py-2 text-right font-semibold', outcomeClass(trade.outcome, trade.net_pnl))}>
-        {money(trade.net_pnl, currency, { sign: true })}
+        {amount(trade.net_pnl, trade.balance_before, currency, {
+          showAmounts: showSize,
+          sign: true,
+        })}
       </td>
       <td
         className={clsx(
@@ -443,7 +452,10 @@ function TradeCard({ trade, currency }: { trade: Trade; currency: string }) {
         </div>
         <div className="shrink-0 text-right">
           <p className={clsx('tabular font-semibold', outcomeClass(trade.outcome, trade.net_pnl))}>
-            {money(trade.net_pnl, currency, { sign: true })}
+            {amount(trade.net_pnl, trade.balance_before, currency, {
+          showAmounts: showSize,
+          sign: true,
+        })}
           </p>
           <p className={clsx('tabular text-xs', outcomeClass(trade.outcome, trade.realized_r))}>
             {rMultiple(trade.realized_r)}
@@ -468,7 +480,8 @@ function TradeCard({ trade, currency }: { trade: Trade; currency: string }) {
       )}
       {trade.risk_amount !== null && (
         <p className="mt-2 text-xs text-[var(--tz-text-muted)]">
-          Risked {money(trade.risk_amount, currency)}
+          Risked{' '}
+          {amount(trade.risk_amount, trade.balance_before, currency, { showAmounts: showSize })}
           {trade.planned_r !== null && ` · planned ${trade.planned_r.toFixed(1)}R`}
         </p>
       )}

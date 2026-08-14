@@ -78,6 +78,9 @@ export interface TradePage {
   page_size: number
   totals: {
     net_pnl: number
+    /** Equity when the earliest matching trade opened, for showing the total
+     *  as a share rather than as an amount. */
+    opening_equity?: number | null
     total_r: number
     volume: number
     wins: number

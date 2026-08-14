@@ -79,6 +79,14 @@ def list_trades(
     # that have not closed, and a figure taken at the close is measured against
     # money this trade had already moved.
     behind = equity_at_open(db, items)
+
+    # What the account was worth when the earliest of these trades was opened,
+    # so the total above them can be read as a share of it. The interface hides
+    # currency by default, and a total with nothing behind it is the one figure
+    # that then has to be left blank or given away.
+    opening = equity_at_open(db, sorted(all_matching, key=lambda t: t.opened_at)[:1])
+    totals["opening_equity"] = round(next(iter(opening.values()), 0.0), 2) or None
+
     out = []
     for trade in items:
         row = TradeOut.model_validate(trade)
@@ -188,18 +196,32 @@ def bulk_update(payload: BulkTagRequest, _user: CurrentUser, db: DbSession) -> d
     return {"updated": len(trades)}
 
 
+def _with_basis(db: Session, trade: Trade) -> TradeDetailOut:
+    """One trade, carrying what the account was worth when it was opened.
+
+    The list endpoint has always attached this; a single trade did not, so the
+    detail page had no basis to express anything as a share of -- and with
+    currency hidden, every figure on it read as an em dash.
+    """
+    row = TradeDetailOut.model_validate(trade)
+    start = equity_at_open(db, [trade]).get(trade.id, 0.0)
+    row.balance_before = start or None
+    row.return_pct = round(trade.net_pnl / start * 100.0, 4) if start > 0 else None
+    return row
+
+
 @router.get("/{trade_id}", response_model=TradeDetailOut)
-def get_trade(trade_id: int, _user: CurrentUser, db: DbSession) -> Trade:
+def get_trade(trade_id: int, _user: CurrentUser, db: DbSession) -> TradeDetailOut:
     trade = db.get(Trade, trade_id)
     if trade is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Trade not found")
-    return trade
+    return _with_basis(db, trade)
 
 
 @router.patch("/{trade_id}", response_model=TradeDetailOut)
 def update_trade(
     trade_id: int, payload: TradeUpdate, _user: CurrentUser, db: DbSession, config: AppConfig
-) -> Trade:
+) -> TradeDetailOut:
     trade = db.get(Trade, trade_id)
     if trade is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Trade not found")
@@ -240,7 +262,7 @@ def update_trade(
     _recompute(db, trade, config)
     db.commit()
     db.refresh(trade)
-    return trade
+    return _with_basis(db, trade)
 
 
 @router.delete("/{trade_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -320,7 +342,7 @@ def create_manual_trade(
     _recompute(db, trade, config)
     db.commit()
     db.refresh(trade)
-    return trade
+    return _with_basis(db, trade)
 
 
 def _naive(value: Any):

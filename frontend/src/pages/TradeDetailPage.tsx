@@ -6,9 +6,9 @@ import clsx from 'clsx'
 import { api } from '../lib/api'
 import { useSettings } from '../lib/settings'
 import {
+  amount,
   dateTime,
   duration,
-  money,
   num,
   pnlClass,
   price,
@@ -32,7 +32,10 @@ export function TradeDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { currency, showAmounts: showSize } = useSettings()
+  const { currency, showAmounts } = useSettings()
+  // Lot sizes go with the money: 0.02 lots beside "+1.4%" says roughly what
+  // the account is worth, which is the thing being kept off the page.
+  const showSize = showAmounts
 
   const query = useQuery({
     queryKey: ['trade', id],
@@ -81,6 +84,12 @@ export function TradeDetailPage() {
 
   const notesDirty = notes !== (trade.notes ?? '') || setup !== (trade.setup ?? '')
 
+  // Every figure on this page in one unit: money, or a share of the equity the
+  // trade was opened against -- the same base the R multiple and Net ROI have
+  // always used, so the numbers beside each other agree about what they mean.
+  const cash = (value: number | null | undefined, options?: { sign?: boolean }) =>
+    amount(value, trade.balance_before, currency, { ...options, showAmounts })
+
   return (
     <div className="space-y-4">
       {/* Header ---------------------------------------------------------- */}
@@ -111,7 +120,7 @@ export function TradeDetailPage() {
 
         <div className="text-right">
           <p className={clsx('tabular text-2xl font-semibold', pnlClass(trade.net_pnl))}>
-            {money(trade.net_pnl, currency, { sign: true })}
+            {cash(trade.net_pnl, { sign: true })}
           </p>
           <p className={clsx('tabular text-sm', pnlClass(trade.realized_r))}>
             {rMultiple(trade.realized_r)}
@@ -143,14 +152,16 @@ export function TradeDetailPage() {
               <Row label="Entry" value={price(trade.entry_price, trade.digits)} />
               <Row label="Exit" value={price(trade.exit_price, trade.digits)} />
               {showSize && <Row label="Volume" value={`${num(trade.volume, 2)} lots`} />}
-              <Row label="Gross" value={money(trade.gross_profit, currency, { sign: true })} />
-              <Row label="Commission" value={money(trade.commission, currency)} />
-              <Row label="Swap" value={money(trade.swap, currency)} />
+              <Row label="Gross" value={cash(trade.gross_profit, { sign: true })} />
+              {/* Costs are part of the result rather than a footnote to it, so
+                  they are shown whichever units the page is in. */}
+              <Row label="Commission" value={cash(trade.commission)} />
+              <Row label="Swap" value={cash(trade.swap)} />
               <Row
                 label="Net"
                 value={
                   <span className={pnlClass(trade.net_pnl)}>
-                    {money(trade.net_pnl, currency, { sign: true })}
+                    {cash(trade.net_pnl, { sign: true })}
                   </span>
                 }
               />
@@ -199,18 +210,24 @@ export function TradeDetailPage() {
                   }
                 />
               </Field>
-              <Field
-                label={`Risk (${currency})`}
-                hint="Override when the stop in MetaTrader was not what you were actually risking."
-              >
-                <NumberInput
-                  value={trade.risk_override ?? trade.risk_amount}
-                  digits={2}
-                  onCommit={(value) =>
-                    update.mutate(value === null ? { reset_risk: true } : { risk_override: value })
-                  }
-                />
-              </Field>
+              {/* An amount, and the only one on the page that has to be typed
+                  rather than shown -- so with currency hidden it is left out
+                  entirely rather than printed as a percentage nobody can edit
+                  back into money. Turn amounts on to correct it. */}
+              {showAmounts && (
+                <Field
+                  label={`Risk (${currency})`}
+                  hint="Override when the stop in MetaTrader was not what you were actually risking."
+                >
+                  <NumberInput
+                    value={trade.risk_override ?? trade.risk_amount}
+                    digits={2}
+                    onCommit={(value) =>
+                      update.mutate(value === null ? { reset_risk: true } : { risk_override: value })
+                    }
+                  />
+                </Field>
+              )}
               <Field label="Rating">
                 <StarRating
                   value={trade.rating}
@@ -220,7 +237,10 @@ export function TradeDetailPage() {
             </div>
 
             <dl className="mt-3 space-y-2 border-t border-[var(--tz-border)] pt-3 text-sm">
-              <Row label="Risk in money" value={money(trade.risk_amount, currency)} />
+              <Row
+                label={showAmounts ? 'Risk in money' : 'Risk taken'}
+                value={cash(trade.risk_amount)}
+              />
               <Row
                 label="Planned R"
                 value={trade.planned_r === null ? '—' : `${trade.planned_r.toFixed(2)}R`}
@@ -357,7 +377,7 @@ export function TradeDetailPage() {
                       {price(execution.price, trade.digits)}
                     </td>
                     <td className={clsx('tabular px-4 py-2 text-right', pnlClass(execution.profit))}>
-                      {execution.profit ? money(execution.profit, currency, { sign: true }) : '—'}
+                      {execution.profit ? cash(execution.profit, { sign: true }) : '—'}
                     </td>
                   </tr>
                 ))}
