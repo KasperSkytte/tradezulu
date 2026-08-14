@@ -211,7 +211,7 @@ registerOverlay<{ label: string; color: string; above: boolean; family: string }
 export function KLineReplay({ trade, timeframe }: { trade: TradeDetail; timeframe: string }) {
   const container = useRef<HTMLDivElement>(null)
   const chartRef = useRef<Chart | null>(null)
-  const { settings, hour12, save } = useSettings()
+  const { settings, hour12, save, showAmounts } = useSettings()
   const dark = useIsDark()
   const [tool, setTool] = useState('')
 
@@ -411,7 +411,9 @@ export function KLineReplay({ trade, timeframe }: { trade: TradeDetail; timefram
         zLevel: -1,
         points: [{ timestamp: at, value: anchor }],
         extendData: {
-          label: `${execution.kind === 'in' ? 'In' : 'Out'} ${execution.volume}`,
+          label: `${execution.kind === 'in' ? 'In' : 'Out'}${
+            showAmounts ? ` ${execution.volume}` : ''
+          }`,
           family,
           color:
             execution.kind === 'in' ? entry : execution.profit >= 0 ? gain : loss,

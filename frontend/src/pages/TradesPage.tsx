@@ -43,11 +43,20 @@ type SortKey =
   | 'duration'
   | 'risk'
 
-const COLUMNS: { key: SortKey | null; label: string; align?: 'right'; hideBelow?: string }[] = [
+// Lot sizes are hidden along with the money. A size is not a currency figure,
+// but it is the one number on the page that turns a percentage back into an
+// amount -- 0.02 lots beside "+1.4%" says roughly what the account is worth.
+const COLUMNS: {
+  key: SortKey | null
+  label: string
+  align?: 'right'
+  hideBelow?: string
+  money?: boolean
+}[] = [
   { key: 'closed_at', label: 'Closed' },
   { key: 'symbol', label: 'Symbol' },
   { key: null, label: 'Side' },
-  { key: 'volume', label: 'Size', align: 'right', hideBelow: 'xl' },
+  { key: 'volume', label: 'Size', align: 'right', hideBelow: 'xl', money: true },
   { key: null, label: 'Entry → Exit', align: 'right', hideBelow: 'xl' },
   { key: 'risk', label: 'Risk', align: 'right', hideBelow: 'lg' },
   { key: 'planned_r', label: 'Plan', align: 'right', hideBelow: 'lg' },
@@ -66,7 +75,8 @@ export function TradesPage() {
   // in the URL, so a reload or a shared link keeps the order somebody chose.
   const { params, filters, setSort } = useFilters()
   const { sort, order } = filters
-  const { currency } = useSettings()
+  const { currency, showAmounts } = useSettings()
+  const columns = COLUMNS.filter((column) => showAmounts || !column.money)
   const queryClient = useQueryClient()
 
   const [page, setPage] = useState(1)
@@ -202,7 +212,7 @@ export function TradesPage() {
                         }
                       />
                     </th>
-                    {COLUMNS.map((column) => (
+                    {columns.map((column) => (
                       <th
                         key={column.label}
                         className={clsx(
@@ -320,6 +330,7 @@ function TradeRow({
   selected: boolean
   onToggle: () => void
 }) {
+  const { showAmounts: showSize } = useSettings()
   return (
     <tr
       className={clsx(
@@ -353,7 +364,9 @@ function TradeRow({
       <td className="px-3 py-2">
         <DirectionBadge direction={trade.direction} />
       </td>
-      <td className="tabular hidden px-3 py-2 text-right xl:table-cell">{num(trade.volume, 2)}</td>
+      {showSize && (
+        <td className="tabular hidden px-3 py-2 text-right xl:table-cell">{num(trade.volume, 2)}</td>
+      )}
       <td className="tabular hidden whitespace-nowrap px-3 py-2 text-right text-xs xl:table-cell">
         {price(trade.entry_price, trade.digits)}
         <span className="mx-1 text-[var(--tz-text-faint)]">→</span>
@@ -408,6 +421,7 @@ function TradeRow({
 }
 
 function TradeCard({ trade, currency }: { trade: Trade; currency: string }) {
+  const { showAmounts: showSize } = useSettings()
   return (
     <Link
       to={`/trades/${trade.id}`}
@@ -422,7 +436,8 @@ function TradeCard({ trade, currency }: { trade: Trade; currency: string }) {
           </div>
           <p className="mt-1 text-xs text-[var(--tz-text-muted)]">
             {dateOnly(trade.closed_at ?? trade.opened_at, 'd MMM yyyy', trade.account_id)} ·{' '}
-            {timeOnly(trade.closed_at ?? trade.opened_at, trade.account_id)} · {num(trade.volume, 2)} lots ·{' '}
+            {timeOnly(trade.closed_at ?? trade.opened_at, trade.account_id)} ·{' '}
+            {showSize ? `${num(trade.volume, 2)} lots · ` : ''}
             {duration(trade.duration_seconds)}
           </p>
         </div>

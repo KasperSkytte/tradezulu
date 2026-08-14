@@ -706,6 +706,7 @@ function RecentTradeList({
   trades: Trade[]
   cash: (value: number | null | undefined, options?: { sign?: boolean }) => string
 }) {
+  const { showAmounts } = useSettings()
   return (
     <div className="divide-y divide-[var(--tz-border)] border-t border-[var(--tz-border)]">
       {trades.map((trade) => (
@@ -721,7 +722,8 @@ function RecentTradeList({
             </div>
             <p className="mt-0.5 text-xs text-[var(--tz-text-muted)]">
               {dateOnly(trade.closed_at ?? trade.opened_at, 'd MMM', trade.account_id)} ·{' '}
-              {timeOnly(trade.closed_at ?? trade.opened_at, trade.account_id)} · {num(trade.volume, 2)} lots
+              {timeOnly(trade.closed_at ?? trade.opened_at, trade.account_id)}
+              {showAmounts ? ` · ${num(trade.volume, 2)} lots` : ''}
             </p>
           </div>
           <div className="text-right">

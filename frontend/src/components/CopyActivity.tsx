@@ -2,6 +2,7 @@
 
 import { CheckCircle2, CircleSlash, MinusCircle, XCircle } from 'lucide-react'
 import { timeOnly } from '../lib/format'
+import { useSettings } from '../lib/settings'
 import type { CopyEvent, SlaveAccount } from '../lib/types'
 import { EmptyState } from './ui'
 
@@ -20,6 +21,10 @@ export function CopyActivity({
   events: CopyEvent[]
   accounts: SlaveAccount[]
 }) {
+  // A lot size is the one figure here that says what the account is worth, so
+  // it goes with the money rather than with the rest of the record.
+  const { showAmounts } = useSettings()
+
   if (events.length === 0) {
     return (
       <EmptyState
@@ -53,7 +58,7 @@ export function CopyActivity({
                 <td className="py-2 pr-3 align-top whitespace-nowrap font-medium">
                   {event.action}
                   {event.symbol ? ` ${event.symbol}` : ''}
-                  {event.volume ? ` ${event.volume}` : ''}
+                  {showAmounts && event.volume ? ` ${event.volume}` : ''}
                 </td>
                 <td className="py-2 pr-2 align-top text-[var(--tz-text-muted)]">
                   {event.message}

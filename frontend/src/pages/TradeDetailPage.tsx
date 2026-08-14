@@ -32,7 +32,7 @@ export function TradeDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { currency } = useSettings()
+  const { currency, showAmounts: showSize } = useSettings()
 
   const query = useQuery({
     queryKey: ['trade', id],
@@ -103,7 +103,8 @@ export function TradeDetailPage() {
           </div>
           <p className="mt-1 text-sm text-[var(--tz-text-muted)]">
             {dateTime(trade.opened_at, undefined, trade.account_id)}
-            {trade.closed_at && ` → ${timeOnly(trade.closed_at, trade.account_id)}`} · {num(trade.volume, 2)} lots ·
+            {trade.closed_at && ` → ${timeOnly(trade.closed_at, trade.account_id)}`} ·{' '}
+            {showSize ? `${num(trade.volume, 2)} lots · ` : ''}
             held {duration(trade.duration_seconds)}
           </p>
         </div>
@@ -141,7 +142,7 @@ export function TradeDetailPage() {
             <dl className="space-y-2 text-sm">
               <Row label="Entry" value={price(trade.entry_price, trade.digits)} />
               <Row label="Exit" value={price(trade.exit_price, trade.digits)} />
-              <Row label="Volume" value={`${num(trade.volume, 2)} lots`} />
+              {showSize && <Row label="Volume" value={`${num(trade.volume, 2)} lots`} />}
               <Row label="Gross" value={money(trade.gross_profit, currency, { sign: true })} />
               <Row label="Commission" value={money(trade.commission, currency)} />
               <Row label="Swap" value={money(trade.swap, currency)} />
@@ -335,7 +336,7 @@ export function TradeDetailPage() {
                 <tr className="border-b border-[var(--tz-border)] text-left text-xs text-[var(--tz-text-muted)]">
                   <th className="px-4 py-2 font-medium">Time</th>
                   <th className="px-4 py-2 font-medium">Type</th>
-                  <th className="px-4 py-2 text-right font-medium">Volume</th>
+                  {showSize && <th className="px-4 py-2 text-right font-medium">Volume</th>}
                   <th className="px-4 py-2 text-right font-medium">Price</th>
                   <th className="px-4 py-2 text-right font-medium">Profit</th>
                 </tr>
@@ -349,7 +350,9 @@ export function TradeDetailPage() {
                         {execution.kind === 'in' ? 'Entry' : 'Exit'} · {execution.side}
                       </span>
                     </td>
-                    <td className="tabular px-4 py-2 text-right">{num(execution.volume, 2)}</td>
+                    {showSize && (
+                      <td className="tabular px-4 py-2 text-right">{num(execution.volume, 2)}</td>
+                    )}
                     <td className="tabular px-4 py-2 text-right">
                       {price(execution.price, trade.digits)}
                     </td>
