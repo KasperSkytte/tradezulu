@@ -65,7 +65,10 @@ const COLUMNS: {
   // What the trade did to the account it was taken on, measured against the
   // balance just before it closed. 20 on a 200 account is +10%; the same 20 on
   // 20,000 is noise, and the money column alone cannot tell them apart.
-  { key: null, label: 'Net ROI', align: 'right', hideBelow: 'lg' },
+  // Only while amounts are shown: with them hidden, Net P&L is already
+  // expressed against the same equity, and the two columns print the same
+  // number side by side.
+  { key: null, label: 'Net ROI', align: 'right', hideBelow: 'lg', money: true },
   { key: 'duration', label: 'Held', align: 'right', hideBelow: 'xl' },
   { key: null, label: 'Tags', hideBelow: 'lg' },
 ]
@@ -393,16 +396,18 @@ function TradeRow({
           sign: true,
         })}
       </td>
-      <td
-        className={clsx(
-          'tabular hidden px-3 py-2 text-right lg:table-cell',
-          outcomeClass(trade.outcome, trade.net_pnl),
-        )}
-      >
-        {trade.return_pct == null
-          ? '—'
-          : `${trade.return_pct > 0 ? '+' : ''}${num(trade.return_pct, 2)}%`}
-      </td>
+      {showSize && (
+        <td
+          className={clsx(
+            'tabular hidden px-3 py-2 text-right lg:table-cell',
+            outcomeClass(trade.outcome, trade.net_pnl),
+          )}
+        >
+          {trade.return_pct == null
+            ? '—'
+            : `${trade.return_pct > 0 ? '+' : ''}${num(trade.return_pct, 2)}%`}
+        </td>
+      )}
       <td className="tabular hidden px-3 py-2 text-right text-xs text-[var(--tz-text-muted)] xl:table-cell">
         {duration(trade.duration_seconds)}
       </td>
@@ -453,9 +458,9 @@ function TradeCard({ trade, currency }: { trade: Trade; currency: string }) {
         <div className="shrink-0 text-right">
           <p className={clsx('tabular font-semibold', outcomeClass(trade.outcome, trade.net_pnl))}>
             {amount(trade.net_pnl, trade.balance_before, currency, {
-          showAmounts: showSize,
-          sign: true,
-        })}
+              showAmounts: showSize,
+              sign: true,
+            })}
           </p>
           <p className={clsx('tabular text-xs', outcomeClass(trade.outcome, trade.realized_r))}>
             {rMultiple(trade.realized_r)}

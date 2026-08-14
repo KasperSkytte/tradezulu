@@ -62,8 +62,11 @@ export function amount(
     return money(value, currency, { sign: options.sign, decimals: options.decimals })
   }
   if (!base || base <= 0) return '—'
+  // A cost too small to show rounds to zero rather than to "-0.00%", which is
+  // what a swap of a few cents against an account did.
   const share = (value / base) * 100
-  return `${options.sign && share > 0 ? '+' : ''}${num(share, 2)}%`
+  const shown = Math.abs(share) < 0.005 ? 0 : share
+  return `${options.sign && shown > 0 ? '+' : ''}${num(shown, 2)}%`
 }
 
 export function percent(value: number | null | undefined, decimals = 1): string {
