@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.33.0](https://github.com/KasperSkytte/tradezulu/compare/v1.32.0...v1.33.0) (2026-08-14)
+
+
+### Features
+
+* **tags:** colour tags automatically ([6bc9642](https://github.com/KasperSkytte/tradezulu/commit/6bc9642c3fc7ec58f9cd4a1391de68b430451f3e))
+
 ## [1.32.0](https://github.com/KasperSkytte/tradezulu/compare/v1.31.3...v1.32.0) (2026-08-14)
 
 
