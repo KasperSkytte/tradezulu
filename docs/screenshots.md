@@ -53,6 +53,12 @@ drawn by TradeZulu rather than embedded, so it matches the rest of the journal
 and can be filtered by currency and folder colour — red folders on the dollar
 by default, which is what most people mean by "the news".
 
+Beside it are ForexFactory's stories: what has already happened, from the
+hundreds of sources they carry, each with the same folder rating their releases
+get. A story tied to a scheduled release says so, which separates the number
+itself from the commentary about it. Ratings are picked in settings like the
+calendar's; clearing them all adds the unrated two thirds of the wire.
+
 ![ForexFactory calendar](screenshots/news-forexfactory.png)
 
 **TradingView** is their own widget, with their own figures and their own
