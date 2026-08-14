@@ -72,6 +72,16 @@
     ],
     "tradingview_prefix": "FALCON:"
   },
+  "dukascopy": {
+    "label": "Dukascopy Bank",
+    "installer": "https://download.terminal.free/cdn/web/dukascopy.bank.sa/mt5/dukascopy5setup.exe",
+    "matches": [
+      "dukascopy"
+    ],
+    "_entity": "Dukascopy Bank SA -- MetaQuotes id Dukascopy",
+    "servers": [],
+    "tradingview_prefix": "DUKASCOPY:"
+  },
   "default": {
     "label": "Other broker",
     "installer": "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe",
