@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.34.3](https://github.com/KasperSkytte/tradezulu/compare/v1.34.2...v1.34.3) (2026-08-17)
+
+
+### Bug fixes
+
+* **news:** take a story's published time, not whichever copy was read last ([be8d8ee](https://github.com/KasperSkytte/tradezulu/commit/be8d8ee00106ae7174e04942c81e0547008e3081))
+
 ## [1.34.2](https://github.com/KasperSkytte/tradezulu/compare/v1.34.1...v1.34.2) (2026-08-17)
 
 
