@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.34.2](https://github.com/KasperSkytte/tradezulu/compare/v1.34.1...v1.34.2) (2026-08-17)
+
+
+### Bug fixes
+
+* **news:** say when a story came out, not only how long ago ([7b3b14e](https://github.com/KasperSkytte/tradezulu/commit/7b3b14ecc454a99d166e7cb18f6c92f8fa36fadd))
+
 ## [1.34.1](https://github.com/KasperSkytte/tradezulu/compare/v1.34.0...v1.34.1) (2026-08-17)
 
 
