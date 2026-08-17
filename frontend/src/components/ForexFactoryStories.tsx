@@ -10,6 +10,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, ExternalLink, MessageSquare } from 'lucide-react'
 import { api } from '../lib/api'
+import { useNow } from '../lib/clock'
 import { useSettings } from '../lib/settings'
 import type { NewsStories } from '../lib/types'
 import { Card, CardHeader, EmptyState, ErrorState, Skeleton } from './ui'
@@ -21,14 +22,9 @@ const IMPACT: Record<string, { color: string; label: string }> = {
   Low: { color: '#eab308', label: 'Yellow folder' },
 }
 
-/** "2 hr 12 min ago", the way the source page puts it.
- *
- *  Relative rather than a clock time: a headline's worth is mostly its age,
- *  and "07:15" makes you work out how long ago that was against a timezone
- *  you may not be in.
- */
-function ago(iso: string): string {
-  const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)
+/** How long ago, in the words the source page uses. */
+function ago(iso: string, now: number): string {
+  const seconds = Math.max(0, (now - new Date(iso).getTime()) / 1000)
   if (seconds < 90) return 'just now'
   const minutes = Math.round(seconds / 60)
   if (minutes < 60) return `${minutes} min ago`
@@ -38,9 +34,38 @@ function ago(iso: string): string {
   return days === 1 ? 'yesterday' : `${days} days ago`
 }
 
+/** When it came out, on the journal's clock -- and only then how long ago.
+ *
+ *  An age on its own cannot be checked against anything. "2 hr 12 min ago" is
+ *  either right or wrong and there is no way to tell which, so a page that has
+ *  been open a while, or a story the source filed late, both read as a bug.
+ *  The time it came out is a fact that survives being looked at twice; the age
+ *  beside it is the part that answers "is this still news".
+ */
+function when(iso: string, now: number, timezone: string, hour12: boolean): string {
+  const at = new Date(iso)
+  const clock = at.toLocaleTimeString(hour12 ? 'en-US' : 'en-GB', {
+    timeZone: timezone,
+    hour: hour12 ? 'numeric' : '2-digit',
+    minute: '2-digit',
+    hour12,
+  })
+  const sameDay =
+    at.toLocaleDateString('en-CA', { timeZone: timezone }) ===
+    new Date(now).toLocaleDateString('en-CA', { timeZone: timezone })
+  // A story from yesterday needs the day as well, or 23:40 reads as tonight.
+  const day = sameDay
+    ? ''
+    : `${at.toLocaleDateString(undefined, { timeZone: timezone, weekday: 'short' })} `
+  return `${day}${clock}`
+}
+
 export function ForexFactoryStories({ title = 'News' }: { title?: string | null }) {
-  const { settings } = useSettings()
+  const { settings, hour12 } = useSettings()
   const impacts = settings.news?.story_impacts ?? []
+  // Ages are only true at the moment they are drawn, so this redraws them.
+  const now = useNow()
+  const timezone = settings.general.timezone
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['news', 'stories', impacts.join(',')],
@@ -62,7 +87,7 @@ export function ForexFactoryStories({ title = 'News' }: { title?: string | null 
             action={
               data?.updated_at ? (
                 <span className="text-xs text-[var(--tz-text-faint)]">
-                  {data.stale ? 'last held copy' : `updated ${ago(data.updated_at)}`}
+                  {data.stale ? 'last held copy' : `updated ${ago(data.updated_at, now)}`}
                 </span>
               ) : null
             }
@@ -128,7 +153,11 @@ export function ForexFactoryStories({ title = 'News' }: { title?: string | null 
                     <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--tz-text-faint)]">
                       <span>{story.source}</span>
                       <span>·</span>
-                      <span>{ago(story.time)}</span>
+                      <span title={ago(story.time, now)}>
+                        {when(story.time, now, timezone, hour12)}
+                      </span>
+                      <span>·</span>
+                      <span>{ago(story.time, now)}</span>
                       {/* A story tied to a calendar release is one of *the*
                           numbers rather than commentary about them. */}
                       {story.scheduled && (

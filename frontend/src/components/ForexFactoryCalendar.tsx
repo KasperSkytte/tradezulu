@@ -7,10 +7,11 @@
  *  somebody else's typography.
  */
 
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle } from 'lucide-react'
 import { api } from '../lib/api'
+import { useNow } from '../lib/clock'
 import { useSettings } from '../lib/settings'
 import type { NewsCalendar } from '../lib/types'
 import { Card, CardHeader, EmptyState, ErrorState, Skeleton } from './ui'
@@ -33,22 +34,6 @@ function dayLink(iso: string): string {
   const when = new Date(iso)
   const month = when.toLocaleString('en-US', { month: 'short' }).toLowerCase()
   return `https://www.forexfactory.com/calendar?day=${month}${when.getDate()}.${when.getFullYear()}`
-}
-
-/** Where "now" falls among the week's releases.
- *
- *  Re-read every half minute rather than once per render: this page is the
- *  one people leave open while they wait for a release, which is exactly when
- *  a line that stopped moving an hour ago is worst.
- */
-function useNow(active: boolean): number {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    if (!active) return
-    const timer = window.setInterval(() => setNow(Date.now()), 30_000)
-    return () => window.clearInterval(timer)
-  }, [active])
-  return now
 }
 
 /** The calendar date a moment falls on, in the zone the journal is written in.
