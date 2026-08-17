@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.34.1](https://github.com/KasperSkytte/tradezulu/compare/v1.34.0...v1.34.1) (2026-08-17)
+
+
+### Bug fixes
+
+* **news:** keep the now line on today, even when today is empty ([863adc1](https://github.com/KasperSkytte/tradezulu/commit/863adc1416efee5494c8423bbaf69dc2a2f531f4))
+* **ui:** name the refresh button after what it refreshes ([fde25ef](https://github.com/KasperSkytte/tradezulu/commit/fde25ef58fa87984b95c60d259ffec76536f0066))
+
 ## [1.34.0](https://github.com/KasperSkytte/tradezulu/compare/v1.33.0...v1.34.0) (2026-08-14)
 
 
