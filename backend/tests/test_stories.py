@@ -133,3 +133,54 @@ class TestFiltering:
 
     def test_the_limit_is_honoured(self, three):
         assert len(ff.select(three, [], limit=2)) == 2
+
+
+class TestTheSameStoryTwice:
+    """The page carries a story in several lists, and they disagree.
+
+    The copy in the stream is stamped later than the one in the hot list --
+    half an hour later in the case that turned this up -- so keeping whichever
+    was read last put a time on screen that ForexFactory itself does not show.
+    """
+
+    def test_the_earliest_stamp_wins(self):
+        html = page(
+            story(id=7, dateline=1786969699),   # 12:28:19Z, what the source shows
+            story(id=7, dateline=1786971667),   # 13:01:07Z, the same story bumped
+        )
+
+        (parsed,) = ff._stories_from(html)
+
+        assert parsed.when.isoformat() == "2026-08-17T12:28:19+00:00"
+
+    def test_it_does_not_depend_on_the_order_they_are_read_in(self):
+        later_first = page(
+            story(id=7, dateline=1786971667),
+            story(id=7, dateline=1786969699),
+        )
+
+        (parsed,) = ff._stories_from(later_first)
+
+        assert parsed.when.isoformat() == "2026-08-17T12:28:19+00:00"
+
+    def test_the_fuller_copy_fills_in_the_emptier_one(self):
+        """The later copies carry an empty preview and a placeholder picture."""
+        html = page(
+            story(id=7, dateline=1786971667, preview="", impact=""),
+            story(id=7, dateline=1786969699, preview="What happened", impact="high"),
+        )
+
+        (parsed,) = ff._stories_from(html)
+
+        assert parsed.preview == "What happened"
+        assert parsed.impact == "High"
+
+    def test_the_larger_comment_count_wins(self):
+        html = page(
+            story(id=7, dateline=1786969699, comments=96),
+            story(id=7, dateline=1786971667, comments=4),
+        )
+
+        (parsed,) = ff._stories_from(html)
+
+        assert parsed.comments == 96

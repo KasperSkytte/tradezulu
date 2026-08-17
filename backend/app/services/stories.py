@@ -156,7 +156,7 @@ def _stories_from(page: str) -> list[Story]:
                 continue
 
             url = str(node.get("url") or "")
-            seen[story_id] = Story(
+            story = Story(
                 id=story_id,
                 title=_clean(node.get("title")),
                 url=f"https://www.forexfactory.com{url}" if url.startswith("/") else url,
@@ -167,8 +167,39 @@ def _stories_from(page: str) -> list[Story]:
                 comments=int(node.get("comments") or 0),
                 scheduled=bool(node.get("calendar_linked")),
             )
+            seen[story_id] = _merge(seen.get(story_id), story)
 
     return sorted(seen.values(), key=lambda story: story.when, reverse=True)
+
+
+def _merge(prior: Story | None, found: Story) -> Story:
+    """One story from the several copies of it the page carries.
+
+    The same story appears in more than one of these lists, and the copies do
+    not agree about when it happened: the one in the stream is stamped with a
+    later time than the one in the hot list -- half an hour later, in the case
+    that turned this up -- and taking whichever came last put a time on screen
+    that ForexFactory itself does not show.
+
+    The earliest stamp is the one it was published at, which is what the source
+    page displays and the only one that means anything to a reader. The rest of
+    the fields are filled from whichever copy has them: the later copies tend
+    to carry an empty preview and a placeholder picture.
+    """
+    if prior is None:
+        return found
+    return Story(
+        id=found.id,
+        title=prior.title or found.title,
+        url=prior.url or found.url,
+        source=prior.source or found.source,
+        when=min(prior.when, found.when),
+        impact=prior.impact or found.impact,
+        preview=prior.preview or found.preview,
+        # Comment counts only grow, so the larger is the fresher reading.
+        comments=max(prior.comments, found.comments),
+        scheduled=prior.scheduled or found.scheduled,
+    )
 
 
 def load(force: bool = False) -> Cache:
