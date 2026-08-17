@@ -51,6 +51,47 @@ function useNow(active: boolean): number {
   return now
 }
 
+/** The calendar date a moment falls on, in the zone the journal is written in.
+ *
+ *  ISO order rather than a heading, because these are sorted and walked. The
+ *  heading is made from the key when the day is drawn.
+ */
+function dayKey(iso: string, timezone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(iso))
+}
+
+/** Midday rather than midnight: a date read back in another zone keeps its
+ *  own day either way, which midnight does not. */
+function dayLabel(key: string, timezone: string): string {
+  return new Date(`${key}T12:00:00Z`).toLocaleDateString(undefined, {
+    timeZone: timezone,
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  })
+}
+
+const minKey = (a: string, b: string) => (a < b ? a : b)
+const maxKey = (a: string, b: string) => (a > b ? a : b)
+
+/** Every date from one key to the other, inclusive. Capped: the feed carries
+ *  one week, and a stale or malformed one must not draw a year of headings. */
+function fillDays(from: string, to: string): string[] {
+  const out: string[] = []
+  const cursor = new Date(`${from}T12:00:00Z`)
+  const end = new Date(`${to}T12:00:00Z`)
+  while (cursor <= end && out.length < 14) {
+    out.push(cursor.toISOString().slice(0, 10))
+    cursor.setUTCDate(cursor.getUTCDate() + 1)
+  }
+  return out
+}
+
 /** Where the week is up to: everything above has happened, nothing below has.
  *
  *  Drawn as a line rather than a highlighted row because it falls *between*
@@ -106,39 +147,43 @@ export function ForexFactoryCalendar({
     ? all.filter((event) => new Date(event.time).getTime() >= since)
     : all
 
+  // Keyed by the calendar date in the configured zone, so the days can be
+  // walked in order and the gaps found. The heading is formatted from the key
+  // rather than from an event, because a day may now have no events at all.
   const byDay = new Map<string, typeof events>()
   for (const event of events) {
-    const day = new Date(event.time).toLocaleDateString(undefined, {
-      timeZone: timezone,
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long',
-    })
+    const day = dayKey(event.time, timezone)
     byDay.set(day, [...(byDay.get(day) ?? []), event])
   }
 
-  // The first release still to come. The line goes immediately above it, so
-  // it reads as the boundary between what has happened and what has not --
-  // which on a Wednesday afternoon is the only thing being looked for.
-  // Only in whole-week mode: with the past hidden, every row is upcoming and
-  // a line above all of them says nothing.
-  const nextUp = upcomingOnly
-    ? null
-    : (events.find((event) => new Date(event.time).getTime() > now) ?? null)
-  // Nothing left this week, so it belongs after everything rather than nowhere.
-  const nowAtTheEnd = !upcomingOnly && events.length > 0 && nextUp === null
+  const todayKey = dayKey(new Date(now).toISOString(), timezone)
+
+  // Whole week means the whole week, empty days included. Leaving them out
+  // moved "now" under the next day that happened to have a release -- so on a
+  // quiet Tuesday the line sat below Wednesday's heading, reading as though
+  // the day had already turned.
+  const dayList = [...byDay.keys()].sort()
+  const days = upcomingOnly
+    ? dayList
+    : fillDays(
+        dayList.length ? minKey(dayList[0], todayKey) : todayKey,
+        dayList.length ? maxKey(dayList[dayList.length - 1], todayKey) : todayKey,
+      )
+
+  // The line belongs to today, wherever today's releases have got to -- above
+  // the first one still to come, or after the last one when they have all
+  // been. Anchoring it to "the next release anywhere in the week" put it under
+  // tomorrow's heading whenever today had nothing on, which read as though the
+  // day had already turned.
+  //
+  // Only in whole-week mode: with the past hidden every row is upcoming, and a
+  // line above all of them says nothing.
+  const marksToday = !upcomingOnly && days.includes(todayKey)
   const clockTime = new Date(now).toLocaleTimeString(clock, {
     timeZone: timezone,
     hour: hour12 ? 'numeric' : '2-digit',
     minute: '2-digit',
     hour12,
-  })
-
-  const today = new Date().toLocaleDateString(undefined, {
-    timeZone: timezone,
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
   })
 
   return (
@@ -169,7 +214,16 @@ export function ForexFactoryCalendar({
         />
       ) : (
         <div className="divide-y divide-[var(--tz-border)]">
-          {[...byDay.entries()].map(([day, rows], group, days) => (
+          {days.map((day, group) => {
+            const rows = byDay.get(day) ?? []
+            const isToday = day === todayKey
+            // Today's first release still to come. The line goes above it, or
+            // after everything when the day is done -- including a day with
+            // nothing on it at all, where the group is the line by itself.
+            const upcoming = isToday
+              ? rows.find((event) => new Date(event.time).getTime() > now)
+              : undefined
+            return (
             <div key={day}>
               <div
                 className={
@@ -178,15 +232,15 @@ export function ForexFactoryCalendar({
                   // nothing is above it, and a square background over a
                   // rounded corner squares the corner off.
                   (group === 0 && !title ? 'rounded-t-[var(--radius-card)] ' : '') +
-                  (day === today ? 'text-[var(--tz-accent)]' : 'text-[var(--tz-text-muted)]')
+                  (isToday ? 'text-[var(--tz-accent)]' : 'text-[var(--tz-text-muted)]')
                 }
               >
-                {day}
-                {day === today && ' · today'}
+                {dayLabel(day, timezone)}
+                {isToday && ' · today'}
               </div>
               {rows.map((event, index) => (
                 <Fragment key={`${event.time}-${event.title}-${index}`}>
-                {event === nextUp && <NowLine label={clockTime} />}
+                {marksToday && event === upcoming && <NowLine label={clockTime} />}
                 <a
                   href={dayLink(event.time)}
                   target="_blank"
@@ -199,6 +253,7 @@ export function ForexFactoryCalendar({
                     // otherwise square the last two corners.
                     (group === days.length - 1 &&
                     index === rows.length - 1 &&
+                    !(marksToday && isToday && !upcoming) &&
                     !data?.stale
                       ? 'rounded-b-[var(--radius-card)]'
                       : '')
@@ -236,11 +291,20 @@ export function ForexFactoryCalendar({
                 </a>
                 </Fragment>
               ))}
-              {/* Everything this week has been and gone, so the line sits at
-                  the bottom rather than not appearing at all. */}
-              {nowAtTheEnd && group === days.length - 1 && <NowLine label={clockTime} />}
+              {/* A day nobody scheduled anything on. Said rather than left
+                  out, so the week reads as a week -- and so today saying
+                  nothing is a day off rather than a day missing. */}
+              {rows.length === 0 && (
+                <p className="px-4 py-2 text-xs text-[var(--tz-text-faint)] sm:px-5">
+                  Nothing scheduled
+                </p>
+              )}
+              {/* Today is over, or had nothing on it: the line closes the day
+                  rather than opening tomorrow. */}
+              {marksToday && isToday && !upcoming && <NowLine label={clockTime} />}
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
