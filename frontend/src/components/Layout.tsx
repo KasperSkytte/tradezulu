@@ -126,7 +126,11 @@ export function Layout() {
             </h1>
             {showAccount && <AccountPicker />}
             {showPeriod && <PeriodPicker />}
-            <SyncButton />
+            {/* Same rule as the account picker: it re-reads this account's
+                trades, so it belongs exactly where an account is in play. On
+                the news and in settings it could only ever appear to do
+                nothing. */}
+            {showAccount && <SyncButton />}
           </div>
         </header>
 

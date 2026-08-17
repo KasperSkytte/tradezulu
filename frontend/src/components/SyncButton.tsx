@@ -60,10 +60,14 @@ export function SyncButton() {
     void queryClient.invalidateQueries()
   }, [settings.mt5, status, queryClient])
 
+  // Named after what it actually re-reads. It says nothing about the news,
+  // which keeps its own copy on the server for minutes at a time -- so on that
+  // page a plain "Refresh" looked broken, because pressing it could not
+  // possibly have changed anything on screen.
   const title =
     settings.mt5.sync_mode === 'ea'
-      ? `The terminal sends deals as they happen. Last received ${relative(status?.last_sync_at)}. Click to re-read.`
-      : 'Re-read the journal. Add your account under Settings → Accounts to sync automatically.'
+      ? `Re-read this account's trades and figures. The terminal sends deals as they happen, and the last arrived ${relative(status?.last_sync_at)}.`
+      : "Re-read this account's trades and figures. Add your account under Settings → Accounts to sync automatically."
 
   return (
     <div className="flex items-center gap-2">
@@ -89,7 +93,7 @@ export function SyncButton() {
         }}
       >
         <RefreshCw size={15} className={clsx(sync.isPending && 'animate-spin')} />
-        <span className="hidden sm:inline">Refresh</span>
+        <span className="hidden sm:inline">Refresh account</span>
       </button>
     </div>
   )
