@@ -18,9 +18,9 @@ import { Card, CardHeader, EmptyState, ErrorState, Skeleton } from './ui'
 
 /** ForexFactory's folder colours, which is how everyone refers to these. */
 const IMPACT: Record<string, { color: string; label: string }> = {
-  High: { color: 'var(--tz-loss)', label: 'Red folder' },
-  Medium: { color: '#f59e0b', label: 'Orange folder' },
-  Low: { color: '#eab308', label: 'Yellow folder' },
+  High: { color: 'var(--tz-impact-high)', label: 'Red folder' },
+  Medium: { color: 'var(--tz-impact-medium)', label: 'Orange folder' },
+  Low: { color: 'var(--tz-impact-low)', label: 'Yellow folder' },
   Holiday: { color: 'var(--tz-text-faint)', label: 'Holiday' },
 }
 
@@ -258,9 +258,16 @@ export function ForexFactoryCalendar({
                   >
                     {event.currency}
                   </span>
+                  {/* A shade bigger than it was, and ringed: at 8px on white
+                      a yellow mark all but dissolves into the page, and the
+                      colour it is trying to be distinct from is next to it in
+                      the list rather than beside it. */}
                   <span
-                    className="mt-1 size-2 shrink-0 rounded-[2px]"
-                    style={{ backgroundColor: IMPACT[event.impact]?.color ?? 'var(--tz-flat)' }}
+                    className="mt-1 size-2.5 shrink-0 rounded-[3px]"
+                    style={{
+                      backgroundColor: IMPACT[event.impact]?.color ?? 'var(--tz-flat)',
+                      boxShadow: 'inset 0 0 0 1px var(--tz-impact-ring)',
+                    }}
                     title={IMPACT[event.impact]?.label ?? event.impact}
                   />
                   <span className="min-w-0 flex-1">{event.title}</span>

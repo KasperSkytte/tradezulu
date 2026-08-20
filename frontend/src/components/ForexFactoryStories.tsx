@@ -17,9 +17,9 @@ import { Card, CardHeader, EmptyState, ErrorState, Skeleton } from './ui'
 
 /** The same folder colours the calendar uses. */
 const IMPACT: Record<string, { color: string; label: string }> = {
-  High: { color: 'var(--tz-loss)', label: 'Red folder' },
-  Medium: { color: '#f59e0b', label: 'Orange folder' },
-  Low: { color: '#eab308', label: 'Yellow folder' },
+  High: { color: 'var(--tz-impact-high)', label: 'Red folder' },
+  Medium: { color: 'var(--tz-impact-medium)', label: 'Orange folder' },
+  Low: { color: 'var(--tz-impact-low)', label: 'Yellow folder' },
 }
 
 /** How long ago, in the words the source page uses. */
@@ -138,8 +138,11 @@ export function ForexFactoryStories({ title = 'News' }: { title?: string | null 
                   {/* The folder colour, in the same place the calendar puts
                       it, so the two panels scan as one thing. */}
                   <span
-                    className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
-                    style={{ background: folder?.color ?? 'var(--tz-border-strong)' }}
+                    className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{
+                      background: folder?.color ?? 'var(--tz-border-strong)',
+                      boxShadow: 'inset 0 0 0 1px var(--tz-impact-ring)',
+                    }}
                     title={folder?.label ?? 'Unrated'}
                   />
                   <span className="min-w-0">

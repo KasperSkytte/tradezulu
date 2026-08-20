@@ -72,6 +72,15 @@
        plain text colour -- an invisible focus ring and a "today" that was not
        marked at all. */
     --tz-accent: var(--color-zulu-600);
+    /* The news folder colours. ForexFactory's red, orange and yellow, pushed
+       apart: its own orange and yellow are a shade of each other -- 16 points
+       of deltaE, and 4 to a red-green colour-blind eye, which is no difference
+       at all on an 8px dot. These are 52 apart, and 22 to that same eye. */
+    --tz-impact-high: var(--tz-loss);
+    --tz-impact-medium: #ea580c;
+    --tz-impact-low: #eab308;
+    /* A bright dot on white needs an edge or it dissolves into the page. */
+    --tz-impact-ring: rgb(0 0 0 / 0.22);
     color-scheme: light;
 
     /* Chart marks (validated against this surface) and their text steps. */
@@ -98,6 +107,12 @@
   /* Colour-blind safe alternative: blue for profit, amber for loss.
      Both pairs clear every validator check in their own mode. */
   :root.cb {
+    /* Red, orange and yellow are one hue to a red-green eye, so this palette
+       separates them by lightness instead: the ramp reads as dark, mid and
+       pale whatever the cones are doing. */
+    --tz-impact-high: #9a3412;
+    --tz-impact-medium: #d97706;
+    --tz-impact-low: #fcd34d;
     --tz-gain: #1f6fd0;
     --tz-loss: #b9700a;
     --tz-gain-text: #1a62ba;
@@ -108,6 +123,10 @@
     --tz-breakeven-text: #55617a;
   }
   .dark.cb {
+    /* The same lightness ramp, lifted for a dark surface. */
+    --tz-impact-high: #dc6803;
+    --tz-impact-medium: #fbbf24;
+    --tz-impact-low: #fef3c7;
     --tz-gain: #4593e8;
     --tz-loss: #c58217;
     --tz-gain-text: #6fadee;
@@ -130,6 +149,10 @@
     --tz-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -16px rgb(0 0 0 / 0.7);
     --tz-grid: #1f2532;
     --tz-accent: var(--color-zulu-400);
+    --tz-impact-high: var(--tz-loss);
+    --tz-impact-medium: #f97316;
+    --tz-impact-low: #fde047;
+    --tz-impact-ring: transparent;
     color-scheme: dark;
 
     --tz-gain: #12b06f;
