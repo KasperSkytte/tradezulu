@@ -13,6 +13,7 @@ import { Loader2, X } from 'lucide-react'
 import { api, ApiError } from '../lib/api'
 import type { CopySettings, SlaveAccount } from '../lib/types'
 import { define } from '../lib/glossary'
+import { useSettings } from '../lib/settings'
 import { Button, Field, Toggle } from './ui'
 import { BrokerServerPicker } from './BrokerServerPicker'
 
@@ -31,9 +32,16 @@ const SIZING_MODES = [
     label: 'Risk a percentage of equity',
     hint: "Sized against the master's stop distance. Equity moves with open trades, so a losing position shrinks the next trade.",
   },
+  {
+    value: 'risk_amount',
+    label: 'Risk a fixed amount',
+    hint: "Sized against the master's stop distance, to lose the same money on every trade whatever the account is worth. A percentage compounds; this deliberately does not.",
+  },
 ]
 
-const RISK_MODES = new Set(['risk_percent', 'risk_percent_balance'])
+/** The modes that work backwards from what a trade may lose, and so cannot
+ *  size a master trade that has no stop. */
+const RISK_MODES = new Set(['risk_percent', 'risk_percent_balance', 'risk_amount'])
 
 const BREACH_ACTIONS = [
   { value: 'close_all', label: 'Close everything and stop' },
@@ -46,6 +54,7 @@ const EMPTY: CopySettings = {
   multiplier: 1,
   fixed_lot: 0.01,
   risk_percent: 1,
+  risk_amount: 0,
   max_lot: 0,
   max_lot_refuses: false,
   min_lot: 0,
@@ -81,6 +90,8 @@ export function SlaveForm({
   onSaved: () => void
 }) {
   const editing = account !== null
+  // The fixed-risk field is an amount, so it has to say which money.
+  const { currency } = useSettings()
   const [login, setLogin] = useState(account?.login ?? '')
   const [server, setServer] = useState(account?.server ?? '')
   const [name, setName] = useState(account?.name ?? '')
@@ -243,8 +254,18 @@ export function SlaveForm({
                 {settings.mode === 'fixed_lot' && (
                   <Num label="Lots" value={settings.fixed_lot} onChange={(v) => set('fixed_lot', v)} step={0.01} />
                 )}
-                {RISK_MODES.has(settings.mode) && (
+                {(settings.mode === 'risk_percent' ||
+                  settings.mode === 'risk_percent_balance') && (
                   <Num label="Risk per trade (%)" value={settings.risk_percent} onChange={(v) => set('risk_percent', v)} step={0.1} />
+                )}
+                {settings.mode === 'risk_amount' && (
+                  <Num
+                    label={`Risk per trade (${currency})`}
+                    value={settings.risk_amount}
+                    onChange={(v) => set('risk_amount', v)}
+                    step={10}
+                    zero="nothing is copied until this is set"
+                  />
                 )}
                 {/* One number and one decision. There used to be a second
                     limit that refused instead of capping, so both could be set
@@ -285,9 +306,20 @@ export function SlaveForm({
 
               {needsStop && (
                 <p className="rounded-lg border border-[var(--tz-border)] bg-[var(--tz-surface-2)] px-3 py-2 text-xs text-[var(--tz-text-muted)]">
-                  A percentage is only a percentage if there is a stop to measure it against, so
-                  this mode skips any master trade without one. There is no size that risks{' '}
-                  {settings.risk_percent || 1}% of nothing.
+                  {settings.mode === 'risk_amount' ? (
+                    <>
+                      The size is worked out from the stop, so this mode skips any master trade
+                      without one — there is no volume that loses exactly{' '}
+                      {currency}
+                      {settings.risk_amount || 0} on a trade that has nowhere to stop.
+                    </>
+                  ) : (
+                    <>
+                      A percentage is only a percentage if there is a stop to measure it against,
+                      so this mode skips any master trade without one. There is no size that risks{' '}
+                      {settings.risk_percent || 1}% of nothing.
+                    </>
+                  )}
                 </p>
               )}
 

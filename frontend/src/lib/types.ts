@@ -530,6 +530,8 @@ export interface CopySettings {
   multiplier: number
   fixed_lot: number
   risk_percent: number
+  /** Money per trade, for the fixed-amount sizing mode. */
+  risk_amount: number
   max_lot: number
   max_lot_refuses: boolean
   min_lot: number

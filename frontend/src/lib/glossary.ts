@@ -66,6 +66,8 @@ export const GLOSSARY: Record<string, string> = {
   'require a stop loss':
     'Refuse to copy a master trade that has no stop attached, rather than opening an unprotected position on the slave. The two risk-percentage modes always do this, whatever the switch says: a percentage of an account is not a size until there is a stop to measure it against.',
   // --- the copier's limits, in the order the form asks them ------------
+  'risk per trade':
+    "The money to put at stake on each copy, measured against the master's stop distance. The master's own size is ignored, and so is the size of this account: the same trade loses the same amount whether the account has doubled or halved. A master trade with no stop is refused, because there is nothing to measure the distance from.",
   'risk per trade (%)':
     "The share of the slave's own account to put at stake on each copy, measured against the master's stop distance. The master's size is ignored entirely.",
   'risk over (% equity)':
@@ -141,7 +143,15 @@ export const GLOSSARY: Record<string, string> = {
     'What the account started with, inferred from your deposits when it is not set. Drawdown, Sharpe and the equity curve are measured from it. Per-trade risk is not: that is measured against the equity at the moment each trade was opened, which is what it actually put at stake.',
 }
 
-/** The definition for a label, if there is one. Case and spacing are ignored. */
+/** The definition for a label, if there is one. Case and spacing are ignored.
+ *
+ *  A trailing unit is dropped on the second attempt, so "Risk per trade ($)"
+ *  finds the entry for "risk per trade" -- labels that carry the account's
+ *  currency cannot be written as a literal key, and the unit never changes
+ *  what the term means. An exact key still wins, which is what keeps
+ *  "Risk per trade (%)" separate from the amount it sits beside.
+ */
 export function define(label: string): string | undefined {
-  return GLOSSARY[label.trim().toLowerCase().replace(/\s+/g, ' ')]
+  const key = label.trim().toLowerCase().replace(/\s+/g, ' ')
+  return GLOSSARY[key] ?? GLOSSARY[key.replace(/\s*\([^)]*\)$/, '')]
 }

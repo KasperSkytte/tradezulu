@@ -30,6 +30,11 @@ class SizingMode(str, Enum):
     #: the size risked does not shrink while a trade is under water and grow
     #: while it is ahead -- which is what most people mean by "risk 1%".
     RISK_PERCENT_BALANCE = "risk_percent_balance"
+    #: Risk the same amount of money on every trade, whatever the account is
+    #: worth. A percentage compounds -- deliberately -- and somebody trading a
+    #: fixed 50 a trade is not doing that: they have decided what a losing
+    #: trade costs and want it to stay decided.
+    RISK_AMOUNT = "risk_amount"
 
 
 @dataclass(frozen=True)
@@ -69,6 +74,8 @@ class SizingConfig:
     fixed_lot: float = 0.01
     multiplier: float = 1.0
     risk_percent: float = 1.0
+    #: Money to put at stake per trade, in the slave's account currency.
+    risk_amount: float = 0.0
     #: The largest position allowed, in lots. 0 disables.
     max_lot: float = 0.0
     #: What to do at that size: cut the order down to it, or refuse the trade.
@@ -193,27 +200,49 @@ def _raw_volume(
         ratio = slave_account.equity / master_account.equity
         return master.volume * ratio, f"equity ratio {ratio:.3f}"
 
-    if mode in (SizingMode.RISK_PERCENT, SizingMode.RISK_PERCENT_BALANCE):
+    if mode in (
+        SizingMode.RISK_PERCENT,
+        SizingMode.RISK_PERCENT_BALANCE,
+        SizingMode.RISK_AMOUNT,
+    ):
+        # All three ask the same question -- how far is the stop, and what is
+        # one trade allowed to lose -- and differ only in where the answer to
+        # the second comes from.
+        fixed = mode is SizingMode.RISK_AMOUNT
         on_balance = mode is SizingMode.RISK_PERCENT_BALANCE
         base = slave_account.balance if on_balance else slave_account.equity
         against = "balance" if on_balance else "equity"
 
         if master.stop_loss is None or master.stop_loss <= 0:
-            # There is no size that risks 1% of anything without a stop, so
-            # there is nothing honest to send. This used to fall back to the
-            # balance ratio and say so in the log, which meant asking for 1%
-            # and getting a balance-scaled lot instead -- a different trade
-            # under the name of the one that was configured, and nothing on
-            # screen to say the setting had not applied.
-            return 0.0, "the master trade has no stop loss, so a percentage risk cannot be sized"
+            # There is no size that risks a set amount without a stop, so there
+            # is nothing honest to send. This used to fall back to the balance
+            # ratio and say so in the log, which meant asking for 1% and
+            # getting a balance-scaled lot instead -- a different trade under
+            # the name of the one that was configured, and nothing on screen to
+            # say the setting had not applied.
+            return 0.0, "the master trade has no stop loss, so the risk cannot be sized"
 
         distance = abs(master.entry_price - master.stop_loss)
         if distance <= 0 or spec.value_per_unit <= 0:
             return 0.0, "stop distance or contract value is unusable"
 
-        budget = base * (config.risk_percent / 100.0)
+        budget = config.risk_amount if fixed else base * (config.risk_percent / 100.0)
+        if budget <= 0:
+            # Nothing to risk is not a small trade, it is no trade -- and
+            # saying so beats sending the broker a zero and letting it explain.
+            return 0.0, (
+                "no risk per trade is set for this account"
+                if fixed
+                else f"the account reports no {against} to risk a percentage of"
+            )
+
         volume = budget / (distance * spec.value_per_unit)
-        return volume, f"{config.risk_percent:g}% of {base:,.0f} {against}"
+        reason = (
+            f"{budget:,.2f} of risk"
+            if fixed
+            else f"{config.risk_percent:g}% of {base:,.0f} {against}"
+        )
+        return volume, reason
 
     return 0.0, f"unknown sizing mode {mode}"
 

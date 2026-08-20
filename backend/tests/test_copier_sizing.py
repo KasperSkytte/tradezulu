@@ -250,3 +250,76 @@ class TestMoneyAtRisk:
     def test_is_none_without_contract_data(self):
         spec = SymbolSpec(symbol="X", value_per_unit=0.0)
         assert money_at_risk(1.0, 1.1, 1.09, spec) is None
+
+
+class TestFixedRiskAmount:
+    """The same money at stake on every trade, whatever the account is worth.
+
+    A percentage compounds, deliberately -- somebody who has decided a losing
+    trade costs 50 is deliberately not doing that, and had no way to say so.
+    """
+
+    def test_the_size_puts_exactly_that_much_at_stake(self):
+        config = SizingConfig(mode=SizingMode.RISK_AMOUNT, risk_amount=200.0)
+        # 20 pips of stop on EURUSD is 200 per lot, so 200 of risk is one lot.
+        result = size(config, AccountState(50_000, 50_000))
+
+        assert result.volume == pytest.approx(1.0)
+        assert money_at_risk(result.volume, TRADE.entry_price, TRADE.stop_loss, EURUSD) == (
+            pytest.approx(200.0)
+        )
+
+    def test_a_wider_stop_gives_a_smaller_size(self):
+        config = SizingConfig(mode=SizingMode.RISK_AMOUNT, risk_amount=200.0)
+        wide = MasterTrade("EURUSD", "long", 1.0, 1.1000, 1.0900)  # 100 pips
+
+        assert size(config, AccountState(50_000, 50_000), trade=wide).volume == pytest.approx(0.2)
+
+    def test_the_account_size_makes_no_difference(self):
+        """Which is the whole point: the same trade risks the same money on a
+        50k account and on a 5k one."""
+        config = SizingConfig(mode=SizingMode.RISK_AMOUNT, risk_amount=200.0)
+
+        big = size(config, AccountState(50_000, 50_000)).volume
+        small = size(config, AccountState(5_000, 5_000)).volume
+
+        assert big == small == pytest.approx(1.0)
+
+    def test_the_masters_size_makes_no_difference(self):
+        config = SizingConfig(mode=SizingMode.RISK_AMOUNT, risk_amount=200.0)
+        ten_lots = MasterTrade("EURUSD", "long", 10.0, 1.1000, 1.0980)
+
+        assert size(config, AccountState(50_000, 50_000), trade=ten_lots).volume == (
+            pytest.approx(1.0)
+        )
+
+    def test_a_trade_with_no_stop_is_refused(self):
+        """There is no size that risks a set amount without a stop to measure
+        it from, so it declines rather than guessing."""
+        config = SizingConfig(mode=SizingMode.RISK_AMOUNT, risk_amount=200.0)
+        no_stop = MasterTrade("EURUSD", "long", 1.0, 1.1000, None)
+
+        result = size(config, AccountState(50_000, 50_000), trade=no_stop)
+
+        assert result.volume == 0.0
+        assert result.capped_by == "require_stop_loss"
+
+    def test_nothing_is_copied_until_an_amount_is_set(self):
+        """Zero is not a small trade. The default is 0 because a number
+        invented here would be somebody's real money."""
+        config = SizingConfig(mode=SizingMode.RISK_AMOUNT, risk_amount=0.0)
+
+        result = size(config, AccountState(50_000, 50_000))
+
+        assert result.volume == 0.0
+        assert "no risk per trade is set" in result.reason
+
+    def test_it_still_answers_to_the_lot_limits(self):
+        config = SizingConfig(mode=SizingMode.RISK_AMOUNT, risk_amount=2_000.0, max_lot=3.0)
+
+        assert size(config, AccountState(50_000, 50_000)).volume == pytest.approx(3.0)
+
+    def test_the_reason_says_what_was_risked(self):
+        config = SizingConfig(mode=SizingMode.RISK_AMOUNT, risk_amount=200.0)
+
+        assert "200.00 of risk" in size(config, AccountState(50_000, 50_000)).reason

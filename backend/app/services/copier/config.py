@@ -16,10 +16,14 @@ from .risk import BreachAction, DrawdownBasis, RiskConfig
 from .sizing import SizingConfig, SizingMode
 from .symbols import SymbolRules, detect_affixes
 
-#: The sizing modes that express risk as a share of the account. Both need a
-#: stop on the master to size against, so both imply that a stopless trade is
-#: refused rather than sized some other way.
-RISK_MODES = {SizingMode.RISK_PERCENT.value, SizingMode.RISK_PERCENT_BALANCE.value}
+#: The sizing modes that decide a volume from what the trade may lose. Each
+#: needs a stop on the master to measure that against, so each implies that a
+#: stopless trade is refused rather than sized some other way.
+RISK_MODES = {
+    SizingMode.RISK_PERCENT.value,
+    SizingMode.RISK_PERCENT_BALANCE.value,
+    SizingMode.RISK_AMOUNT.value,
+}
 
 
 def mode_needs_stop(data: dict[str, Any]) -> bool:
@@ -77,6 +81,7 @@ def sizing_from(settings: dict[str, Any] | None) -> SizingConfig:
         fixed_lot=_float(data, "fixed_lot", 0.01),
         multiplier=_float(data, "multiplier", 1.0),
         risk_percent=_float(data, "risk_percent", 1.0),
+        risk_amount=_float(data, "risk_amount", 0.0),
         max_lot=largest,
         max_lot_refuses=refuses,
         min_lot=_float(data, "min_lot", 0.0),
@@ -222,6 +227,9 @@ def defaults() -> dict[str, Any]:
         "multiplier": 1.0,
         "fixed_lot": 0.01,
         "risk_percent": 1.0,
+        # Only read by the fixed-amount mode, and deliberately 0 rather than a
+        # guess: a number invented here would be somebody's real money.
+        "risk_amount": 0.0,
         "max_lot": 0.0,
         "max_lot_refuses": False,
         "min_lot": 0.0,

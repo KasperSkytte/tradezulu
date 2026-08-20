@@ -269,6 +269,30 @@ class TestSizingMode:
         assert pair.slave_polls() == []
         assert pair.last_skip().rule == "require_stop_loss"
 
+    def test_a_fixed_amount_sizes_from_the_stop(self, pair):
+        # A 100 pip stop at 100,000 per unit is 1,000 a lot, so 50 of risk is
+        # 0.05 lots -- whatever the master traded and whatever this is worth.
+        pair.configure(mode="risk_amount", risk_amount=50.0)
+        pair.arm()
+        pair.master_holds(position(volume=9.0, price=1.1000, sl=1.0900))
+        assert only_open(pair.slave_polls())["volume"] == 0.05
+
+    def test_a_fixed_amount_refuses_a_trade_with_no_stop(self, pair):
+        pair.configure(mode="risk_amount", risk_amount=50.0)
+        pair.arm()
+        pair.master_holds(position(volume=2.0, sl=0.0))
+        assert pair.slave_polls() == []
+        assert pair.last_skip().rule == "require_stop_loss"
+
+    def test_a_fixed_amount_of_nothing_copies_nothing(self, pair):
+        """The default, so an account switched to this mode and left alone
+        trades nothing rather than trading a guess."""
+        pair.configure(mode="risk_amount", risk_amount=0.0)
+        pair.arm()
+        pair.master_holds(position(volume=2.0))
+        assert pair.slave_polls() == []
+        assert "no risk per trade is set" in pair.last_skip().message
+
 
 class TestSizingLimits:
     def test_max_lot_clamps_the_result(self, pair):

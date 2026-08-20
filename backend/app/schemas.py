@@ -413,6 +413,8 @@ class CopySettingsOut(BaseModel):
     multiplier: float = 1.0
     fixed_lot: float = 0.01
     risk_percent: float = 1.0
+    #: Money per trade, for the fixed-amount sizing mode.
+    risk_amount: float = 0.0
     max_lot: float = 0.0
     #: Whether reaching ``max_lot`` refuses the trade or cuts it down to size.
     max_lot_refuses: bool = False
