@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.35.0](https://github.com/KasperSkytte/tradezulu/compare/v1.34.3...v1.35.0) (2026-08-20)
+
+
+### Features
+
+* **copier:** size a copy from a fixed amount of money ([752d686](https://github.com/KasperSkytte/tradezulu/commit/752d686d71dfb33ea89251ddabf706d7a7b3821f))
+
+
+### Bug fixes
+
+* **news:** tell the orange and yellow folders apart ([3fb009b](https://github.com/KasperSkytte/tradezulu/commit/3fb009bc5a2f4e1ef90410deddfde645a7998114))
+
 ## [1.34.3](https://github.com/KasperSkytte/tradezulu/compare/v1.34.2...v1.34.3) (2026-08-17)
 
 
