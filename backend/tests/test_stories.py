@@ -184,3 +184,54 @@ class TestTheSameStoryTwice:
         (parsed,) = ff._stories_from(html)
 
         assert parsed.comments == 96
+
+
+class TestAskingForFreshOnes:
+    """The refresh button, and the limit on how often it reaches the site."""
+
+    @pytest.fixture(autouse=True)
+    def clean_cache(self):
+        ff._cache = ff.Cache()
+        yield
+        ff._cache = ff.Cache()
+
+    def _counting(self, monkeypatch):
+        calls = []
+
+        class _Response:
+            status_code = 200
+            text = page(story())
+
+            def raise_for_status(self):
+                return None
+
+        def fetch(*args, **kwargs):
+            calls.append(1)
+            return _Response()
+
+        monkeypatch.setattr(ff.httpx, "get", fetch)
+        return calls
+
+    def test_a_forced_read_goes_back_to_the_page(self, monkeypatch):
+        calls = self._counting(monkeypatch)
+
+        ff.load()
+        ff._cache.fetched_at -= ff.FORCE_MIN_SECONDS + 1
+        ff.load(force=True)
+
+        assert len(calls) == 2
+
+    def test_pressing_it_again_straight_away_does_not(self, monkeypatch):
+        calls = self._counting(monkeypatch)
+
+        ff.load()
+        ff.load(force=True)
+        ff.load(force=True)
+
+        assert len(calls) == 1
+
+    def test_the_headlines_may_be_asked_for_sooner_than_the_calendar(self):
+        """The wire moves minute to minute; the week's releases do not."""
+        from app.services import news
+
+        assert ff.FORCE_MIN_SECONDS < news.FORCE_MIN_SECONDS

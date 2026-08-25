@@ -41,8 +41,14 @@ def news_calendar(
     config: AppConfig,
     currencies: str | None = None,
     impacts: str | None = None,
+    force: bool = False,
 ) -> dict[str, Any]:
     """This week's releases from ForexFactory, filtered.
+
+    ``force`` is the refresh button on the news page asking for the feed to be
+    read again rather than served from the copy held here. It is throttled
+    rather than obeyed literally: the feed rate-limits hard, and pressing a
+    button twice must not be a way to get blocked.
 
     Fetched here rather than in the browser: the feed sends no CORS header, it
     rate-limits hard, and one fetch serves everyone looking at the page.
@@ -54,6 +60,7 @@ def news_calendar(
     return news.calendar(
         _split(currencies) or list(saved.get("currencies") or ["USD"]),
         _split(impacts) or list(saved.get("impacts") or ["High"]),
+        force=force,
     )
 
 
@@ -63,6 +70,7 @@ def news_stories(
     config: AppConfig,
     impacts: str | None = None,
     limit: int = 40,
+    force: bool = False,
 ) -> dict[str, Any]:
     """The headlines beside the calendar, filtered the same way.
 
@@ -73,6 +81,7 @@ def news_stories(
     return stories.stories(
         _split(impacts) or list(saved.get("story_impacts") or []),
         limit=max(1, min(limit, 100)),
+        force=force,
     )
 
 

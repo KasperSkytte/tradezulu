@@ -241,3 +241,60 @@ class TestDefaults:
         assert "Bank Holiday" in titles
         assert "ISM Manufacturing PMI" in titles
         assert "Crude Oil Inventories" not in titles, "orange was not asked for"
+
+
+class TestAskingForAFreshOne:
+    """The refresh button on the news page, and the limit on how often it may
+    actually reach ForexFactory."""
+
+    def _counting(self, monkeypatch):
+        calls = []
+
+        def fetch(*args, **kwargs):
+            calls.append(1)
+            return _Response(WEEK)
+
+        monkeypatch.setattr(news.httpx, "get", fetch)
+        return calls
+
+    def test_a_forced_read_goes_back_to_the_feed(self, monkeypatch):
+        """Without this the button could only ever hand back the same copy,
+        which is what made the header's refresh look broken on this page."""
+        calls = self._counting(monkeypatch)
+
+        news.load()
+        news._cache.fetched_at -= news.FORCE_MIN_SECONDS + 1
+        news.load(force=True)
+
+        assert len(calls) == 2
+
+    def test_pressing_it_again_straight_away_does_not(self, monkeypatch):
+        """The feed answers 429 to anything eager, so a button must not be a
+        way to get blocked."""
+        calls = self._counting(monkeypatch)
+
+        news.load()
+        news.load(force=True)
+        news.load(force=True)
+
+        assert len(calls) == 1
+
+    def test_an_ordinary_read_still_waits_the_full_interval(self, monkeypatch):
+        """Forcing lowers the gap to the floor; it must not lower it for
+        everyone else's page views."""
+        calls = self._counting(monkeypatch)
+
+        news.load()
+        news._cache.fetched_at -= news.FORCE_MIN_SECONDS + 1
+        news.load()
+
+        assert len(calls) == 1
+
+    def test_the_endpoint_passes_it_through(self, monkeypatch, auth_client):
+        calls = self._counting(monkeypatch)
+
+        auth_client.get("/api/news/calendar")
+        news._cache.fetched_at -= news.FORCE_MIN_SECONDS + 1
+        auth_client.get("/api/news/calendar", params={"force": True})
+
+        assert len(calls) == 2

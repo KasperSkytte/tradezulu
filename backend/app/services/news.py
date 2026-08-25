@@ -40,6 +40,13 @@ TTL_SECONDS = 900.0
 #: the days they were on, and only the actuals go stale.
 STALE_SECONDS = 24 * 3600.0
 
+#: The shortest gap between two *asked-for* refreshes. A refresh button that
+#: reaches the feed on every press is a rate limit waiting to happen -- and the
+#: calendar changes a few times a day, so a second press half a minute later
+#: has nothing to find. Pressing it again inside this window is answered from
+#: what is already held, which is the same answer the feed would give.
+FORCE_MIN_SECONDS = 60.0
+
 #: How long to leave a feed alone after it refuses us. Shorter than the normal
 #: interval, because a page with no calendar on it should recover quickly --
 #: but not absent, or every page view would retry a rate limit and extend it.
@@ -117,7 +124,9 @@ def load(force: bool = False) -> Cache:
     # was already held, so the first failure left nothing cached and every
     # page view went straight back to a feed that had just refused us.
     interval = TTL_SECONDS if _cache.events and not _cache.error else RETRY_SECONDS
-    if not force and _cache.fetched_at and now - _cache.fetched_at < interval:
+    if force:
+        interval = min(interval, FORCE_MIN_SECONDS)
+    if _cache.fetched_at and now - _cache.fetched_at < interval:
         return _cache
 
     try:
@@ -163,9 +172,11 @@ def select(
     ]
 
 
-def calendar(currencies: list[str], impacts: list[str]) -> dict[str, Any]:
+def calendar(
+    currencies: list[str], impacts: list[str], force: bool = False
+) -> dict[str, Any]:
     """The filtered calendar, plus enough about the fetch to explain itself."""
-    cache = load()
+    cache = load(force=force)
     age = time.monotonic() - cache.fetched_at if cache.fetched_at else None
     return {
         "source": "forexfactory",

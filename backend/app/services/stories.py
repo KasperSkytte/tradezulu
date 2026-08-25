@@ -62,6 +62,11 @@ TTL_SECONDS = 300.0
 STALE_SECONDS = 6 * 3600.0
 RETRY_SECONDS = 60.0
 
+#: The shortest gap between two *asked-for* refreshes. Shorter than the
+#: calendar's because the wire genuinely moves minute to minute, but not zero:
+#: a button that reaches the site on every press is a way to get blocked.
+FORCE_MIN_SECONDS = 30.0
+
 #: ForexFactory's own ratings. A story with no rating is not unimportant --
 #: most of the wire is unrated -- so it is kept as "" and filtered separately.
 IMPACTS = ("High", "Medium", "Low")
@@ -210,7 +215,9 @@ def load(force: bool = False) -> Cache:
     """
     now = time.monotonic()
     interval = TTL_SECONDS if _cache.stories and not _cache.error else RETRY_SECONDS
-    if not force and _cache.fetched_at and now - _cache.fetched_at < interval:
+    if force:
+        interval = min(interval, FORCE_MIN_SECONDS)
+    if _cache.fetched_at and now - _cache.fetched_at < interval:
         return _cache
 
     try:
@@ -248,9 +255,9 @@ def select(stories: list[Story], impacts: list[str], limit: int = 40) -> list[St
     return [story for story in stories if story.impact in levels][:limit]
 
 
-def stories(impacts: list[str], limit: int = 40) -> dict[str, Any]:
+def stories(impacts: list[str], limit: int = 40, force: bool = False) -> dict[str, Any]:
     """The filtered stories, plus enough about the fetch to explain itself."""
-    cache = load()
+    cache = load(force=force)
     age = time.monotonic() - cache.fetched_at if cache.fetched_at else None
     return {
         "source": "forexfactory",

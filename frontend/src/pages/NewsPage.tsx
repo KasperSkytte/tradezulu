@@ -13,18 +13,47 @@
  *  this browser, so it survives logging in from the phone.
  */
 
+import { useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { RefreshCw } from 'lucide-react'
 import { ForexFactoryCalendar } from '../components/ForexFactoryCalendar'
 import { ForexFactoryStories } from '../components/ForexFactoryStories'
 import { NewsCalendar } from '../components/NewsCalendar'
+import { api } from '../lib/api'
 import { useSettings } from '../lib/settings'
-import { SegmentedControl } from '../components/ui'
+import { Button, SegmentedControl } from '../components/ui'
 
 export function NewsPage() {
   const { settings, save } = useSettings()
+  const queryClient = useQueryClient()
   const news = settings.news
   const provider = news?.provider ?? 'forexfactory'
   const range = news?.range ?? 'upcoming'
   const stories = news?.stories ?? true
+
+  // TradingView's widget holds its own data and offers no way in, so the only
+  // refresh available for it is building the thing again -- which is what
+  // changing this key does.
+  const [widget, setWidget] = useState(0)
+
+  // Not the header's refresh, which re-reads what the browser already has:
+  // both of these are held on the server for minutes at a time, so a refresh
+  // that means anything has to ask the server to go back to ForexFactory. It
+  // is throttled at that end -- the feed rate-limits hard, and a button is an
+  // easy way to get blocked.
+  const refresh = useMutation({
+    mutationFn: async () => {
+      if (provider === 'tradingview') {
+        setWidget((n) => n + 1)
+        return
+      }
+      await Promise.all([
+        api.get('/news/calendar', { force: true }),
+        stories ? api.get('/news/stories', { force: true }) : Promise.resolve(null),
+      ])
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['news'] }),
+  })
 
   return (
     <div className="space-y-4">
@@ -55,6 +84,19 @@ export function NewsPage() {
             ]}
           />
         )}
+        <Button
+          className="ml-auto"
+          onClick={() => refresh.mutate()}
+          loading={refresh.isPending}
+          icon={<RefreshCw size={15} />}
+          title={
+            provider === 'tradingview'
+              ? "Build TradingView's widget again"
+              : 'Read the calendar and the headlines from ForexFactory again, rather than from the copy held here'
+          }
+        >
+          Refresh news
+        </Button>
       </div>
 
       {provider === 'forexfactory' ? (
@@ -71,7 +113,7 @@ export function NewsPage() {
         /* Tall here, where it is the whole page, rather than the panel-sized
            box it was on the dashboard: the point of a calendar is seeing the
            week without scrolling a frame inside a page. */
-        <NewsCalendar height={720} title={null} />
+        <NewsCalendar key={widget} height={720} title={null} />
       )}
 
       {/* Below the calendar: it is the reason the page exists, but it is the
