@@ -21,7 +21,7 @@ cd tradezulu
 ```
 
 That sets up everything: the site in Docker, and MetaTrader on the host with a
-terminal template per broker. It generates your `.env` and prints the login it
+terminal template per [broker](agent/brokers.json). It generates your `.env` and prints the login it
 made. Open <http://localhost:8420>, sign in, add your account, and a terminal
 is started and logged in for it within a minute.
 
