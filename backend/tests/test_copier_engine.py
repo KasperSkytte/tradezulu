@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -24,9 +24,12 @@ EURUSD = SymbolSpec("EURUSD", value_per_unit=100_000.0, volume_step=0.01, volume
 SPECS = {"EURUSD": EURUSD, "EURUSD.R": SymbolSpec("EURUSD.r", value_per_unit=100_000.0)}
 
 
+NOW = datetime(2026, 7, 27, 12, 0, tzinfo=timezone.utc)
+
+
 def master_position(position_id=1, symbol="EURUSD", direction="long", volume=1.0,
-                    price=1.1000, sl=1.0980, tp=1.1060):
-    return MasterPosition(position_id, symbol, direction, volume, price, sl, tp)
+                    price=1.1000, sl=1.0980, tp=1.1060, opened_at=None):
+    return MasterPosition(position_id, symbol, direction, volume, price, sl, tp, opened_at)
 
 
 def context(**kwargs) -> SlaveContext:
@@ -175,6 +178,67 @@ class TestOpening:
         ctx = context(specs={**SPECS, "XAUUSD": SymbolSpec("XAUUSD", value_per_unit=100.0)})
         actions = plan(masters, MASTER_ACCOUNT, ctx, TODAY)
         assert types(actions) == [ActionType.OPEN, ActionType.OPEN]
+
+
+class TestTheCopyDeadline:
+    """A copy is the master's trade at the master's price, or it is nothing.
+
+    Every one of these is the same story from a different angle: the position
+    is still open on the master, so the planner keeps being offered it, and
+    only its age says whether copying it now would be following the master or
+    taking a trade of one's own at a price the master never saw.
+    """
+
+    def test_a_fresh_trade_is_copied(self):
+        master = master_position(opened_at=NOW - timedelta(milliseconds=400))
+        ctx = context(max_copy_delay_ms=1_000)
+        actions = plan([master], MASTER_ACCOUNT, ctx, TODAY, now=NOW)
+        assert types(actions) == [ActionType.OPEN]
+
+    def test_a_stale_trade_is_refused(self):
+        master = master_position(opened_at=NOW - timedelta(hours=3))
+        ctx = context(max_copy_delay_ms=1_000)
+        actions = plan([master], MASTER_ACCOUNT, ctx, TODAY, now=NOW)
+        assert types(actions) == [ActionType.SKIP]
+        assert actions[0].rule == "too_late"
+        assert "10,800.0s ago" in actions[0].reason
+
+    def test_the_deadline_is_adjustable(self):
+        master = master_position(opened_at=NOW - timedelta(seconds=4))
+        assert types(plan([master], MASTER_ACCOUNT, context(max_copy_delay_ms=1_000), TODAY, now=NOW)) == [
+            ActionType.SKIP
+        ]
+        assert types(plan([master], MASTER_ACCOUNT, context(max_copy_delay_ms=10_000), TODAY, now=NOW)) == [
+            ActionType.OPEN
+        ]
+
+    def test_zero_switches_it_off(self):
+        master = master_position(opened_at=NOW - timedelta(days=2))
+        actions = plan([master], MASTER_ACCOUNT, context(max_copy_delay_ms=0), TODAY, now=NOW)
+        assert types(actions) == [ActionType.OPEN]
+
+    def test_an_unknown_age_is_not_treated_as_a_late_one(self):
+        """A terminal too old to report when a position opened, or a snapshot
+        written before this existed. Not knowing is not the same as knowing it
+        is late, and refusing everything would be a copier that never copies."""
+        actions = plan(
+            [master_position(opened_at=None)],
+            MASTER_ACCOUNT,
+            context(max_copy_delay_ms=1_000),
+            TODAY,
+            now=NOW,
+        )
+        assert types(actions) == [ActionType.OPEN]
+
+    def test_a_position_already_copied_is_still_managed(self):
+        """Being past the deadline stops a copy being opened. It says nothing
+        about one already open: the master's stop still has to be followed and
+        its close still has to be mirrored."""
+        old = master_position(opened_at=NOW - timedelta(hours=3), sl=1.0990)
+        copied = CopiedPosition(1, 555, "EURUSD", "long", 0.10, 1.1000, 1.0980, 1.1060)
+        ctx = context(copied=[copied], max_copy_delay_ms=1_000)
+        actions = plan([old], MASTER_ACCOUNT, ctx, TODAY, now=NOW)
+        assert types(actions) == [ActionType.MODIFY]
 
 
 class TestConcurrencyWithinOneCycle:

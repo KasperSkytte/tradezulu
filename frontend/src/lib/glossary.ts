@@ -112,6 +112,8 @@ export const GLOSSARY: Record<string, string> = {
     "Ignore the master's size entirely and risk a fixed share of the slave's equity against the master's stop. A master trade with no stop is refused rather than sized some other way -- asking for 1% and getting a balance-scaled lot instead is a different trade under the name of the one you configured.",
   'symbol prefix':
     'Some brokers name the same instrument differently — EURUSD, EURUSD.r, FX_EURUSD. This maps between them so a copy lands on the right market.',
+  'give up after (ms)':
+    "How long a master trade stays worth copying, counted from the moment this server hears of it -- within a heartbeat of the master's fill -- to the order reaching the broker here. Past it the copy is given up on rather than placed at a price the master never traded, and it is never tried again. This is what stops a halt cleared hours later from opening everything the master has been holding since.",
   slippage: 'How far the fill may differ from the price asked for before the order is refused.',
   'magic number':
     "A tag stamped on orders the copier places, so they can be told apart from anything you do by hand in the same terminal.",

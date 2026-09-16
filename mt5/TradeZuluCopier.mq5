@@ -298,6 +298,14 @@ string PositionsJson()
       out += "," + JNum("stop_loss", PositionGetDouble(POSITION_SL), 8);
       out += "," + JNum("take_profit", PositionGetDouble(POSITION_TP), 8);
       out += "," + JNum("profit", PositionGetDouble(POSITION_PROFIT), 2);
+      // When this was entered, on the broker's own clock -- the same clock as
+      // server_time in this very report, so the server can work out how old a
+      // position is without knowing anything about the broker's timezone. A
+      // copy is only worth placing while it is still the master's trade.
+      out += "," + JInt("open_time", (long)PositionGetInteger(POSITION_TIME));
+      // The copier writes "TZ <master position>" into everything it opens, so
+      // a fill can be recognised even if the reply announcing it was lost.
+      out += "," + JStr("comment", PositionGetString(POSITION_COMMENT));
       out += "}";
    }
    return "[" + out + "]";
@@ -386,7 +394,8 @@ void Poll()
    // answered at once.
    string path = "/agent/poll";
    int timeout = RequestTimeoutMs;
-   if(g_hold_seconds > 0 && g_role == "slave" && g_enabled)
+   bool holding = g_hold_seconds > 0 && g_role == "slave" && g_enabled;
+   if(holding)
    {
       path += "?wait=" + IntegerToString(g_hold_seconds);
       // Longer than the hold, or the terminal gives up on the answer it asked
@@ -400,6 +409,16 @@ void Poll()
       g_status = "server unreachable";
       return;
    }
+
+   // A held request was *meant* to sit there: the seconds it spent waiting for
+   // the master to do something are not seconds this copy was late by, and
+   // counting them refused every command that arrived on a quiet minute. The
+   // clock that matters starts when the server answered, and the part of the
+   // deadline already spent -- the master's fill to the moment the copy was
+   // planned -- is deducted by the server, which is the only side that can
+   // measure it.
+   if(holding)
+      g_asked_at = GetTickCount();
 
    // Everything we just reported was accepted, so stop resending it.
    g_pending = "";
@@ -416,13 +435,16 @@ void Poll()
       EventSetMillisecondTimer(g_poll_ms);
    }
 
+   // How long a command stays worth carrying out, as this account has it set.
+   // Read as text rather than as a number so a zero -- no deadline at all --
+   // can be told apart from an older server not sending the field.
+   string max_age = JsonValue(reply, "command_max_age_ms");
+   if(StringLen(max_age) > 0)
+      g_max_age_ms = (int)StringToInteger(max_age);
+
    // How much chart history the journal wants around each trade. It is a
    // setting there, in days, so widening it reaches every terminal on the next
    // heartbeat instead of waiting for a restart.
-   int max_age = (int)StringToInteger(JsonValue(reply, "command_max_age_ms"));
-   if(max_age > 0)
-      g_max_age_ms = max_age;
-
    g_history_before = (int)StringToInteger(JsonValue(reply, "history_before_seconds"));
    g_history_after  = (int)StringToInteger(JsonValue(reply, "history_after_seconds"));
 
@@ -509,12 +531,22 @@ void Execute(const string cmd)
    //
    // Closes are exempt. Being late out of a position is a reason to hurry, not
    // a reason to stay in it.
+   //
+   // The budget is per command when the server sends one: it has already
+   // spent part of the deadline working out that this copy is worth placing,
+   // and what reaches here is the remainder. Without one, the account's own
+   // figure stands.
+   int budget = g_max_age_ms;
+   string per_command = JsonValue(cmd, "max_age_ms");
+   if(StringLen(per_command) > 0)
+      budget = (int)StringToInteger(per_command);
+
    uint age = GetTickCount() - g_asked_at;
-   if(g_max_age_ms > 0 && (int)age > g_max_age_ms &&
+   if(budget > 0 && (int)age > budget &&
       (action == "open" || action == "modify"))
    {
       string late = StringFormat("refused: %dms old, over the %dms budget",
-                                 (int)age, g_max_age_ms);
+                                 (int)age, budget);
       Print("TradeZulu: ", late, " -- ", action, " ", symbol);
       QueueResult(id, action, false, 0, master, symbol, dirn, volume, 0.0, 0, late);
       return;

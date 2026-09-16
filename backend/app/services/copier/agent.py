@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import func, select
@@ -25,7 +25,13 @@ from sqlalchemy.orm import Session
 
 from ...models import Account, CopyEvent, CopyLink, EquityPoint, Trade
 from .. import brokerclock
-from .config import mirror_stops_enabled, risk_from, sizing_from, symbol_rules_from
+from .config import (
+    max_copy_delay_ms,
+    mirror_stops_enabled,
+    risk_from,
+    sizing_from,
+    symbol_rules_from,
+)
 from .engine import ActionType, CopiedPosition, MasterPosition, SlaveContext, plan
 from .risk import OpenPosition, SlaveSnapshot
 from .sizing import AccountState, SymbolSpec
@@ -35,6 +41,13 @@ log = logging.getLogger(__name__)
 #: How long a freshly opened copy is given to appear in the terminal's own
 #: position list before we believe it is gone.
 SETTLE_SECONDS = 30.0
+
+#: Below this, an age worked out from the master terminal's own clock is not
+#: believed. Both figures it comes from -- the broker's time now and the time
+#: the position opened -- are whole seconds, so a fill a tenth of a second old
+#: can read as a whole second and trip a one-second deadline that it never
+#: actually missed. Anything genuinely stale is stale by minutes, not by this.
+BROKER_AGE_GRACE_SECONDS = 5
 
 
 def _aware(value: datetime | None) -> datetime:
@@ -160,6 +173,17 @@ def record_equity_point(db: Session, account: Account, open_positions: int = 0) 
     )
 
 
+def _parse_time(value: Any) -> datetime | None:
+    """An ISO timestamp from the snapshot, back as an aware datetime."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
 def _master_snapshot(db: Session) -> tuple[Account | None, list[MasterPosition]]:
     """The master account and whatever it last reported holding."""
     master = db.scalar(select(Account).where(Account.role == "master"))
@@ -176,33 +200,82 @@ def _master_snapshot(db: Session) -> tuple[Account | None, list[MasterPosition]]
             open_price=float(r["open_price"]),
             stop_loss=r.get("stop_loss"),
             take_profit=r.get("take_profit"),
+            opened_at=_parse_time(r.get("opened_at")),
         )
         for r in rows
     ]
     return master, positions
 
 
-def store_master_positions(account: Account, positions: list[dict[str, Any]]) -> None:
+def _opened_at(
+    position: dict[str, Any], server_time: int | None, now: datetime
+) -> datetime:
+    """When the master entered this position, in UTC, as well as it is known.
+
+    The terminal reports the position's open time and the broker's clock in
+    the same breath, so the age is the difference between two readings of the
+    *same* clock and no timezone comes into it -- which matters, because a
+    broker two hours from UTC would otherwise make every trade look two hours
+    late.
+
+    A terminal too old to report an open time, or a difference small enough to
+    be the whole-second rounding, leaves this at "now": the position is being
+    seen for the first time, and the first sighting is the best estimate there
+    is. See :data:`BROKER_AGE_GRACE_SECONDS`.
+    """
+    opened = int(position.get("open_time") or 0)
+    if opened > 0 and server_time:
+        age = int(server_time) - opened
+        if age > BROKER_AGE_GRACE_SECONDS:
+            return now - timedelta(seconds=age)
+    return now
+
+
+def store_master_positions(
+    account: Account,
+    positions: list[dict[str, Any]],
+    server_time: int | None = None,
+) -> None:
     """Keep the master's open positions where every slave's poll can see them.
 
     They live on the account row rather than in their own table because they
     are a snapshot, not history: only the latest matters, and it is replaced
     wholesale on every heartbeat.
+
+    One thing does survive the replacement: when each position was opened. A
+    copy is only worth placing while it is still the master's trade at roughly
+    the master's price, so every slave needs to know how old a position is --
+    and an entry rewritten from scratch on every heartbeat would say "just
+    now" for ever, which is how a halt cleared at lunchtime opened a position
+    the master took at breakfast.
     """
     settings = dict(account.copy_settings or {})
-    settings["_positions"] = [
-        {
-            "position_id": int(p["position_id"]),
-            "symbol": p["symbol"],
-            "direction": p["direction"],
-            "volume": float(p["volume"]),
-            "open_price": float(p["open_price"]),
-            "stop_loss": p.get("stop_loss"),
-            "take_profit": p.get("take_profit"),
-        }
-        for p in positions
-    ]
-    settings["_positions_at"] = datetime.now(timezone.utc).isoformat()
+    known = {
+        int(entry.get("position_id", 0)): entry
+        for entry in (settings.get("_positions") or [])
+    }
+    now = datetime.now(timezone.utc)
+
+    stored = []
+    for p in positions:
+        position_id = int(p["position_id"])
+        previous = known.get(position_id) or {}
+        opened_at = previous.get("opened_at") or _opened_at(p, server_time, now).isoformat()
+        stored.append(
+            {
+                "position_id": position_id,
+                "symbol": p["symbol"],
+                "direction": p["direction"],
+                "volume": float(p["volume"]),
+                "open_price": float(p["open_price"]),
+                "stop_loss": p.get("stop_loss"),
+                "take_profit": p.get("take_profit"),
+                "opened_at": opened_at,
+            }
+        )
+
+    settings["_positions"] = stored
+    settings["_positions_at"] = now.isoformat()
     account.copy_settings = settings
 
 
@@ -223,7 +296,7 @@ def commands_for(db: Session, account: Account, payload: Any) -> list[dict[str, 
 
     if account.role == "master":
         # The master is only ever read from.
-        store_master_positions(account, positions)
+        store_master_positions(account, positions, getattr(payload, "server_time", None))
         return []
 
     if not account.copy_enabled or account.copy_halted:
@@ -233,16 +306,48 @@ def commands_for(db: Session, account: Account, payload: Any) -> list[dict[str, 
     if master is None or not master_positions and not payload.positions:
         return []
 
+    now = datetime.now(timezone.utc)
     context = _context_for(db, account, payload, positions)
+    # Building the context may have settled a link that was still in flight --
+    # adopted it, or given up on it. The session runs with autoflush off, so
+    # push that before the query below reads the statuses back.
+    db.flush()
+
+    # A master position this slave has already dealt with does not come back.
+    # Its link says what happened -- filled and since closed, refused by the
+    # broker, or an order that never reported back -- and every one of those
+    # is an answer. Only a position with no link at all is still uncopied, so
+    # only that one is put in front of the planner; anything else would be
+    # entered a second time, long after the fact, at a price nobody chose.
+    #
+    # Never anything the slave actually holds, whatever the links say: a
+    # position withheld from the planner reads as one the master has closed,
+    # and the copy would be closed with it.
+    held = {c.master_position_id for c in context.copied}
+    settled = _settled_master_ids(db, account, [p.position_id for p in master_positions])
+    master_positions = [
+        p for p in master_positions if p.position_id not in settled or p.position_id in held
+    ]
+
     actions = plan(
         master_positions,
         AccountState(balance=master.balance, equity=master.equity),
         context,
-        datetime.now(timezone.utc).date(),
+        now.date(),
         mirror_stops=mirror_stops_enabled(account.copy_settings or {}),
+        now=now,
     )
 
     _remember_symbols(account, actions)
+
+    # How much of each copy's deadline has already gone: the master's fill to
+    # this moment. The terminal is handed the remainder with the command.
+    deadline = context.max_copy_delay_ms
+    ages = {
+        position.position_id: position.age_ms(now) or 0.0
+        for position in master_positions
+        if position.age_ms(now) is not None
+    }
 
     commands: list[dict[str, Any]] = []
     for action in actions:
@@ -266,23 +371,74 @@ def commands_for(db: Session, account: Account, payload: Any) -> list[dict[str, 
                 _close_link(db, account, action, "dry run")
             continue
 
-        commands.append(_command(db, account, action))
+        commands.append(_command(db, account, action, _budget_ms(action, deadline, ages)))
 
     return commands
+
+
+def _settled_master_ids(db: Session, account: Account, ids: list[int]) -> set[int]:
+    """Master positions this slave has a finished or in-flight link for.
+
+    Anything but ``open``: a copy that has been closed, one the broker refused,
+    and one whose command is still out with the terminal. The first two are
+    done with, and the third is not something to send twice while waiting.
+
+    Rehearsals are not answers. A dry run only ever wrote a row, so a link left
+    behind by one says nothing about what this account holds and must not stop
+    the trade being copied for real when it is armed.
+    """
+    if not ids:
+        return set()
+    return set(
+        db.scalars(
+            select(CopyLink.master_position_id).where(
+                CopyLink.slave_account_id == account.id,
+                CopyLink.master_position_id.in_(ids),
+                CopyLink.status != "open",
+                CopyLink.dry_run.is_(False),
+            )
+        ).all()
+    )
+
+
+def _budget_ms(action: Any, deadline: int, ages: dict[int, float]) -> int:
+    """What is left of this copy's deadline by the time the order is sent.
+
+    The terminal spends the rest of it: the reply still has to reach it, and it
+    still has to place the order. It refuses anything arriving with the budget
+    already gone rather than filling it late -- which is the only part of the
+    round trip this server cannot measure for itself. Zero means no deadline,
+    and the terminal falls back to what it was told at the poll.
+    """
+    if action.type is not ActionType.OPEN or deadline <= 0:
+        return 0
+    return max(1, int(deadline - ages.get(action.master_position_id, 0.0)))
 
 
 def _context_for(
     db: Session, account: Account, payload: Any, positions: list[dict[str, Any]]
 ) -> SlaveContext:
     by_ticket = {int(p["ticket"]): p for p in positions}
+    # What the terminal holds, by the master position each one was opened for.
+    # The copier writes that into the order's comment, which is what lets a
+    # fill be recognised even when the reply that announced it never arrived.
+    by_comment = _by_master_comment(positions)
     links = db.scalars(
         select(CopyLink).where(
-            CopyLink.slave_account_id == account.id, CopyLink.status == "open"
+            CopyLink.slave_account_id == account.id,
+            CopyLink.status.in_(("open", "pending")),
         )
     ).all()
 
     copied: list[CopiedPosition] = []
     for link in links:
+        if link.status == "pending":
+            _settle_pending(link, by_comment)
+            if link.status != "open":
+                # Still out with the terminal, or given up on. Either way there
+                # is no position to manage and nothing to re-send: the planner
+                # never sees this master position again.
+                continue
         if link.dry_run:
             copied.append(
                 CopiedPosition(
@@ -338,7 +494,9 @@ def _context_for(
     # terminal cannot report them and a rehearsal would otherwise look like an
     # account with no exposure at all.
     master_id_by_ticket = {
-        link.slave_position_id: link.master_position_id for link in links if not link.dry_run
+        link.slave_position_id: link.master_position_id
+        for link in links
+        if not link.dry_run and link.slave_position_id
     }
     held = [
         OpenPosition(
@@ -393,7 +551,60 @@ def _context_for(
         specs=specs,
         copied=copied,
         halted=account.copy_halted,
+        max_copy_delay_ms=max_copy_delay_ms(settings),
     )
+
+
+def _by_master_comment(positions: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
+    """Positions the terminal holds, keyed by the master trade they copy.
+
+    Read off the order comment the copier sets when it opens -- ``TZ 12345``.
+    Brokers are free to rewrite a comment and some do, so this recognises a
+    position when it can rather than being relied on to.
+    """
+    out: dict[int, dict[str, Any]] = {}
+    for row in positions:
+        comment = str(row.get("comment") or "").strip()
+        if not comment.upper().startswith("TZ "):
+            continue
+        try:
+            master_id = int(comment[3:].strip())
+        except ValueError:
+            continue
+        out.setdefault(master_id, row)
+    return out
+
+
+def _settle_pending(link: CopyLink, by_comment: dict[int, dict[str, Any]]) -> None:
+    """Decide what became of an open command that has not reported back.
+
+    Normally the answer arrives with the next heartbeat and this is never
+    reached. When it does not -- the terminal was restarted mid-order, the
+    reply was lost -- there are only two honest readings, and both of them are
+    final. Either the position is there under the copier's own comment, in
+    which case it is adopted and managed from here on, or enough time has gone
+    by that it never happened, and it is written off.
+
+    What it is never turned into is a fresh attempt. The master's price is long
+    gone by now; re-sending it is how one master trade becomes two positions,
+    one of them at a price nobody chose.
+    """
+    row = by_comment.get(link.master_position_id)
+    if row is not None:
+        link.slave_position_id = int(row.get("ticket") or 0)
+        link.slave_symbol = str(row.get("symbol") or link.slave_symbol)
+        link.direction = str(row.get("direction") or link.direction)
+        link.slave_volume = float(row.get("volume") or link.slave_volume)
+        link.open_price = float(row.get("open_price") or 0.0)
+        link.status = "open"
+        link.dry_run = False
+        return
+
+    age = (datetime.now(timezone.utc) - _aware(link.opened_at)).total_seconds()
+    if age >= SETTLE_SECONDS:
+        link.status = "expired"
+        link.closed_at = datetime.now(timezone.utc)
+        link.close_reason = "the terminal never said whether this was filled"
 
 
 def _remember_symbols(account: Account, actions: list[Any]) -> None:
@@ -442,7 +653,7 @@ def _realised_by_day(db: Session, account: Account) -> dict[date, float]:
     return {day: float(total or 0.0) for day, total in rows}
 
 
-def _command(db: Session, account: Account, action: Any) -> dict[str, Any]:
+def _command(db: Session, account: Account, action: Any, budget_ms: int = 0) -> dict[str, Any]:
     command_id = uuid.uuid4().hex[:16]
     db.add(
         CopyEvent(
@@ -457,7 +668,14 @@ def _command(db: Session, account: Account, action: Any) -> dict[str, Any]:
             message=f"sent to the terminal: {action.reason}"[:2000],
         )
     )
-    return {
+    if action.type is ActionType.OPEN:
+        # Written down before the order is even sent, so this master position
+        # is spoken for from this moment: no second command while the first is
+        # in flight, and no re-entry if it never comes back. The fill fills
+        # this row in -- see :func:`record_result`.
+        _pending_link(db, account, action)
+
+    command = {
         "id": command_id,
         "action": action.type.value,
         "symbol": action.slave_symbol,
@@ -469,6 +687,44 @@ def _command(db: Session, account: Account, action: Any) -> dict[str, Any]:
         "master_position_id": action.master_position_id,
         "comment": f"TZ {action.master_position_id}",
     }
+    if budget_ms > 0:
+        command["max_age_ms"] = budget_ms
+    return command
+
+
+def _pending_link(db: Session, account: Account, action: Any) -> CopyLink:
+    """Claim this master position for an order that is on its way out.
+
+    One row per slave and master position -- the schema says so -- so an
+    existing one is claimed rather than added beside it.
+    """
+    link = db.scalar(
+        select(CopyLink).where(
+            CopyLink.slave_account_id == account.id,
+            CopyLink.master_position_id == action.master_position_id,
+        )
+    )
+    if link is None:
+        link = CopyLink(
+            slave_account_id=account.id,
+            master_position_id=action.master_position_id,
+        )
+        db.add(link)
+
+    link.symbol = action.symbol
+    link.slave_symbol = action.slave_symbol
+    link.direction = action.direction
+    link.slave_volume = action.volume
+    link.stop_loss = action.stop_loss
+    link.take_profit = action.take_profit
+    link.sizing_reason = action.reason[:255]
+    link.slave_position_id = 0
+    link.status = "pending"
+    link.dry_run = False
+    link.opened_at = datetime.now(timezone.utc)
+    link.closed_at = None
+    link.close_reason = ""
+    return link
 
 
 def record_result(db: Session, account: Account, result: Any) -> None:
@@ -493,6 +749,14 @@ def record_result(db: Session, account: Account, result: Any) -> None:
     )
 
     if not ok:
+        if action == "open" and master_id:
+            # The order was refused -- no money, a closed market, or the
+            # terminal itself deciding the copy had taken too long to reach it.
+            # Whatever the reason, it is an answer: the link is closed out and
+            # this master position is never offered to the planner again. A
+            # retry would be a new trade at a new price wearing the master's
+            # name.
+            _give_up(db, account, master_id, message or "the broker refused it")
         return
 
     if action == "open" and master_id and ticket:
@@ -543,6 +807,22 @@ def record_result(db: Session, account: Account, result: Any) -> None:
             link.status = "closed"
             link.closed_at = datetime.now(timezone.utc)
             link.close_reason = message[:255] or "closed by the terminal"
+
+
+def _give_up(db: Session, account: Account, master_id: int, reason: str) -> None:
+    """Mark a copy as never happening, so nothing tries it again."""
+    link = db.scalar(
+        select(CopyLink).where(
+            CopyLink.slave_account_id == account.id,
+            CopyLink.master_position_id == master_id,
+            CopyLink.status == "pending",
+        )
+    )
+    if link is None:
+        return
+    link.status = "expired"
+    link.closed_at = datetime.now(timezone.utc)
+    link.close_reason = reason[:255]
 
 
 def _link(db: Session, account: Account, action: Any, ticket: int, dry_run: bool = False) -> None:

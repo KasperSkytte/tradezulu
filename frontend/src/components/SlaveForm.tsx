@@ -59,6 +59,7 @@ const EMPTY: CopySettings = {
   max_lot_refuses: false,
   min_lot: 0,
   mirror_stops: true,
+  max_copy_delay_ms: 1000,
   max_risk_percent_per_trade: 2,
   require_stop_loss: false,
   min_stop_distance_points: 0,
@@ -336,6 +337,17 @@ export function SlaveForm({
             <h3 className="tz-label">Skip a trade when…</h3>
             <div className="grid gap-3 sm:grid-cols-3">
               <Num label="Risk over (% equity)" value={settings.max_risk_percent_per_trade} onChange={(v) => set('max_risk_percent_per_trade', v)} step={0.1} zero="no limit" />
+              {/* Late is the same as wrong. The copy is worth having because it
+                  is the master's trade at the master's price, so a copy that
+                  cannot be placed inside this is given up on rather than filled
+                  at a price nobody chose -- and it is never retried. */}
+              <Num
+                label="Give up after (ms)"
+                value={settings.max_copy_delay_ms}
+                onChange={(v) => set('max_copy_delay_ms', v)}
+                step={100}
+                zero="no deadline — copy it however late"
+              />
               {/* The size is worked out from the master's stop distance and the
                   copy is filled at its own price, so a tight stop is widened by
                   whatever the two brokers disagree about -- and the loss with

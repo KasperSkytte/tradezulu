@@ -421,6 +421,10 @@ class CopySettingsOut(BaseModel):
     min_lot: float = 0.0
     scale: float = 1.0
     mirror_stops: bool = True
+    #: How long after the master's fill a copy is still worth placing, in
+    #: milliseconds. Past it the trade is refused once and for good rather than
+    #: opened at a price the master never traded. 0 switches the deadline off.
+    max_copy_delay_ms: int = 1_000
 
     max_risk_percent_per_trade: float = 0.0
     require_stop_loss: bool = False
@@ -549,6 +553,14 @@ class AgentPosition(BaseModel):
     stop_loss: float | None = None
     take_profit: float | None = None
     profit: float = 0.0
+    #: When it was opened, on the broker's own clock, as a Unix epoch. Read
+    #: against ``server_time`` in the same report, which is the same clock, so
+    #: the position's age needs no timezone to work out.
+    open_time: int = 0
+    #: The order comment. The copier writes ``TZ <master position>`` into
+    #: everything it opens, which is what lets a fill be recognised when the
+    #: reply announcing it was lost.
+    comment: str = ""
 
 
 class AgentSymbol(BaseModel):

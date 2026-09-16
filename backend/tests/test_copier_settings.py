@@ -53,7 +53,8 @@ def poll_body(login, server, balance, equity, positions=(), symbols=None, result
 
 
 def position(position_id=1, ticket=1, symbol="EURUSD", direction="long",
-             volume=1.0, price=1.1000, sl=1.0900, tp=0.0, profit=0.0):
+             volume=1.0, price=1.1000, sl=1.0900, tp=0.0, profit=0.0,
+             open_time=0, comment=""):
     return {
         "position_id": position_id,
         "ticket": ticket,
@@ -64,6 +65,8 @@ def position(position_id=1, ticket=1, symbol="EURUSD", direction="long",
         "stop_loss": sl,
         "take_profit": tp,
         "profit": profit,
+        "open_time": open_time,
+        "comment": comment,
     }
 
 
@@ -201,6 +204,30 @@ class Pair:
     def halt_reason(self):
         self.db.refresh(self.slave)
         return self.slave.copy_halt_reason
+
+    # -- time ---------------------------------------------------------------
+
+    def master_held_since(self, seconds):
+        """Backdate what the master is holding, as if it had been open a while.
+
+        The snapshot on the master account is where a position's age lives, so
+        this is the same state the server would be in after the master had sat
+        in a trade for that long.
+        """
+        settings = dict(self.master.copy_settings or {})
+        when = datetime.now(timezone.utc) - timedelta(seconds=seconds)
+        settings["_positions"] = [
+            {**entry, "opened_at": when.isoformat()}
+            for entry in (settings.get("_positions") or [])
+        ]
+        self.master.copy_settings = settings
+        self.db.commit()
+        self.db.expire_all()
+
+    def clear_halt(self):
+        response = self.client.post(f"/api/accounts/{self.slave.id}/resume")
+        assert response.status_code == 200, response.text
+        self.db.expire_all()
 
 
 @pytest.fixture()
@@ -678,6 +705,117 @@ class TestMirroring:
             )
         ).all()
         assert len(links) == 1
+
+
+class TestTheCopyDeadline:
+    """How long a master trade stays worth copying.
+
+    The bug this is about: an account halted at the daily profit target, then
+    cleared hours later, opened everything the master had been holding all
+    along -- each of them filled at a price that had moved on, and the first
+    thing the account did on being let off its leash was lose money.
+    """
+
+    def test_clearing_a_halt_does_not_open_what_the_master_took_hours_ago(self, pair):
+        pair.configure(mode="fixed_lot", fixed_lot=0.1, max_copy_delay_ms=1_000)
+        pair.arm()
+        pair.master_holds(position(position_id=1, ticket=1))
+
+        pair.slave.copy_halted = True
+        pair.slave.copy_halt_reason = "the daily profit target was reached"
+        pair.db.commit()
+        assert pair.slave_polls() == []
+
+        pair.master_held_since(seconds=3 * 3600)
+        pair.clear_halt()
+
+        assert [c for c in pair.slave_polls() if c["action"] == "open"] == []
+        assert pair.last_skip().rule == "too_late"
+
+    def test_clearing_a_halt_still_copies_what_the_master_takes_next(self, pair):
+        """The refusal is about that one position's age, not about the account.
+
+        Nothing latches: the trade the master takes after the halt is cleared
+        is copied like any other, which is the whole point of clearing it.
+        """
+        pair.configure(mode="fixed_lot", fixed_lot=0.1, max_copy_delay_ms=1_000)
+        pair.arm()
+        pair.master_holds(position(position_id=1, ticket=1))
+        pair.slave.copy_halted = True
+        pair.db.commit()
+        pair.slave_polls()
+        pair.master_held_since(seconds=3 * 3600)
+        pair.clear_halt()
+        pair.slave_polls()
+
+        pair.master_holds(
+            position(position_id=1, ticket=1),
+            position(position_id=2, ticket=2, symbol="EURUSD"),
+        )
+        opens = [c for c in pair.slave_polls() if c["action"] == "open"]
+        assert [c["master_position_id"] for c in opens] == [2]
+
+    def test_the_deadline_is_adjustable(self, pair):
+        pair.configure(mode="fixed_lot", fixed_lot=0.1, max_copy_delay_ms=60_000)
+        pair.arm()
+        pair.master_holds(position(position_id=1, ticket=1))
+        pair.master_held_since(seconds=30)
+
+        assert only_open(pair.slave_polls())["volume"] == pytest.approx(0.1)
+
+    def test_zero_switches_it_off(self, pair):
+        pair.configure(mode="fixed_lot", fixed_lot=0.1, max_copy_delay_ms=0)
+        pair.arm()
+        pair.master_holds(position(position_id=1, ticket=1))
+        pair.master_held_since(seconds=5 * 86_400)
+
+        assert only_open(pair.slave_polls())["volume"] == pytest.approx(0.1)
+
+    def test_a_position_already_old_when_first_seen_is_not_copied(self, pair):
+        """Nothing here was ever seen fresh: the master's terminal reports a
+        position it has been holding for an hour, which is what happens when a
+        master is added, or reconnects, mid-trade."""
+        pair.configure(mode="fixed_lot", fixed_lot=0.1, max_copy_delay_ms=1_000)
+        pair.arm()
+        now = 1_800_000_000
+        body = poll_body(
+            *MASTER, 100_000.0, 100_000.0,
+            positions=[position(position_id=1, ticket=1, open_time=now - 3_600)],
+        )
+        body["server_time"] = now
+        assert pair.client.post("/api/agent/poll", json=body).status_code == 200
+        pair.db.expire_all()
+
+        assert [c for c in pair.slave_polls() if c["action"] == "open"] == []
+        assert pair.last_skip().rule == "too_late"
+
+    def test_a_fill_a_fraction_of_a_second_old_is_still_copied(self, pair):
+        """The broker reports whole seconds, so a fill 100ms back can read as a
+        second old. That rounding must not eat a one-second deadline."""
+        pair.configure(mode="fixed_lot", fixed_lot=0.1, max_copy_delay_ms=1_000)
+        pair.arm()
+        now = 1_800_000_000
+        body = poll_body(
+            *MASTER, 100_000.0, 100_000.0,
+            positions=[position(position_id=1, ticket=1, open_time=now - 1)],
+        )
+        body["server_time"] = now
+        pair.client.post("/api/agent/poll", json=body)
+        pair.db.expire_all()
+
+        assert only_open(pair.slave_polls())["volume"] == pytest.approx(0.1)
+
+    def test_the_terminal_is_told_what_is_left_of_the_deadline(self, pair):
+        """The order still has to reach the broker. The terminal refuses it if
+        the budget has run out on the way, so it is handed the remainder rather
+        than the whole second."""
+        pair.configure(mode="fixed_lot", fixed_lot=0.1, max_copy_delay_ms=1_000)
+        pair.arm()
+        pair.master_holds(position(position_id=1, ticket=1))
+        pair.master_held_since(seconds=0.4)
+
+        command = only_open(pair.slave_polls())
+        assert 0 < command["max_age_ms"] <= 700
 
 
 class TestDryRun:

@@ -215,6 +215,20 @@ def mirror_stops_enabled(settings: dict[str, Any] | None) -> bool:
     return _bool(settings or {}, "mirror_stops", True)
 
 
+#: How long a master trade stays worth copying, from the master's fill to the
+#: order landing on the slave. A second: the whole value of a copy is that it
+#: is the same trade at nearly the same price, and past this it is a different
+#: trade at a price nobody chose. Adjustable per account, because a fast VPS
+#: beside the broker and a home connection on the other side of the world are
+#: not the same budget -- and zero switches the deadline off for anyone who
+#: would rather be late than miss it.
+DEFAULT_MAX_COPY_DELAY_MS = 1_000
+
+
+def max_copy_delay_ms(settings: dict[str, Any] | None) -> int:
+    return _int(settings or {}, "max_copy_delay_ms", DEFAULT_MAX_COPY_DELAY_MS)
+
+
 def defaults() -> dict[str, Any]:
     """The settings a freshly added slave starts with.
 
@@ -234,6 +248,7 @@ def defaults() -> dict[str, Any]:
         "max_lot_refuses": False,
         "min_lot": 0.0,
         "mirror_stops": True,
+        "max_copy_delay_ms": DEFAULT_MAX_COPY_DELAY_MS,
         "max_risk_percent_per_trade": 2.0,
         "require_stop_loss": False,
         "min_stop_distance_points": 0.0,

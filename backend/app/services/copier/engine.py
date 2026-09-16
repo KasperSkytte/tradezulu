@@ -9,7 +9,7 @@ the whole decision surface — including every refusal and every prop-firm rule
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Any
 
@@ -83,6 +83,17 @@ class MasterPosition:
     open_price: float
     stop_loss: float | None = None
     take_profit: float | None = None
+    #: When the master actually entered, in UTC, as well as it can be known --
+    #: the earlier of what its terminal reported and when this server first
+    #: heard of the position. ``None`` means nobody knows, and an unknown age
+    #: is not treated as a late one.
+    opened_at: datetime | None = None
+
+    def age_ms(self, now: datetime) -> float | None:
+        """How long ago the master took this trade, in milliseconds."""
+        if self.opened_at is None:
+            return None
+        return (now - self.opened_at).total_seconds() * 1000.0
 
 
 @dataclass
@@ -116,6 +127,11 @@ class SlaveContext:
     specs: dict[str, SymbolSpec] = field(default_factory=dict)
     copied: list[CopiedPosition] = field(default_factory=list)
     halted: bool = False
+    #: How long after the master's entry a copy is still worth placing, in
+    #: milliseconds. Past it the trade is refused once and for good rather than
+    #: filled at a price the master never traded -- see :func:`_plan_open`.
+    #: Zero switches the deadline off.
+    max_copy_delay_ms: int = 0
 
 
 def _price_changed(a: float | None, b: float | None, digits: int) -> bool:
@@ -134,6 +150,7 @@ def plan(
     today: date,
     *,
     mirror_stops: bool = True,
+    now: datetime | None = None,
 ) -> list[Action]:
     """The actions this slave should take right now.
 
@@ -141,6 +158,7 @@ def plan(
     admit a new trade, and an account-level halt short-circuits everything
     that would add exposure.
     """
+    now = now or datetime.now(timezone.utc)
     actions: list[Action] = []
     by_master_id = {p.position_id: p for p in master_positions}
     copied_by_master = {c.master_position_id: c for c in context.copied}
@@ -259,7 +277,7 @@ def plan(
         if master.position_id in copied_by_master:
             continue
 
-        action = _plan_open(master, master_account, context, pending, today)
+        action = _plan_open(master, master_account, context, pending, today, now)
         actions.append(action)
         if action.type is ActionType.OPEN:
             pending.append(
@@ -325,7 +343,31 @@ def _plan_open(
     context: SlaveContext,
     pending: list[OpenPosition],
     today: date,
+    now: datetime,
 ) -> Action:
+    # Late is the same as wrong. A copy is worth having because it is the
+    # master's trade at the master's price; minutes or hours later it is a
+    # different trade at a price nobody chose -- which is exactly what a
+    # cleared halt used to produce, opening everything the master had been
+    # holding all along as if it had just been taken.
+    #
+    # Refused rather than deferred: the age only grows, so this position is
+    # refused on this pass and on every pass after it. Nothing retries.
+    age = master.age_ms(now)
+    if context.max_copy_delay_ms > 0 and age is not None and age > context.max_copy_delay_ms:
+        return Action(
+            ActionType.SKIP,
+            master.position_id,
+            symbol=master.symbol,
+            direction=master.direction,
+            reason=(
+                f"the master opened this {age / 1000:,.1f}s ago, past the "
+                f"{context.max_copy_delay_ms}ms copy window -- too late to be "
+                "the same trade"
+            ),
+            rule="too_late",
+        )
+
     slave_symbol = resolve(master.symbol, context.symbol_rules, context.available_symbols)
     if slave_symbol is None:
         return Action(

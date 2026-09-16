@@ -536,6 +536,9 @@ export interface CopySettings {
   max_lot_refuses: boolean
   min_lot: number
   mirror_stops: boolean
+  /** How long after the master's fill a copy is still worth placing, in
+   *  milliseconds. Past it the trade is given up on for good. 0 turns it off. */
+  max_copy_delay_ms: number
   max_risk_percent_per_trade: number
   require_stop_loss: boolean
   /** Points between entry and stop, below which a copy is refused. */

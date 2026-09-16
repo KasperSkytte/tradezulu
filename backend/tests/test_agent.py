@@ -7,7 +7,7 @@ just an HTTP client, so the entire loop can be driven from a test.
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import func, select
@@ -46,7 +46,7 @@ def master_payload(**kwargs):
 
 
 def position(position_id=1, ticket=1, symbol="EURUSD", direction="long",
-             volume=1.0, price=1.1000, sl=1.0980, tp=1.1060):
+             volume=1.0, price=1.1000, sl=1.0980, tp=1.1060, comment=""):
     return {
         "position_id": position_id,
         "ticket": ticket,
@@ -57,6 +57,7 @@ def position(position_id=1, ticket=1, symbol="EURUSD", direction="long",
         "stop_loss": sl,
         "take_profit": tp,
         "profit": 0.0,
+        "comment": comment,
     }
 
 
@@ -130,6 +131,27 @@ class TestMaster:
         db.refresh(master)
         stored = (master.copy_settings or {}).get("_positions")
         assert stored and stored[0]["symbol"] == "EURUSD"
+
+    def test_a_positions_age_survives_the_next_heartbeat(self, auth_client, master, db):
+        """The snapshot is replaced wholesale every few hundred milliseconds.
+
+        When each position was opened is the one thing that must not be, or
+        every position would read as having just been taken and no slave could
+        ever tell a fresh trade from one the master has held all morning.
+        """
+        auth_client.post(
+            "/api/agent/poll",
+            json=account_payload("5000", "Master-Server", positions=[position()]),
+        )
+        db.refresh(master)
+        first = (master.copy_settings or {})["_positions"][0]["opened_at"]
+
+        auth_client.post(
+            "/api/agent/poll",
+            json=account_payload("5000", "Master-Server", positions=[position()]),
+        )
+        db.refresh(master)
+        assert (master.copy_settings or {})["_positions"][0]["opened_at"] == first
 
     def test_account_state_is_updated(self, auth_client, master, db):
         auth_client.post(
@@ -217,7 +239,14 @@ class TestResults:
         assert link.slave_position_id == 777
         assert link.status == "open"
 
-    def test_a_failed_open_creates_no_link(self, auth_client, master, slave, db):
+    def test_a_failed_open_is_never_tried_again(self, auth_client, master, slave, db):
+        """A refusal is an answer, not a reason to have another go.
+
+        The master's price is gone by the time the refusal comes back, so a
+        second attempt would be a different trade at a price nobody chose. The
+        link is written off and the position is never offered again, however
+        long the master holds it.
+        """
         arm(auth_client, slave)
         auth_client.post("/api/agent/poll", json=master_payload(positions=[position()]))
         command = auth_client.post(
@@ -233,12 +262,20 @@ class TestResults:
             }],
         ))
 
-        assert db.scalars(select(CopyLink)).all() == []
+        link = db.scalar(select(CopyLink).where(CopyLink.slave_account_id == slave.id))
+        assert link.status == "expired"
+        assert link.slave_position_id == 0
+        assert "not enough money" in link.close_reason
         event = db.scalar(
             select(CopyEvent).where(CopyEvent.slave_account_id == slave.id,
                                     CopyEvent.outcome == "failed")
         )
         assert "not enough money" in event.message
+
+        again = auth_client.post(
+            "/api/agent/poll", json=account_payload("9001", "Slave-Server")
+        ).json()["commands"]
+        assert [c for c in again if c["action"] == "open"] == []
 
     def test_the_same_trade_is_not_sent_twice(self, auth_client, master, slave):
         arm(auth_client, slave)
@@ -285,6 +322,65 @@ class TestResults:
         ).json()["commands"]
 
         assert any(c["action"] == "close" and c["ticket"] == 777 for c in commands)
+
+
+class TestAnOrderInFlight:
+    """Between the command going out and the terminal saying what happened.
+
+    The window is milliseconds and the answer normally arrives on the next
+    heartbeat -- but a poll lands in that window often enough, and everything
+    that can be decided in it has to be decided once. Sending the order again
+    is never the answer: the master's price has gone, and two positions where
+    the master has one is a worse outcome than none.
+    """
+
+    def _command(self, auth_client):
+        auth_client.post("/api/agent/poll", json=master_payload(positions=[position()]))
+        return auth_client.post(
+            "/api/agent/poll", json=account_payload("9001", "Slave-Server")
+        ).json()["commands"][0]
+
+    def test_it_is_not_sent_a_second_time_while_waiting(self, auth_client, master, slave):
+        arm(auth_client, slave)
+        assert self._command(auth_client)["action"] == "open"
+
+        for _ in range(5):
+            again = auth_client.post(
+                "/api/agent/poll", json=account_payload("9001", "Slave-Server")
+            ).json()["commands"]
+            assert [c for c in again if c["action"] == "open"] == []
+
+    def test_a_fill_whose_reply_was_lost_is_adopted(self, auth_client, master, slave, db):
+        """The terminal opened it and then the answer never arrived -- a restart
+        mid-order, a dropped connection. The position is there under the
+        copier's own comment, so it is taken over rather than opened again."""
+        arm(auth_client, slave)
+        self._command(auth_client)
+
+        auth_client.post("/api/agent/poll", json=account_payload(
+            "9001", "Slave-Server",
+            positions=[position(ticket=777, volume=0.10, comment="TZ 1")],
+        ))
+
+        link = db.scalar(select(CopyLink).where(CopyLink.slave_account_id == slave.id))
+        assert link.status == "open"
+        assert link.slave_position_id == 777
+
+    def test_one_that_never_appears_is_written_off(self, auth_client, master, slave, db):
+        arm(auth_client, slave)
+        self._command(auth_client)
+
+        link = db.scalar(select(CopyLink).where(CopyLink.slave_account_id == slave.id))
+        link.opened_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+        db.commit()
+
+        commands = auth_client.post(
+            "/api/agent/poll", json=account_payload("9001", "Slave-Server")
+        ).json()["commands"]
+
+        db.refresh(link)
+        assert link.status == "expired"
+        assert [c for c in commands if c["action"] == "open"] == []
 
 
 class TestAuth:

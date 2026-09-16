@@ -46,6 +46,7 @@ from ..services.copier.agent import (
     record_result,
     update_account_state,
 )
+from ..services.copier.config import max_copy_delay_ms
 from ..services.copier.waiting import wait_for_work, wake
 from ..services.credentials import credentials_status, get_credentials
 from ..services.crypto import decrypt
@@ -210,11 +211,16 @@ def _candle_seconds(charts: dict[str, Any]) -> int:
     return timeframes.seconds(name if name in timeframes.TIMEFRAMES else "M5")
 
 
-#: How long a command is worth carrying out, from the terminal asking for it
-#: to the terminal acting on it. Beyond this it is refused rather than filled:
-#: the whole value of a copy is that it is the master's trade, and one placed a
-#: second late at a price the master never saw is a different trade that nobody
-#: chose. Reported back so the refusal is visible rather than silent.
+#: How long a command is worth carrying out, from the server answering the
+#: terminal to the terminal acting on it. Beyond this it is refused rather than
+#: filled: the whole value of a copy is that it is the master's trade, and one
+#: placed a second late at a price the master never saw is a different trade
+#: that nobody chose. Reported back so the refusal is visible rather than
+#: silent.
+#:
+#: This is the fallback. A slave is told its own figure -- the deadline on its
+#: settings -- and each open command carries what is left of it once the time
+#: from the master's fill to the plan is deducted.
 COMMAND_MAX_AGE_MS = 500
 
 #: What a terminal is asked for while copying is live, in milliseconds. Half a
@@ -238,6 +244,13 @@ def _poll_ms(db: Session, account: Account) -> int:
         .where(Account.role == "slave", Account.copy_enabled.is_(True))
     )
     return COPYING_POLL_MS if armed else IDLE_POLL_MS
+
+
+def _command_max_age_ms(account: Account) -> int:
+    """The deadline this terminal works to when a command carries none."""
+    if account.role != "slave":
+        return COMMAND_MAX_AGE_MS
+    return max_copy_delay_ms(account.copy_settings or {})
 
 
 def _poll_seconds(db: Session, account: Account) -> int:
@@ -348,7 +361,7 @@ def _handle_poll(payload: AgentPollIn, db: Session) -> AgentPollOut:
         halted=bool(account.copy_halted),
         poll_seconds=_poll_seconds(db, account),
         poll_ms=_poll_ms(db, account),
-        command_max_age_ms=COMMAND_MAX_AGE_MS,
+        command_max_age_ms=_command_max_age_ms(account),
         history_before_seconds=_history_seconds(charts, "history_days_before"),
         history_after_seconds=_history_seconds(charts, "history_days_after"),
         candle_seconds=_candle_seconds(charts),

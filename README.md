@@ -76,6 +76,12 @@ docker compose run --rm --service-ports -e TZ_DEMO=1 tradezulu demo
  - Stop and target moves follow through; a close is a close everywhere. Symbol
   differences (`EURUSD`, `EURUSD.r`, `FX_EURUSD`) are resolved per account,
   never guessed.
+ - A copy has a deadline — one second out of the box, adjustable per account,
+  counted from the moment the server hears of the master's trade. A copy that
+  cannot be placed inside it is given up on rather than opened at a price the
+  master never traded, and it is never retried. So clearing a halt resumes
+  copying from the next trade, instead of piling on everything the master has
+  been holding since.
  - Every slave starts disabled and in dry-run, recording what it *would* have
   done. You arm them one at a time to start copying trades.
 
