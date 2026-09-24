@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.36.0](https://github.com/KasperSkytte/tradezulu/compare/v1.35.0...v1.36.0) (2026-09-24)
+
+
+### Features
+
+* **copier:** give a copy a deadline and never re-enter a stale trade ([97b1f2d](https://github.com/KasperSkytte/tradezulu/commit/97b1f2dbefae338848852ac6f5978ce8567d17ac))
+* **news:** refresh the news without reloading the page ([455f46a](https://github.com/KasperSkytte/tradezulu/commit/455f46ab3315ece95887ac456ae4c95aa3a92f7c))
+
 ## [1.35.0](https://github.com/KasperSkytte/tradezulu/compare/v1.34.3...v1.35.0) (2026-08-20)
 
 
