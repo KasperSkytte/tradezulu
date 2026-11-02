@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.36.0](https://github.com/KasperSkytte/tradezulu/compare/v1.35.0...v1.36.0) (2026-11-02)
+
+
+### Features
+
+* **agent:** say when a broker refused a login ([d3be742](https://github.com/KasperSkytte/tradezulu/commit/d3be742453efad3999c8092775e8734866357503))
+* **copier:** give a copy a deadline and never re-enter a stale trade ([97b1f2d](https://github.com/KasperSkytte/tradezulu/commit/97b1f2dbefae338848852ac6f5978ce8567d17ac))
+* **news:** refresh the news without reloading the page ([455f46a](https://github.com/KasperSkytte/tradezulu/commit/455f46ab3315ece95887ac456ae4c95aa3a92f7c))
+
+
+### Bug fixes
+
+* **accounts:** do not print an unknown equity as zero ([614d281](https://github.com/KasperSkytte/tradezulu/commit/614d2810a544153d2774c01d1ad4abba681910d9))
+* **agent:** install Falcon Markets' own terminal ([fa0f7d0](https://github.com/KasperSkytte/tradezulu/commit/fa0f7d0cf055d979581d0d2605e169baf4a8c9e2))
+* **copier:** log a late trade once and write it off ([93cf5fe](https://github.com/KasperSkytte/tradezulu/commit/93cf5fe985847d59ff125982edc924d1195d257f))
+* **copier:** measure the trading day on the broker's clock ([6c76aac](https://github.com/KasperSkytte/tradezulu/commit/6c76aacc6fe2acfce30e6d8a3fcba4ed6e2dca3e))
+* **copier:** never flatten a fleet on one blank master heartbeat ([fb4979b](https://github.com/KasperSkytte/tradezulu/commit/fb4979baf30ba2b783ea6b74dd2fd8122ed91347))
+* **copier:** never halt an account on an equity of zero ([8273a7e](https://github.com/KasperSkytte/tradezulu/commit/8273a7efdb9eca32dc45ec4ea4bb43cca815b5c4))
+* **ui:** stop a popup closing on a drag that ends outside it ([0c0a053](https://github.com/KasperSkytte/tradezulu/commit/0c0a05347d3546f4893443ea3c2de67734c0b7f9))
+
+
+### Refactoring
+
+* delete code nothing calls ([174aab1](https://github.com/KasperSkytte/tradezulu/commit/174aab14f3498d37ff4fdbcb8a1312221bb5e81f))
+
 ## [1.35.0](https://github.com/KasperSkytte/tradezulu/compare/v1.34.3...v1.35.0) (2026-08-20)
 
 
