@@ -94,13 +94,24 @@ else
   say "using the display at ${DISPLAY_NUM} (given)"
 fi
 
+# Wine's own complaints, kept rather than discarded. This used to send the
+# launch to /dev/null, so a terminal that refused to start looked identical to
+# one that started and drew nothing, and the only thing said about either was
+# "the terminal never opened a window" two minutes later.
+WINE_LOG="$(mktemp -t tz-set-permissions-XXXXXX.log)"
+
 say "starting the template terminal"
 flatpak run --command=sh com.usebottles.bottles -c "
   export WINEPREFIX='${PREFIX}' WINEDEBUG=-all DISPLAY=${DISPLAY_NUM}
+  # Wine offers to download Mono and Gecko the first time something wants
+  # .NET, and the offer is a modal dialog no one is here to answer -- so the
+  # terminal never gets as far as drawing a window and this waited two minutes
+  # for one. See WINE_ENV in tz_provision.py.
+  export WINEDLLOVERRIDES='mscoree,mshtml='
   unset PYTHONPATH PYTHONHOME
   cd '${TERMINAL_DIR}'
   exec '${RUNNER}/bin/wine' terminal64.exe /portable
-" >/dev/null 2>&1 &
+" >"${WINE_LOG}" 2>&1 &
 
 export DISPLAY="${DISPLAY_NUM}"
 
@@ -136,7 +147,11 @@ for _ in $(seq 1 40); do
   MAIN="$(viewable_windows | sort -k2 -rn | head -1 | awk '{print $1}')"
   [ -n "${MAIN}" ] && break
 done
-[ -n "${MAIN}" ] || die "the terminal never opened a window on ${DISPLAY_NUM}"
+if [ -z "${MAIN}" ]; then
+  say "what Wine said:"
+  sed 's/^/    /' "${WINE_LOG}" >&2 || true
+  die "the terminal never opened a window on ${DISPLAY_NUM} (log: ${WINE_LOG})"
+fi
 say "terminal window ${MAIN}"
 sleep 15
 

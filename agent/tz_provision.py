@@ -55,6 +55,28 @@ BOTTLES = Path.home() / ".var/app/com.usebottles.bottles/data/bottles"
 #: because the two windows happen to be stacked in the same place.
 DISPLAY = os.getenv("TZ_DISPLAY", ":77")
 
+#: What every Windows process here is given, besides a prefix and a display.
+#:
+#: ``WINEDLLOVERRIDES`` is the load-bearing part, and leaving it out of one
+#: call does not fail there -- it fails in the next one. Wine offers to
+#: download Mono and Gecko the first time something asks for .NET or an
+#: embedded browser, and the offer is a modal dialog. On a headless display
+#: nobody answers it, so the process sits in front of it until something else
+#: gives up.
+#:
+#: It used to be set only for the install in make-template.sh, which was the
+#: worst of both: the install was quiet, so the pair were never installed into
+#: the template, and every later launch of a clone ran without the override and
+#: got the prompt. A freshly built template therefore produced a terminal that
+#: hung -- MetaEditor for the whole five-minute compile timeout, and
+#: set-permissions.sh waiting two minutes for a window that never came -- while
+#: the older templates, which had the runtimes in them from before, carried on
+#: working and made it look broker-specific.
+#:
+#: So it belongs in one constant that every launch uses, not in whichever ones
+#: were being debugged at the time.
+WINE_ENV = 'WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml="'
+
 #: VNC ports follow the display number: display :78 is served on 5978. One
 #: server per display, so a viewer is connected to exactly one account.
 VNC_PORT_BASE = int(os.getenv("TZ_VNC_PORT_BASE", "5900"))
@@ -647,7 +669,7 @@ def compile_expert(terminal: Path, mq5: Path) -> None:
     while prefix.parent != prefix and prefix.name != "drive_c":
         prefix = prefix.parent
     script = (
-        f'export WINEPREFIX="{prefix.parent}" WINEDEBUG=-all DISPLAY={DISPLAY}\n'
+        f'export WINEPREFIX="{prefix.parent}" {WINE_ENV} DISPLAY={DISPLAY}\n'
         f'unset PYTHONPATH PYTHONHOME\n'
         f'cd "{terminal}"\n'
         f'"{_runner()}" "{editor.name}" /compile:"MQL5\\\\Experts\\\\{mq5.name}" >/dev/null 2>&1\n'
@@ -796,7 +818,7 @@ def launch(
     prune_charts(terminal)
     write_startup(terminal, login, server, password)
     script = (
-        f'export WINEPREFIX="{bottle}" WINEDEBUG=-all DISPLAY={display}\n'
+        f'export WINEPREFIX="{bottle}" {WINE_ENV} DISPLAY={display}\n'
         f'unset PYTHONPATH PYTHONHOME\n'
         f'cd "{terminal}"\n'
         f'setsid "{_runner()}" terminal64.exe /portable /config:tzstart.ini '
@@ -1594,7 +1616,7 @@ def refresh_template(template: Path) -> None:
         return
     log.info("refreshing template %s", template.name)
     script = (
-        f'export WINEPREFIX="{template}" WINEDEBUG=-all DISPLAY={DISPLAY}\n'
+        f'export WINEPREFIX="{template}" {WINE_ENV} DISPLAY={DISPLAY}\n'
         f'unset PYTHONPATH PYTHONHOME\n'
         f'cd "{terminal}"\n'
         f'setsid "{_runner()}" terminal64.exe /portable >/dev/null 2>&1 < /dev/null\n'
