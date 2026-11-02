@@ -317,7 +317,6 @@ def store_master_positions(
         )
 
     settings["_positions"] = stored
-    settings["_positions_at"] = now.isoformat()
     # Either this report has something in it, or it is the second one in a row
     # saying the master is flat. Both end the wait.
     settings.pop("_flat_since", None)

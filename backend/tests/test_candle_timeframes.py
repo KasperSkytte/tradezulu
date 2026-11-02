@@ -14,7 +14,6 @@ from app.services.candles import (
     Bar,
     aggregate,
     available,
-    bars_in,
     source_for,
     window_padding,
 )
@@ -129,23 +128,3 @@ class TestWindow:
     def test_a_negative_window_is_not_a_negative_window(self):
         before, after = window_padding(-5, -5)
         assert before == after == timedelta(0)
-
-
-class TestBarsIn:
-    """Turning a number of days into the bar count the terminal is asked for."""
-
-    def test_a_day_of_five_minute_bars(self):
-        assert bars_in(1, "M5") == 288
-
-    def test_a_week_of_them(self):
-        assert bars_in(7, "M5") == 2016
-
-    def test_the_same_day_at_a_longer_timeframe(self):
-        assert bars_in(1, "H1") == 24
-        assert bars_in(1, "H4") == 6
-
-    def test_a_fraction_of_a_day(self):
-        assert bars_in(0.5, "M15") == 48
-
-    def test_never_asks_for_nothing(self):
-        assert bars_in(0, "H4") == 1

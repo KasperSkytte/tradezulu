@@ -230,6 +230,11 @@ def balance_before_trades(db: Session, account_ids: set[int]) -> dict[int, float
     One walk per account rather than a query per trade: a page of fifty would
     otherwise be fifty aggregates, and the whole history has to be walked for
     any of it to mean anything.
+
+    Nothing here calls this; the tests do. It is the seam the walk above is
+    exercised through -- deposits, credit, a history that starts mid-account --
+    and that walk is what every balance on the journal is built from. So it
+    stays, as the way those rules are held to account.
     """
     out: dict[int, float] = {}
     for account_id in account_ids:

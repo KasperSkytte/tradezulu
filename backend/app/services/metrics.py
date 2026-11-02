@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import math
 import statistics
-from collections import Counter, defaultdict
+from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Any
 
 from ..models import Trade
@@ -1048,11 +1048,3 @@ def period_bounds(period: str, today: date, week_starts_on: str = "monday") -> t
     if period == "all":
         return date(1970, 1, 1), today
     return today - timedelta(days=29), today
-
-
-def symbol_counter(trades: Iterable[Trade]) -> list[tuple[str, int]]:
-    return Counter(t.symbol for t in trades).most_common()
-
-
-def to_naive_utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=None) if value.tzinfo else value

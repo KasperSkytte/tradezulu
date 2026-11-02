@@ -136,12 +136,3 @@ def window_padding(days_before: float, days_after: float) -> tuple[timedelta, ti
         timedelta(days=max(0.0, days_before or DEFAULT_DAYS)),
         timedelta(days=max(0.0, days_after or DEFAULT_DAYS)),
     )
-
-
-def bars_in(days: float, timeframe: str) -> int:
-    """How many bars of ``timeframe`` fit in ``days``.
-
-    What the terminal has to be asked for, and what the settings page shows so
-    a number of days is not an abstract quantity.
-    """
-    return max(1, round(days * 86_400 / seconds(timeframe)))

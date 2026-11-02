@@ -348,10 +348,6 @@ class DayNoteOut(ORMModel):
     mood: str
 
 
-class SettingsPatch(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-
 class AccountIn(BaseModel):
     name: str | None = None
     initial_balance: float | None = None

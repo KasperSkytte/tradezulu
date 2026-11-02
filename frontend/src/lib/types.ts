@@ -513,17 +513,6 @@ export interface SystemInfo {
   accounts: number
 }
 
-export interface SyncLogEntry {
-  id: number
-  account_id: number | null
-  source: string
-  status: string
-  deals_received: number
-  deals_new: number
-  trades_upserted: number
-  message: string
-  created_at: string
-}
 
 export interface CopySettings {
   mode: string

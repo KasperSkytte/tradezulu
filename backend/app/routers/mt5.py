@@ -442,12 +442,6 @@ def sync_logs(_user: CurrentUser, db: DbSession, limit: Annotated[int, Query(le=
 # --- candles ----------------------------------------------------------------
 
 
-_TIMEFRAME_SECONDS = {
-    "M1": 60, "M5": 300, "M15": 900, "M30": 1800,
-    "H1": 3600, "H4": 14400, "D1": 86400, "W1": 604800,
-}
-
-
 @router.get("/candles", response_model=CandleResponse)
 def get_candles(
     _user: CurrentUser,
@@ -573,7 +567,3 @@ def get_candles(
             for bar in bars
         ],
     )
-
-
-def _timeframe_seconds(timeframe: str) -> int:
-    return _TIMEFRAME_SECONDS.get(timeframe.upper(), 900)

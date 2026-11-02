@@ -287,41 +287,9 @@ export function outcomeClass(
   return pnlClass(value)
 }
 
-/** Mark colour (bars, dots) for a trade's result. */
-export function outcomeColor(
-  outcome: string | null | undefined,
-  value: number | null | undefined,
-): string {
-  if (outcome === 'breakeven') return 'var(--tz-breakeven)'
-  return pnlColor(value)
-}
-
 /** Mark colour (bars, areas, dots) for a signed value. */
 export function pnlColor(value: number | null | undefined): string {
   if (value === null || value === undefined || value === 0) return 'var(--tz-flat)'
   return value > 0 ? 'var(--tz-gain)' : 'var(--tz-loss)'
 }
 
-export function outcomeLabel(outcome: string): string {
-  switch (outcome) {
-    case 'win':
-      return 'Win'
-    case 'loss':
-      return 'Loss'
-    case 'breakeven':
-      return 'Breakeven'
-    default:
-      return 'Open'
-  }
-}
-
-/** Readable contrast colour for a user-picked tag colour. */
-export function contrastText(hex: string): string {
-  const clean = hex.replace('#', '')
-  if (clean.length !== 6) return '#ffffff'
-  const r = parseInt(clean.slice(0, 2), 16)
-  const g = parseInt(clean.slice(2, 4), 16)
-  const b = parseInt(clean.slice(4, 6), 16)
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-  return luminance > 0.6 ? '#101320' : '#ffffff'
-}

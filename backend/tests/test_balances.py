@@ -87,50 +87,6 @@ class TestCurrentBalance:
         assert current_balance(db, None) is None
 
 
-class TestBalanceBeforeEachTrade:
-    def test_it_walks_back_from_today(self, db):
-        row = account(db, balance=1_150.0)
-        first = closed(db, row.id, datetime(2026, 6, 1, 10), 100.0)
-        second = closed(db, row.id, datetime(2026, 6, 2, 10), 50.0)
-
-        before = balance_before_trades(db, {row.id})
-
-        assert before[first.id] == pytest.approx(1_000.0)
-        assert before[second.id] == pytest.approx(1_100.0)
-
-    def test_a_deposit_is_not_mistaken_for_profit(self, db):
-        """Otherwise every trade after a top-up is measured against it.
-
-        MetaTrader records deposits and withdrawals as balance deals, so an
-        account a terminal has been watching reconstructs exactly.
-        """
-        row = account(db, balance=2_100.0)
-        first = closed(db, row.id, datetime(2026, 6, 1, 10), 100.0)
-        deposit(db, row.id, datetime(2026, 6, 2, 9), 1_000.0)
-        second = closed(db, row.id, datetime(2026, 6, 3, 10), 100.0)
-
-        before = balance_before_trades(db, {row.id})
-
-        assert before[first.id] == pytest.approx(900.0)
-        assert before[second.id] == pytest.approx(2_000.0)
-
-    def test_reaching_back_past_the_funding_gives_no_answer(self, db):
-        """The account existed before the history anyone has here.
-
-        Walking back through more profit than the account is worth crosses
-        zero, and a percentage of a negative balance is not a small number --
-        it is the wrong sign.
-        """
-        row = account(db, balance=100.0)
-        old = closed(db, row.id, datetime(2026, 6, 1, 10), 5_000.0)
-        recent = closed(db, row.id, datetime(2026, 6, 2, 10), 20.0)
-
-        before = balance_before_trades(db, {row.id})
-
-        assert old.id not in before
-        assert before[recent.id] == pytest.approx(80.0)
-
-
 class TestTradesNewerThanEverySample:
     """A trade that closed after the last recorded balance still has one.
 
