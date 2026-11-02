@@ -323,6 +323,144 @@ class TestSupervise:
         tz.supervise(spec, self.plan, prefix, state)
         assert tz.load_state(8)["restarts"] == 1
 
+    def test_a_refused_login_is_not_retried(self, bottles, monkeypatch):
+        """None of the rungs types a different password.
+
+        The ladder assumes the install is at fault. When the broker has said
+        no, climbing it spends four cycles and twenty minutes to arrive at
+        "start failed", which sends whoever reads it to look at the one thing
+        that is working.
+        """
+        prefix = _with_terminal(tz.bottle_for(9))
+        _write_log(prefix, "0\t09:15:58.857\tNetwork\t'9': login failed")
+        monkeypatch.setattr(tz, "datetime", _FrozenClock(NOW))
+        monkeypatch.setattr(tz, "allow_webrequest", lambda *a, **k: pytest.fail("retried a refusal"))
+        monkeypatch.setattr(tz, "stop_terminal", lambda *a, **k: pytest.fail("restarted a refusal"))
+        spec = {"account_id": 9, "login": "9", "server": "s"}
+        tz.supervise(spec, self.plan, prefix, {"launched": (NOW - timedelta(hours=1)).isoformat()})
+        state = tz.load_state(9)
+        assert "login failed" in state["login_refused"]
+        assert "restarts" not in state
+
+    def test_a_terminal_that_is_merely_silent_is_still_retried(self, bottles, monkeypatch):
+        """A log with no verdict in it must not read as a refusal."""
+        prefix = _with_terminal(tz.bottle_for(10))
+        _write_log(prefix, "0\t09:15:58.857\tTerminal\tMetaTrader 5 build 4620 started")
+        tried = []
+        monkeypatch.setattr(tz, "datetime", _FrozenClock(NOW))
+        monkeypatch.setattr(tz, "allow_webrequest", lambda login, url, display="": tried.append(login))
+        spec = {"account_id": 10, "login": "9", "server": "s"}
+        tz.supervise(spec, self.plan, prefix, {"launched": (NOW - timedelta(hours=1)).isoformat()})
+        assert tried == ["9"]
+        assert "login_refused" not in tz.load_state(10)
+
+
+# --- what the terminal's own log says about logging in ------------------------
+
+
+def _with_terminal(prefix: Path) -> Path:
+    """A prefix with a MetaTrader in it, where ``terminal_dir`` will find one."""
+    (prefix / "drive_c" / "Program Files" / "MT5").mkdir(parents=True, exist_ok=True)
+    (prefix / "drive_c" / "Program Files" / "MT5" / "terminal64.exe").touch()
+    return prefix
+
+
+def _write_log(prefix: Path, *lines: str, name: str = "20260802.log") -> Path:
+    """Write a terminal log as MetaTrader writes one: UTF-16, CRLF, in logs/."""
+    logs = prefix / "drive_c" / "Program Files" / "MT5" / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    path = logs / name
+    path.write_bytes("\r\n".join(lines).encode("utf-16"))
+    return path
+
+
+class TestLoginEvidence:
+    """Whether MetaTrader ever got a session, read from its own log.
+
+    Nothing else can tell. A terminal with no session has no account for an
+    Expert Advisor to run against, so the one component that reports to
+    TradeZulu is the one that cannot say the login was refused -- and an
+    account with no session reports an equity of zero, which read as
+    funded-and-flat.
+    """
+
+    def test_an_authorized_account_is_authorized(self, tmp_path):
+        prefix = _with_terminal(tmp_path / "tz-1")
+        _write_log(
+            prefix,
+            "KK\t0\t09:15:58.857\tNetwork\t'22609000': authorized on "
+            "VantageMarkets-Live through Access Point 1",
+        )
+        verdict, evidence = tz.login_evidence(tz.terminal_dir(prefix), "22609000")
+        assert verdict == "authorized"
+        assert "authorized on VantageMarkets-Live" in evidence
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "0\t09:15:58.857\tNetwork\t'176249607': login failed",
+            "0\t09:15:58.857\tNetwork\t'176249607': authorization failed",
+            "0\t09:15:58.857\tNetwork\t'176249607': invalid account",
+            "0\t09:15:58.857\tNetwork\t'176249607': invalid password",
+            "0\t09:15:58.857\tNetwork\t'176249607': account disabled",
+            "0\t09:15:58.857\tNetwork\t'176249607': access denied",
+        ],
+    )
+    def test_every_way_a_broker_says_no(self, tmp_path, line):
+        prefix = _with_terminal(tmp_path / "tz-1")
+        _write_log(prefix, line)
+        verdict, evidence = tz.login_evidence(tz.terminal_dir(prefix), "176249607")
+        assert verdict == "refused"
+        assert "\t" not in evidence, "the message is read by people, not by columns"
+
+    def test_the_forum_login_is_not_the_trade_login(self, tmp_path):
+        """This line appears in a perfectly healthy terminal.
+
+        It is the MQL5 community account, it has nothing to do with trading,
+        and matching the words alone would halt every terminal on the machine.
+        What keeps it out is that it names no account.
+        """
+        prefix = _with_terminal(tmp_path / "tz-1")
+        _write_log(prefix, "JO\t2\t05:17:45.314\tMQL5.community\tauthorization failed")
+        assert tz.login_evidence(tz.terminal_dir(prefix), "22609000")[0] == "silent"
+
+    def test_another_accounts_refusal_is_not_ours(self, tmp_path):
+        prefix = _with_terminal(tmp_path / "tz-1")
+        _write_log(prefix, "0\t09:15:58.857\tNetwork\t'999': login failed")
+        assert tz.login_evidence(tz.terminal_dir(prefix), "22609000")[0] == "silent"
+
+    def test_the_last_word_wins(self, tmp_path):
+        """A password changed at the broker leaves both lines in the log."""
+        prefix = _with_terminal(tmp_path / "tz-1")
+        _write_log(
+            prefix,
+            "0\t08:00:00.000\tNetwork\t'22609000': authorized on Live through Access Point 1",
+            "0\t09:00:00.000\tNetwork\t'22609000': invalid password",
+        )
+        assert tz.login_evidence(tz.terminal_dir(prefix), "22609000")[0] == "refused"
+
+    def test_a_refusal_yesterday_does_not_outrank_a_login_today(self, tmp_path):
+        prefix = _with_terminal(tmp_path / "tz-1")
+        _write_log(prefix, "0\t09:00:00.000\tNetwork\t'22609000': invalid password",
+                   name="20260801.log")
+        _write_log(prefix, "0\t09:00:00.000\tNetwork\t'22609000': authorized on Live",
+                   name="20260802.log")
+        assert tz.login_evidence(tz.terminal_dir(prefix), "22609000")[0] == "authorized"
+
+    def test_the_compilers_log_is_not_the_terminals(self, tmp_path):
+        """metaeditor.log sorts after every date, so it would be read instead."""
+        prefix = _with_terminal(tmp_path / "tz-1")
+        _write_log(prefix, "0\t09:00:00.000\tNetwork\t'22609000': invalid password")
+        _write_log(prefix, "irrelevant", name="metaeditor.log")
+        assert tz.login_evidence(tz.terminal_dir(prefix), "22609000")[0] == "refused"
+
+    def test_a_terminal_with_no_log_says_nothing(self, tmp_path):
+        prefix = _with_terminal(tmp_path / "tz-1")
+        assert tz.login_evidence(tz.terminal_dir(prefix), "22609000") == ("silent", "")
+
+    def test_no_terminal_at_all_says_nothing(self):
+        assert tz.login_evidence(None, "22609000") == ("silent", "")
+
 
 # --- clearing up accounts that are gone ---------------------------------------
 
@@ -593,6 +731,22 @@ class TestTerminalStatus:
         assert status["phase"] == "failed"
         assert "Forget" in status["message"]
         assert status["attempts"] == 4
+
+    def test_a_refused_login_says_so_and_quotes_the_broker(self, tmp_path):
+        status = self._status(tmp_path, state={"login_refused": "'9': invalid password"})
+        assert status["phase"] == "rejected"
+        assert "invalid password" in status["message"], "say what MetaTrader said"
+
+    def test_a_refused_login_outranks_having_given_up(self, tmp_path):
+        """Both are true at once, and only one of them says what to fix.
+
+        "Start failed" sends whoever reads it to look at the install, which is
+        the one part of a refused login that is working.
+        """
+        status = self._status(
+            tmp_path, state={"gave_up": True, "login_refused": "'9': invalid account"}
+        )
+        assert status["phase"] == "rejected"
 
     def test_one_that_worked_and_stopped_is_quiet(self, tmp_path):
         status = self._status(

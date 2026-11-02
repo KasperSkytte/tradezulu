@@ -994,10 +994,103 @@ def health(last_seen: datetime | None, launched: datetime | None, now: datetime)
     return "never-reported" if last_seen is None else "gone-quiet"
 
 
+#: What MetaTrader writes once a trade login succeeds. The line is tagged
+#: Network and names the account:
+#:
+#:   0  09:15:58.857  Network  '22609000': authorized on VantageMarkets-Live
+#:
+_AUTHORIZED = re.compile(r"'(\d+)':\s*authori[sz]ed\b", re.IGNORECASE)
+
+#: And when the broker says no. The wording depends on why -- a wrong
+#: password, an account the broker has closed, one it has moved to another
+#: server -- so this matches the shape of the line rather than any single
+#: sentence of it, and only where the account is named.
+#:
+#: That last part is what keeps "MQL5.community authorization failed" out of
+#: it. That line is the forum login, it appears in a perfectly healthy
+#: terminal, and it names no account -- which is exactly why the account
+#: number is required here rather than just the words.
+#:
+#: A lost connection is deliberately not in this list. It means the broker
+#: could not be reached, not that it refused, and restarting a terminal is a
+#: reasonable thing to try about it.
+_REFUSED = re.compile(
+    r"'(\d+)':\s*(?:"
+    r"login\s+failed"
+    r"|authori[sz]ation\s+failed"
+    r"|invalid\s+(?:account|password|login)"
+    r"|account\s+(?:disabled|blocked)"
+    r"|access\s+denied"
+    r")",
+    re.IGNORECASE,
+)
+
+#: How many days of the terminal's own log to read back through. Two, so a
+#: terminal started just before midnight is still judged on the session it is
+#: actually in rather than on an empty file.
+LOG_DAYS = 2
+
+
+def read_terminal_log(terminal: Path, days: int = LOG_DAYS) -> list[str]:
+    """The lines MetaTrader last wrote about itself, oldest first.
+
+    The terminal keeps one log per day under ``logs/``, named YYYYMMDD.log and
+    written in UTF-16 -- so it has to be decoded deliberately; read as plain
+    text it comes back interleaved with NULs and matches nothing, which fails
+    silently and looks like a terminal that logged in fine.
+
+    Only the date-named files are read. ``metaeditor.log`` sits in the same
+    directory and sorts after every one of them, so taking the last few names
+    without filtering would read the compiler's log and none of the
+    terminal's.
+    """
+    lines: list[str] = []
+    for path in sorted(terminal.glob("logs/[0-9]*.log"))[-days:]:
+        try:
+            lines.extend(path.read_text(encoding="utf-16", errors="replace").splitlines())
+        except (OSError, UnicodeError, ValueError):
+            continue
+    return lines
+
+
+def login_evidence(terminal: Path | None, login: str) -> tuple[str, str]:
+    """What MetaTrader's own log says about getting a session on this account.
+
+    ``("authorized" | "refused" | "silent", the line it rests on)``. The line
+    is carried out so that whoever is told about a refusal is told what
+    MetaTrader actually said, rather than our paraphrase of it -- "invalid
+    account" and "account disabled" want very different reactions and both
+    would otherwise read as "check your password".
+
+    This log is the only place a refused login is ever written down. The
+    Expert Advisor cannot report one, however much it would be the natural
+    place: a terminal with no session has no account for an expert to run
+    against, so the one component that talks to TradeZulu is the one
+    component that does not know. Hence reading the terminal's log from
+    outside it.
+
+    The *last* word wins rather than the first. A log can hold this morning's
+    successful login and this afternoon's refusal -- a password changed at the
+    broker, an account closed -- and it is the refusal that explains why
+    nothing is copying now.
+    """
+    if terminal is None:
+        return "silent", ""
+    verdict, evidence = "silent", ""
+    for line in read_terminal_log(terminal):
+        for pattern, name in ((_AUTHORIZED, "authorized"), (_REFUSED, "refused")):
+            found = pattern.search(line)
+            if found and found.group(1) == login:
+                # Collapse the log's tab columns, so the message reads as a
+                # sentence wherever it ends up.
+                verdict, evidence = name, " ".join(line.split())
+    return verdict, evidence
+
+
 #: What a terminal is doing, in words the journal can show without knowing
 #: anything about Wine, prefixes or MetaTrader. Ordered worst to best only for
 #: reading; nothing depends on the order.
-PHASES = ("failed", "quiet", "installing", "starting", "retrying", "running")
+PHASES = ("failed", "rejected", "quiet", "installing", "starting", "retrying", "running")
 
 
 def terminal_status(spec: dict, bottle: Path, state: dict, now: datetime) -> dict:
@@ -1013,6 +1106,21 @@ def terminal_status(spec: dict, bottle: Path, state: dict, now: datetime) -> dic
     launched = _parse_time(state.get("launched"))
     verdict = health(last_seen, launched, now)
     attempts = int(state.get("restarts") or 0) + int(state.get("rebuilds") or 0)
+
+    # Ahead of gave_up, because it is the more specific statement about the
+    # same terminal: "start failed" sends whoever reads it to look at the
+    # install, which is the one thing that is not wrong here.
+    if state.get("login_refused"):
+        return {
+            "phase": "rejected",
+            "message": (
+                "The broker refused this login, so the terminal is running but "
+                "has no account. Check the account number, password and trade "
+                "server, then use Forget and add it again. MetaTrader said: "
+                f"{state['login_refused']}"
+            ),
+            "attempts": attempts,
+        }
 
     if state.get("gave_up"):
         return {
@@ -1301,7 +1409,7 @@ def supervise(
         # Everything it was ever failing at, it is no longer failing at.
         if any(state.get(key) for key in ("webrequest_attempts", "restarts", "rebuilds")):
             log.info("%s is reporting in again", login)
-        for key in ("webrequest_attempts", "restarts", "rebuilds", "gave_up"):
+        for key in ("webrequest_attempts", "restarts", "rebuilds", "gave_up", "login_refused"):
             state.pop(key, None)
         state["webrequest_ok"] = True
         save_state(account_id, state)
@@ -1311,6 +1419,28 @@ def supervise(
         return
 
     if verdict == "never-reported":
+        # Before anything is retried: ask the terminal whether it even has an
+        # account. A refused login is not something to retry. Granting the
+        # WebRequest permission, restarting, and rebuilding the prefix all
+        # assume the install is at fault, and not one of them types a
+        # different password -- so the ladder below would spend four cycles
+        # and twenty minutes proving the broker still says no, then report
+        # "start failed", which is both wrong and the least useful place to
+        # send whoever reads it.
+        refusal, evidence = login_evidence(terminal_dir(bottle), login)
+        if refusal == "refused":
+            if not state.get("login_refused"):
+                log.error(
+                    "%s: the broker refused this login -- %s. Nothing further "
+                    "will be tried automatically: check the account number, "
+                    "password and trade server in TradeZulu, then Forget the "
+                    "account and add it again.",
+                    login, evidence or "see the terminal's own log",
+                )
+            state["login_refused"] = evidence or "The broker refused this login."
+            save_state(account_id, state)
+            return
+
         # It has never worked, so the WebRequest permission is the first
         # suspect: without it the expert runs, reports nothing, and the
         # terminal looks perfectly healthy. Confirmation only ever comes from
