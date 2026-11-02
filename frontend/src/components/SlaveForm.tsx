@@ -14,6 +14,7 @@ import { api, ApiError } from '../lib/api'
 import type { CopySettings, SlaveAccount } from '../lib/types'
 import { define } from '../lib/glossary'
 import { useSettings } from '../lib/settings'
+import { useDirty, useOverlay } from '../lib/overlay'
 import { Button, Field, Toggle } from './ui'
 import { BrokerServerPicker } from './BrokerServerPicker'
 
@@ -133,15 +134,20 @@ export function SlaveForm({
       setError(caught instanceof ApiError ? caught.message : 'Could not save that'),
   })
 
+  // Everything a person types in here. Once any of it differs from how the
+  // form opened, a click on the backdrop and Escape both stop closing it: this
+  // is several minutes of work and a password, and it used to be thrown away
+  // by releasing a drag a few pixels past the edge of the card. The close
+  // control next to the title is never ambiguous, so it always works.
+  const dirty = useDirty({ login, server, name, broker, password, prefix, suffix, settings })
+  const backdrop = useOverlay(onClose, !dirty)
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:p-8"
-      onClick={onClose}
+      {...backdrop}
     >
-      <div
-        className="tz-card w-full max-w-3xl p-6"
-        onClick={(event) => event.stopPropagation()}
-      >
+      <div className="tz-card w-full max-w-3xl p-6">
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-semibold">

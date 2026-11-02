@@ -1,7 +1,7 @@
 import { X } from 'lucide-react'
-import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
+import { useOverlay } from '../lib/overlay'
 
 export function Dialog({
   title,
@@ -9,34 +9,28 @@ export function Dialog({
   children,
   footer,
   size = 'md',
+  dismissable = true,
 }: {
   title: string
   onClose: () => void
   children: ReactNode
   footer?: ReactNode
   size?: 'sm' | 'md' | 'lg'
+  /** False once there is typing in here worth more than a stray click. */
+  dismissable?: boolean
 }) {
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKeyDown)
-    const previous = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.removeEventListener('keydown', onKeyDown)
-      document.body.style.overflow = previous
-    }
-  }, [onClose])
+  const backdrop = useOverlay(onClose, dismissable)
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center">
-      <button
-        type="button"
-        aria-label="Close dialog"
-        className="absolute inset-0 bg-black/55 backdrop-blur-sm"
-        onClick={onClose}
-      />
+    // The backdrop is this element rather than a button laid over it. The
+    // button was the only focusable thing ahead of the dialog's own contents,
+    // so tabbing into a dialog started on "Close dialog" -- and it bought
+    // nothing, because Escape and the close control already do that from the
+    // keyboard.
+    <div
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-black/55 backdrop-blur-sm sm:items-center"
+      {...backdrop}
+    >
       <div
         role="dialog"
         aria-modal="true"
