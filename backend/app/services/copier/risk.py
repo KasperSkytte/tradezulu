@@ -155,13 +155,21 @@ def check_account_guards(snapshot: SlaveSnapshot, config: RiskConfig) -> Decisio
     """Account-level limits. Checked before every copy and on a timer."""
     equity = snapshot.equity
 
-    # An account that is worth something and reports an equity of zero has not
-    # lost everything -- its terminal has lost its session, and every guard
-    # below reads that zero as a total loss and halts for good. A halt is a
-    # latch: it survives the terminal coming back, and it has to be cleared by
-    # hand. So this is refused rather than halted, and the reason names the
-    # terminal instead of blaming the account.
-    if equity <= 0 and (snapshot.balance or snapshot.day_start_equity or snapshot.peak_equity):
+    # An equity of zero is a terminal without a session, not an account that
+    # has lost everything -- and every guard below reads it as a total loss and
+    # halts for good. A halt is a latch: it survives the terminal coming back,
+    # and it has to be cleared by hand. So this is refused rather than halted,
+    # and the reason names the terminal instead of blaming the account.
+    #
+    # Unconditionally. This used to wait for a balance or a peak to contradict
+    # the zero, which left out exactly the account most likely to send one: a
+    # terminal just launched, whose login is known but which has not synced a
+    # figure yet. Armed with an equity floor it halted on its first heartbeat,
+    # and clearing the halt re-measured the day from that same zero, so it
+    # halted again on the next. An account genuinely worth nothing has been
+    # stopped out by its broker already; refusing to open is all a halt would
+    # have added, and refusing is what this does.
+    if equity <= 0:
         return Decision(
             Verdict.SKIP,
             "the terminal is not reporting an equity for this account -- it is "

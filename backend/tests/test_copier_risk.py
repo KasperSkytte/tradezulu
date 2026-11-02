@@ -385,13 +385,19 @@ class TestAnEquityNobodyCanRead:
         )
         assert check_account_guards(snapshot(equity=0.0), config).verdict is Verdict.SKIP
 
-    def test_an_account_that_never_had_anything_is_not_second_guessed(self):
-        """Nothing to contradict: no balance, no peak, no opening equity."""
+    def test_a_terminal_that_has_not_synced_yet_is_not_halted(self):
+        """No balance, no peak, no opening equity: a terminal just launched.
+
+        It knows its login, so its heartbeat is recognised, and nothing else.
+        This used to halt on the equity floor at the first heartbeat -- and
+        again after every clear, because clearing re-measures the day from the
+        same zero.
+        """
         state = snapshot(equity=0.0, balance=0.0, day_start_equity=0.0, peak_equity=0.0)
         config = RiskConfig(equity_stop_amount=45_000.0)
         result = check_account_guards(state, config)
-        assert result.verdict is Verdict.HALT
-        assert result.rule == "equity_stop_amount"
+        assert result.verdict is Verdict.SKIP
+        assert result.rule == "equity_unknown"
 
     def test_a_real_drawdown_still_halts(self):
         config = RiskConfig(equity_stop_amount=45_000.0)
