@@ -755,6 +755,24 @@ class TestTheCopyDeadline:
         opens = [c for c in pair.slave_polls() if c["action"] == "open"]
         assert [c["master_position_id"] for c in opens] == [2]
 
+    def test_a_late_trade_is_logged_once(self, pair):
+        """A skipped trade is a skipped trade. The age in the message grows on
+        every poll, which used to make each one look like news."""
+        pair.configure(mode="fixed_lot", fixed_lot=0.1, max_copy_delay_ms=1_000)
+        pair.arm()
+        pair.master_holds(position(position_id=1, ticket=1))
+        pair.master_held_since(seconds=43)
+
+        for _ in range(10):
+            pair.slave_polls()
+
+        late = [e for e in pair.skips() if e.rule == "too_late"]
+        assert len(late) == 1
+        link = pair.db.scalar(
+            select(CopyLink).where(CopyLink.slave_account_id == pair.slave.id)
+        )
+        assert link.status == "expired"
+
     def test_the_deadline_is_adjustable(self, pair):
         pair.configure(mode="fixed_lot", fixed_lot=0.1, max_copy_delay_ms=60_000)
         pair.arm()
@@ -816,6 +834,48 @@ class TestTheCopyDeadline:
 
         command = only_open(pair.slave_polls())
         assert 0 < command["max_age_ms"] <= 700
+
+
+class TestATerminalThatHasNotSyncedYet:
+    """A terminal just launched knows its login and nothing else.
+
+    Its heartbeat is recognised, and it reports a balance and an equity of
+    zero until it has synced. With an equity floor set, that zero used to halt
+    the account on the spot -- and again after every clear, because clearing
+    re-measures the day from the same zero -- while the account itself traded
+    perfectly well from anywhere else.
+    """
+
+    def test_its_zero_does_not_trip_the_equity_floor(self, pair):
+        pair.configure(mode="fixed_lot", fixed_lot=0.1, equity_stop_amount=100.0)
+        pair.slave.balance = pair.slave.equity = 0.0
+        pair.slave.day_start_equity = pair.slave.peak_equity = 0.0
+        pair.db.commit()
+        pair.arm()
+        pair.balance = pair.equity = 0.0
+
+        pair.master_holds(position(position_id=1, ticket=1))
+        assert pair.slave_polls() == []
+        assert not pair.halt_reason()
+        assert pair.last_skip().rule == "equity_unknown"
+
+    def test_it_copies_once_it_has_synced(self, pair):
+        pair.configure(mode="fixed_lot", fixed_lot=0.1, equity_stop_amount=100.0)
+        pair.slave.balance = pair.slave.equity = 0.0
+        pair.slave.day_start_equity = pair.slave.peak_equity = 0.0
+        pair.db.commit()
+        pair.arm()
+        pair.balance = pair.equity = 0.0
+        pair.master_holds(position(position_id=1, ticket=1))
+        pair.slave_polls()
+
+        pair.balance = pair.equity = 10_000.0
+        pair.master_holds(
+            position(position_id=1, ticket=1), position(position_id=2, ticket=2)
+        )
+        opens = [c for c in pair.slave_polls() if c["action"] == "open"]
+        assert opens
+        assert not pair.halt_reason()
 
 
 class TestDryRun:

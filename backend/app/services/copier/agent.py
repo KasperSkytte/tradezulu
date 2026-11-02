@@ -354,6 +354,10 @@ def commands_for(db: Session, account: Account, payload: Any) -> list[dict[str, 
         if action.type is ActionType.SKIP:
             if _is_new_skip(db, account, action):
                 _event(db, account, action, "skipped")
+            if action.rule == "too_late" and not account.copy_dry_run:
+                # Too late now is too late for good: it only gets older. Written
+                # off, so the planner is never offered it again.
+                _write_off(db, account, action)
             continue
 
         if action.type is ActionType.HALT:
@@ -809,6 +813,31 @@ def record_result(db: Session, account: Account, result: Any) -> None:
             link.close_reason = message[:255] or "closed by the terminal"
 
 
+def _write_off(db: Session, account: Account, action: Any) -> None:
+    """Close the book on a master position this slave will never copy."""
+    link = db.scalar(
+        select(CopyLink).where(
+            CopyLink.slave_account_id == account.id,
+            CopyLink.master_position_id == action.master_position_id,
+        )
+    )
+    if link is None:
+        link = CopyLink(
+            slave_account_id=account.id,
+            master_position_id=action.master_position_id,
+            symbol=action.symbol,
+            direction=action.direction,
+        )
+        db.add(link)
+    elif link.status == "open" and not link.dry_run:
+        return
+    link.status = "expired"
+    link.dry_run = False
+    link.slave_position_id = 0
+    link.closed_at = datetime.now(timezone.utc)
+    link.close_reason = action.reason[:255]
+
+
 def _give_up(db: Session, account: Account, master_id: int, reason: str) -> None:
     """Mark a copy as never happening, so nothing tries it again."""
     link = db.scalar(
@@ -870,6 +899,11 @@ def _is_new_skip(db: Session, account: Account, action: Any) -> bool:
     The first skip is kept, because the reason a trade was not copied is worth
     knowing. Repeats of it are not. A *different* reason for the same position
     is new information and is recorded.
+
+    A reason is the rule, not its wording. Several messages carry a live
+    figure -- how many seconds late a copy is, what the equity stands at -- so
+    comparing the text called every poll new, and one late trade wrote a row
+    a heartbeat for as long as the master held it.
     """
     previous = db.scalar(
         select(CopyEvent)
@@ -882,7 +916,7 @@ def _is_new_skip(db: Session, account: Account, action: Any) -> bool:
     )
     if previous is None or previous.outcome != "skipped":
         return True
-    return previous.rule != action.rule or previous.message != action.reason[:2000]
+    return previous.rule != action.rule
 
 
 def _event(db: Session, account: Account, action: Any, outcome: str) -> None:
