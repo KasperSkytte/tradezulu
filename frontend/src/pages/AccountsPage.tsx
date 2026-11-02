@@ -252,7 +252,21 @@ function AccountRow({
         <div className="flex flex-wrap items-center gap-2">
           <div className="text-right">
             <div className="tabular text-sm font-medium">
-              {money(account.equity, account.currency)}
+              {/* A terminal that never reached a login reports an equity of
+                  zero, every few seconds, and a brand-new account has no
+                  earlier figure for the server to prefer -- so the zero is
+                  what gets stored. Printed as a figure it reads as a funded
+                  account sitting flat, which is the one thing it is not.
+                  Unknown and zero are different facts and only one of them
+                  deserves a number.
+
+                  A zero that something did report is still shown: an account
+                  really can be flat, or closed out. And an account imported
+                  from a statement has an equity and no terminal, so having a
+                  figure is enough on its own. */}
+              {account.equity || account.last_sync_at
+                ? money(account.equity, account.currency)
+                : '—'}
             </div>
             <div className="text-xs text-[var(--tz-text-faint)]">equity</div>
           </div>
@@ -364,6 +378,12 @@ const PHASES: Record<string, { label: string; tone: string; icon: 'ok' | 'wait' 
   retrying: { label: 'retrying', tone: 'border-[var(--tz-border)] text-[var(--tz-text-muted)]', icon: 'wait' },
   quiet: { label: 'quiet', tone: 'border-loss-500/40 bg-loss-500/10 text-loss-400', icon: 'bad' },
   failed: { label: 'start failed', tone: 'border-loss-500/40 bg-loss-500/10 text-loss-400', icon: 'bad' },
+  // Its own phase rather than one of "failed"'s shades: nothing is wrong with
+  // the terminal, the credentials are wrong, and those are fixed in different
+  // places. A terminal with no account also reports an equity of zero, so
+  // without this the account reads as funded-and-flat rather than as not
+  // logged in.
+  rejected: { label: 'login refused', tone: 'border-loss-500/40 bg-loss-500/10 text-loss-400', icon: 'bad' },
 }
 
 function TerminalPill({ account }: { account: SlaveAccount }) {
