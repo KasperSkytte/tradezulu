@@ -129,11 +129,18 @@ class Pair:
     # -- the terminals -----------------------------------------------------
 
     def master_holds(self, *positions):
-        response = self.client.post(
-            "/api/agent/poll",
-            json=poll_body(*MASTER, 100_000.0, 100_000.0, positions=positions),
-        )
-        assert response.status_code == 200, response.text
+        # Twice when it holds nothing. A snapshot that retracts everything is
+        # only believed on the second telling, because "the master is flat" and
+        # "this terminal cannot see the broker" arrive as the same message and
+        # acting on the wrong one flattens every slave for good. In a live
+        # terminal the confirmation is half a second away; here it is a second
+        # call, and saying it once is what a test of that rule does.
+        for _ in range(1 if positions else 2):
+            response = self.client.post(
+                "/api/agent/poll",
+                json=poll_body(*MASTER, 100_000.0, 100_000.0, positions=positions),
+            )
+            assert response.status_code == 200, response.text
         self.db.expire_all()
 
     def slave_polls(self, results=(), positions=None):

@@ -153,6 +153,82 @@ class TestMaster:
         db.refresh(master)
         assert (master.copy_settings or {})["_positions"][0]["opened_at"] == first
 
+    def _stored(self, master, db):
+        db.refresh(master)
+        return (master.copy_settings or {}).get("_positions") or []
+
+    def test_a_disconnected_terminal_cannot_retract_the_positions(
+        self, auth_client, master, db
+    ):
+        """It is told nothing about positions, so it cannot report their absence.
+
+        Every slave reads a position missing from the snapshot as one the
+        master has closed, and closes its copy to match -- for good, because a
+        closed link is never re-entered. One heartbeat from a terminal that has
+        lost its link would flatten the whole fleet while the master still held
+        everything.
+        """
+        auth_client.post(
+            "/api/agent/poll",
+            json=account_payload("5000", "Master-Server", positions=[position()]),
+        )
+        assert len(self._stored(master, db)) == 1
+
+        auth_client.post(
+            "/api/agent/poll",
+            json=account_payload("5000", "Master-Server", positions=[], connected=False),
+        )
+        assert len(self._stored(master, db)) == 1, "a blind terminal is not a witness"
+
+    def test_going_flat_has_to_be_said_twice(self, auth_client, master, db):
+        """The one retraction that costs everything, so it wants confirming.
+
+        Not a timer: the master polls twice a second while a slave is armed, so
+        the second opinion arrives in about half a second. This is the defence
+        that works whatever build of the Expert Advisor is in the field, since
+        it asks nothing of it.
+        """
+        auth_client.post(
+            "/api/agent/poll",
+            json=account_payload("5000", "Master-Server", positions=[position()]),
+        )
+        auth_client.post("/api/agent/poll", json=account_payload("5000", "Master-Server"))
+        assert len(self._stored(master, db)) == 1, "one empty report is not enough"
+
+        auth_client.post("/api/agent/poll", json=account_payload("5000", "Master-Server"))
+        assert self._stored(master, db) == [], "the second one is believed"
+
+    def test_a_position_reappearing_cancels_the_doubt(self, auth_client, master, db):
+        """The ordinary case: one dropped heartbeat, and nothing comes of it."""
+        for _ in range(2):
+            auth_client.post(
+                "/api/agent/poll",
+                json=account_payload("5000", "Master-Server", positions=[position()]),
+            )
+        auth_client.post("/api/agent/poll", json=account_payload("5000", "Master-Server"))
+        auth_client.post(
+            "/api/agent/poll",
+            json=account_payload("5000", "Master-Server", positions=[position()]),
+        )
+        # And now a fresh pair of empties has to start the count again.
+        auth_client.post("/api/agent/poll", json=account_payload("5000", "Master-Server"))
+        assert len(self._stored(master, db)) == 1
+
+    def test_a_partial_close_is_never_held_up(self, auth_client, master, db):
+        """Only a retraction of everything waits. Closing one of two does not."""
+        auth_client.post(
+            "/api/agent/poll",
+            json=account_payload(
+                "5000", "Master-Server",
+                positions=[position(position_id=1), position(position_id=2, ticket=2)],
+            ),
+        )
+        auth_client.post(
+            "/api/agent/poll",
+            json=account_payload("5000", "Master-Server", positions=[position(position_id=1)]),
+        )
+        assert [p["position_id"] for p in self._stored(master, db)] == [1]
+
     def test_account_state_is_updated(self, auth_client, master, db):
         auth_client.post(
             "/api/agent/poll",
@@ -314,7 +390,10 @@ class TestResults:
             positions=[position(ticket=777, volume=0.10)],
         ))
 
-        # Master goes flat.
+        # Master goes flat. Twice, because a snapshot that retracts everything
+        # is only believed on the second telling -- see
+        # TestMaster.test_going_flat_has_to_be_said_twice.
+        auth_client.post("/api/agent/poll", json=master_payload(positions=[]))
         auth_client.post("/api/agent/poll", json=master_payload(positions=[]))
         commands = auth_client.post(
             "/api/agent/poll",

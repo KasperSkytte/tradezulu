@@ -601,6 +601,15 @@ class AgentPollIn(BaseModel):
     #: runs from UTC -- see services.brokerclock.
     server_time: int | None = None
     trade_allowed: bool = True
+    #: Whether the terminal has a live link to the broker. A terminal without
+    #: one still reports, and reports an empty position list -- which from the
+    #: master is indistinguishable from "I have closed everything".
+    #:
+    #: Defaults to true because an Expert Advisor too old to send it is
+    #: reporting from a terminal that is almost certainly connected, and
+    #: assuming otherwise would freeze the master snapshot of every account
+    #: still running the previous build.
+    connected: bool = True
     positions: list[AgentPosition] = Field(default_factory=list)
     symbols: list[AgentSymbol] = Field(default_factory=list)
     results: list[AgentCommandResult] = Field(default_factory=list)

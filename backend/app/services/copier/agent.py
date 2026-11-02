@@ -235,6 +235,7 @@ def store_master_positions(
     account: Account,
     positions: list[dict[str, Any]],
     server_time: int | None = None,
+    connected: bool = True,
 ) -> None:
     """Keep the master's open positions where every slave's poll can see them.
 
@@ -248,13 +249,54 @@ def store_master_positions(
     and an entry rewritten from scratch on every heartbeat would say "just
     now" for ever, which is how a halt cleared at lunchtime opened a position
     the master took at breakfast.
+
+    THE EMPTY REPORT is the dangerous one, and it gets two defences.
+
+    "The master holds nothing" and "this terminal cannot see the broker" arrive
+    as the same message, and the consequence of believing the wrong one is not
+    symmetrical. Every slave reads a position missing from this snapshot as one
+    the master has closed and closes its copy to match -- and a closed link is
+    final, because re-entering a trade the master took minutes ago at a price
+    nobody chose is worse than missing it. So one bad heartbeat from the master
+    flattens every slave, irreversibly, while the master is still holding
+    everything.
+
+    First defence: a terminal with no link to the broker is not a witness. It
+    is told nothing about positions, so it cannot report their absence, and its
+    report is left out of this entirely.
+
+    Second defence: going from holding something to holding nothing has to be
+    said twice. The master polls twice a second while any slave is armed, so
+    confirming costs about half a second on a genuine flatten and nothing at
+    all on a partial close -- only a retraction of *everything* waits. This one
+    does not depend on the Expert Advisor being new enough to send
+    ``connected``, which is why both are here.
     """
     settings = dict(account.copy_settings or {})
+    previous = settings.get("_positions") or []
     known = {
         int(entry.get("position_id", 0)): entry
-        for entry in (settings.get("_positions") or [])
+        for entry in previous
     }
     now = datetime.now(timezone.utc)
+
+    if not connected:
+        log.debug(
+            "master %s is not connected to its broker; keeping the %d position(s) "
+            "it last reported",
+            account.login, len(previous),
+        )
+        return
+
+    if previous and not positions and not settings.get("_flat_since"):
+        log.info(
+            "master %s reports no positions where it held %d; waiting for the next "
+            "heartbeat to confirm before telling the slaves it is flat",
+            account.login, len(previous),
+        )
+        settings["_flat_since"] = now.isoformat()
+        account.copy_settings = settings
+        return
 
     stored = []
     for p in positions:
@@ -276,6 +318,9 @@ def store_master_positions(
 
     settings["_positions"] = stored
     settings["_positions_at"] = now.isoformat()
+    # Either this report has something in it, or it is the second one in a row
+    # saying the master is flat. Both end the wait.
+    settings.pop("_flat_since", None)
     account.copy_settings = settings
 
 
@@ -296,7 +341,12 @@ def commands_for(db: Session, account: Account, payload: Any) -> list[dict[str, 
 
     if account.role == "master":
         # The master is only ever read from.
-        store_master_positions(account, positions, getattr(payload, "server_time", None))
+        store_master_positions(
+            account,
+            positions,
+            getattr(payload, "server_time", None),
+            connected=getattr(payload, "connected", True),
+        )
         return []
 
     if not account.copy_enabled or account.copy_halted:

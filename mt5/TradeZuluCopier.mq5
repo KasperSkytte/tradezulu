@@ -362,6 +362,11 @@ string PollBody()
    body += "," + JNum("margin_free", AccountInfoDouble(ACCOUNT_MARGIN_FREE), 2);
    body += "," + JInt("server_time", (long)TimeCurrent());
    body += "," + JBool("trade_allowed", TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) != 0);
+   // Whether this terminal can currently see the broker at all. It keeps
+   // reporting either way, and with no link it reports no positions -- which
+   // from the master account is indistinguishable from having closed
+   // everything, and would flatten every slave that was copying it.
+   body += "," + JBool("connected", TerminalInfoInteger(TERMINAL_CONNECTED) != 0);
    body += ",\"positions\":" + PositionsJson();
    // A broker's whole symbol list is thousands of entries and changes about
    // never, so it goes at a slow cadence of its own rather than with every
