@@ -62,7 +62,7 @@
   },
   "falcon": {
     "label": "Falcon Markets",
-    "installer": "",
+    "installer": "https://download.mql5.com/cdn/web/falcon.markets.ltd/mt5/falconmarkets5setup.exe",
     "matches": [
       "falcon"
     ],
