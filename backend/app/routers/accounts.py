@@ -35,6 +35,7 @@ from ..schemas import (
     SymbolMappingIn,
 )
 from ..services.accounts import purge_account, single_master
+from ..services.copier.agent import trading_day_for
 from ..services.copier.config import defaults as copy_defaults
 from ..services.copier.config import migrate as migrate_settings
 from ..services.credentials import clear_credentials, credentials_status
@@ -233,7 +234,7 @@ def arm(account_id: int, payload: SlaveArmIn, db: Session = Depends(get_db)) -> 
         account.copy_halt_reason = ""
         account.copy_halted_at = None
         if was_halted:
-            _rebaseline_day(account)
+            _rebaseline_day(db, account)
 
     if going_live:
         # A dry-run link records a position that was never actually opened. Left
@@ -278,7 +279,7 @@ def arm(account_id: int, payload: SlaveArmIn, db: Session = Depends(get_db)) -> 
     return _as_out(account, db)
 
 
-def _rebaseline_day(account: Account) -> str:
+def _rebaseline_day(db: Session, account: Account) -> str:
     """Measure the day's guards from here rather than from this morning.
 
     A daily drawdown guard compares equity against what the account opened the
@@ -293,7 +294,11 @@ def _rebaseline_day(account: Account) -> str:
     than about today, and rewriting it would quietly forgive a drawdown nobody
     acknowledged.
     """
-    account.day_start_date = datetime.now(timezone.utc).date()
+    # The broker's trading day, which is the one the copier measures the guard
+    # on. Stamping a UTC day here would disagree with it for most of the night
+    # on any broker that is not at UTC, and the next heartbeat would re-baseline
+    # the day all over again.
+    account.day_start_date = trading_day_for(db, account)
     previous, account.day_start_equity = account.day_start_equity, account.equity
     return f"the day's guards now measure from {account.equity:,.2f}, not {previous:,.2f}"
 
@@ -305,7 +310,7 @@ def clear_halt(account_id: int, db: Session = Depends(get_db)) -> SlaveAccountOu
     account.copy_halted = False
     account.copy_halt_reason = ""
     account.copy_halted_at = None
-    rebased = _rebaseline_day(account)
+    rebased = _rebaseline_day(db, account)
     db.add(
         CopyEvent(
             slave_account_id=account.id,

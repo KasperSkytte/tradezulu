@@ -25,6 +25,8 @@ from sqlalchemy.orm import Session
 
 from ...models import Account, CopyEvent, CopyLink, EquityPoint, Trade
 from .. import brokerclock
+from ..aggregation import trading_day
+from ..appsettings import get_app_settings
 from .config import (
     max_copy_delay_ms,
     mirror_stops_enabled,
@@ -55,6 +57,46 @@ def _aware(value: datetime | None) -> datetime:
     if value is None:
         return datetime.now(timezone.utc)
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def day_offset_minutes(db: Session, account: Account) -> int | None:
+    """How far this account's trading day runs from UTC.
+
+    Its own broker's offset, when its terminal has reported one. Otherwise the
+    master's -- because every trade and every trading time comes through the
+    master, so its day is the one the copying actually happens on, and a slave
+    whose terminal has not reported yet should be measured on that rather than
+    on a UTC day that belongs to nobody.
+
+    ``None`` only when neither is known, which leaves the day at UTC.
+    """
+    if account.broker_utc_offset_minutes is not None:
+        return account.broker_utc_offset_minutes
+    if account.role == "master":
+        return None
+    return db.scalar(
+        select(Account.broker_utc_offset_minutes).where(Account.role == "master")
+    )
+
+
+def trading_day_for(db: Session, account: Account) -> date:
+    """Which day a daily limit on this account is currently measuring.
+
+    The same function the journal files a trade under, asked about now instead
+    of about a fill. That is the point of routing it through there: the daily
+    profit target and the consistency cap both index banked profit by
+    ``Trade.trade_date``, so a "today" worked out any other way can look up a
+    day the trades were never filed under -- reading yesterday's profit, or
+    none at all, and deciding on it.
+    """
+    offset = day_offset_minutes(db, account)
+    general = (get_app_settings(db) or {}).get("general") or {}
+    return trading_day(
+        brokerclock.now_on_broker_clock(offset),
+        str(general.get("timezone") or "UTC"),
+        mode=str(general.get("times") or "broker"),
+        broker_offset_minutes=offset,
+    )
 
 
 def reported_figure(reported: float | None, known: float | None) -> float | None:
@@ -107,7 +149,15 @@ def update_account_state(db: Session, account: Account, payload: Any) -> None:
     if offset is not None:
         account.broker_utc_offset_minutes = offset
 
-    today = datetime.now(timezone.utc).date()
+    # The broker's trading day, not UTC's. This is the figure every daily
+    # drawdown is measured down from, so the moment it rolls over decides when
+    # a bad day stops counting -- and on a broker three hours ahead, a UTC
+    # rollover kept yesterday's losses on the books until 03:00 and then
+    # re-baselined the day off an equity three hours old.
+    #
+    # Read after the offset above is stored, so a terminal reporting its clock
+    # for the first time is measured on the right day from that same heartbeat.
+    today = trading_day_for(db, account)
     if account.day_start_date != today or not account.day_start_equity:
         account.day_start_date = today
         account.day_start_equity = account.equity
@@ -577,7 +627,9 @@ def _context_for(
     ]
 
     realised_by_day = _realised_by_day(db, account)
-    today = datetime.now(timezone.utc).date()
+    # Keyed by Trade.trade_date, so the day asked for has to be worked out the
+    # same way those were filed or the lookup misses the trades it is about.
+    today = trading_day_for(db, account)
 
     return SlaveContext(
         account_id=account.id,

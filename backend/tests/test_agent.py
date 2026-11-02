@@ -1262,3 +1262,75 @@ class TestHoldingASlaveOpen:
             "/api/agent/poll?wait=5", json=master_payload(positions=[position()])
         ).json()
         assert reply["role"] == "master"
+
+
+class TestWhichDayADailyLimitMeasures:
+    """Whose clock the trading day comes off.
+
+    Every daily guard -- the drawdown, the profit target, the consistency cap --
+    is measured against a day, and every trade is filed on the broker's trading
+    day. A day worked out any other way indexes trades that were filed under a
+    different one.
+    """
+
+    def test_it_comes_off_the_accounts_own_broker(self, db, slave):
+        from app.services.copier.agent import day_offset_minutes
+
+        slave.broker_utc_offset_minutes = 180
+        db.commit()
+        assert day_offset_minutes(db, slave) == 180
+
+    def test_the_master_stands_in_for_a_terminal_that_has_not_reported(
+        self, db, master, slave
+    ):
+        """Every trade and every trading time comes through the master.
+
+        So its day is the one the copying actually happens on, and a slave
+        whose terminal has said nothing yet belongs on that rather than on a
+        UTC day that belongs to nobody.
+        """
+        master.broker_utc_offset_minutes = 180
+        slave.broker_utc_offset_minutes = None
+        db.commit()
+
+        from app.services.copier.agent import day_offset_minutes
+
+        assert day_offset_minutes(db, slave) == 180
+
+    def test_its_own_broker_wins_over_the_master(self, db, master, slave):
+        """Two brokers in different zones each keep their own day."""
+        master.broker_utc_offset_minutes = 180
+        slave.broker_utc_offset_minutes = -300
+        db.commit()
+
+        from app.services.copier.agent import day_offset_minutes
+
+        assert day_offset_minutes(db, slave) == -300
+
+    def test_with_nothing_known_anywhere_it_falls_back_to_utc(self, db, master, slave):
+        master.broker_utc_offset_minutes = None
+        slave.broker_utc_offset_minutes = None
+        db.commit()
+
+        from app.services.copier.agent import day_offset_minutes
+
+        assert day_offset_minutes(db, slave) is None
+
+    def test_the_days_opening_equity_is_stamped_on_the_brokers_day(
+        self, auth_client, db, slave
+    ):
+        """Not UTC's. On a broker three hours ahead the two differ all evening,
+        and a mismatch re-baselines the guard on the next heartbeat -- throwing
+        away the morning's equity the drawdown is supposed to measure from."""
+        from app.services.copier.agent import trading_day_for
+
+        auth_client.post(
+            "/api/agent/poll",
+            json=account_payload(
+                "9001", "Slave-Server",
+                server_time=int(datetime.now(timezone.utc).timestamp()) + 3 * 3600,
+            ),
+        )
+        db.refresh(slave)
+        assert slave.broker_utc_offset_minutes == 180
+        assert slave.day_start_date == trading_day_for(db, slave)

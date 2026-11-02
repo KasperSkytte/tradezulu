@@ -19,7 +19,7 @@ MetaTrader itself shows, and is never silently wrong by an hour.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 #: Offsets brokers actually use are whole quarter-hours, so rounding to one
@@ -49,6 +49,24 @@ def offset_minutes(server_time: Any, *, now: datetime | None = None) -> int | No
     if abs(drift) > MAX_MINUTES:
         return None
     return int(round(drift / STEP_MINUTES) * STEP_MINUTES)
+
+
+def now_on_broker_clock(offset_minutes: int | None, now: datetime | None = None) -> datetime:
+    """This moment, written the way the broker's terminal would write it.
+
+    Naive, like every other reading off that clock, and so directly comparable
+    with a deal time or a position's open time -- it is the same clock.
+
+    This is what a *daily* rule has to be asked against. Every trade is filed
+    on the broker's trading day, so a limit measured on UTC midnight resets two
+    or three hours late for a typical broker; in between, yesterday's losses
+    still count towards today's drawdown while the day's opening equity is a
+    day stale. An unknown offset leaves this at UTC, which is the answer that
+    was given before and is never silently wrong by a day.
+    """
+    reference = now or datetime.now(timezone.utc)
+    reference = reference.replace(tzinfo=None) if reference.tzinfo else reference
+    return reference + timedelta(minutes=offset_minutes or 0)
 
 
 def _as_naive_utc(value: Any) -> datetime | None:
