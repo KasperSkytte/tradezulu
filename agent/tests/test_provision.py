@@ -678,6 +678,76 @@ class TestBuildKey:
         assert (tz.BUILDS / f"TradeZuluCopier-{tz.build_key(mq5, terminal)}.ex5").exists()
 
 
+class TestACompileThatHangs:
+    """A slow compile must not become a broken account.
+
+    MetaEditor can sit on something nobody is there to answer. The timeout
+    used to come out of here as an exception, through install_expert and
+    ensure_terminal, so the account was abandoned for the cycle -- no terminal
+    started, nothing logged in -- and the next cycle spent the same five
+    minutes reaching the same place. Starting the terminal is what would have
+    fixed it, because a terminal compiles the sources it finds, and starting
+    the terminal was the step being skipped.
+    """
+
+    def _terminal(self, tmp_path) -> tuple[Path, Path]:
+        terminal = tmp_path / "bottle" / "drive_c" / "MT5"
+        terminal.mkdir(parents=True)
+        (terminal / "terminal64.exe").write_bytes(b"x" * 1000)
+        (terminal / "MetaEditor64.exe").write_bytes(b"editor")
+        mq5 = terminal / "TradeZuluCopier.mq5"
+        mq5.write_bytes(b"source")
+        return terminal, mq5
+
+    def _hang(self, monkeypatch):
+        def timeout(*args, **kwargs):
+            raise tz.subprocess.TimeoutExpired(cmd="metaeditor", timeout=tz.COMPILE_TIMEOUT)
+
+        monkeypatch.setattr(tz.subprocess, "run", timeout)
+        monkeypatch.setattr(tz, "_runner", lambda: "/wine")
+
+    def test_it_is_reported_rather_than_raised(self, tmp_path, monkeypatch, caplog):
+        terminal, mq5 = self._terminal(tmp_path)
+        self._hang(monkeypatch)
+        monkeypatch.setattr(tz, "_kill_editors", lambda bottle: 0)
+
+        tz.compile_expert(terminal, mq5)  # must not raise
+
+        assert "did not finish" in caplog.text
+        assert not mq5.with_suffix(".ex5").exists()
+
+    def test_the_hung_editor_is_killed(self, tmp_path, monkeypatch):
+        """Or every cycle adds another one, each holding the prefix open.
+
+        subprocess kills the shell it started, not the Wine process that shell
+        started.
+        """
+        terminal, mq5 = self._terminal(tmp_path)
+        self._hang(monkeypatch)
+        killed = []
+        monkeypatch.setattr(tz, "_kill_editors", lambda bottle: killed.append(bottle) or 1)
+
+        tz.compile_expert(terminal, mq5)
+
+        assert killed == [tmp_path / "bottle"], "the prefix, not the terminal directory"
+
+    def test_what_wine_said_is_kept(self, tmp_path, monkeypatch):
+        """The launch used to go to /dev/null, so a MetaEditor that refused to
+        start and one that sat on a dialog were the same five-minute silence."""
+        terminal, mq5 = self._terminal(tmp_path)
+        seen = {}
+        monkeypatch.setattr(tz, "_runner", lambda: "/wine")
+        monkeypatch.setattr(
+            tz.subprocess, "run",
+            lambda argv, **kw: seen.update(script=argv[-1]),
+        )
+
+        tz.compile_expert(terminal, mq5)
+
+        assert "/dev/null" not in seen["script"]
+        assert str(tz.BUILDS) in seen["script"]
+
+
 class TestTerminalStatus:
     """What the journal is told a terminal is doing.
 

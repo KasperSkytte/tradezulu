@@ -645,6 +645,29 @@ def provide_binary(terminal: Path, mq5: Path) -> None:
             shutil.copy2(ex5, cached)
 
 
+#: How long MetaEditor is given. A compile is tens of seconds; past this it is
+#: not working slowly, it is stuck on something nobody is there to answer, and
+#: every second after that is a second the whole cycle is not running.
+COMPILE_TIMEOUT = 120
+
+
+def _kill_editors(bottle: Path) -> int:
+    """Kill any MetaEditor left running in this prefix.
+
+    Matched on the prefix in the process environment, like everything else
+    here: Wine reports every process under the same Windows path, so a command
+    line cannot say which prefix one belongs to.
+    """
+    pids = [
+        pid
+        for pid, command, environ in _procs()
+        if b"metaeditor" in command.lower()
+        and f"WINEPREFIX={bottle}".encode() in environ.split(b"\0")
+    ]
+    _signal(pids, signal.SIGKILL)
+    return len(pids)
+
+
 def compile_expert(terminal: Path, mq5: Path) -> None:
     """Build the expert, rather than hoping the terminal gets there first.
 
@@ -668,17 +691,56 @@ def compile_expert(terminal: Path, mq5: Path) -> None:
     prefix = terminal
     while prefix.parent != prefix and prefix.name != "drive_c":
         prefix = prefix.parent
+    bottle = prefix.parent
+
+    # Wine's own account of what happened, kept rather than discarded. Sent to
+    # /dev/null, a MetaEditor that refused to start and one that sat on a
+    # dialog were the same event -- a five-minute silence -- and neither said
+    # anything about which.
+    BUILDS.mkdir(parents=True, exist_ok=True)
+    report = BUILDS / f"{mq5.stem}-compile.log"
     script = (
-        f'export WINEPREFIX="{prefix.parent}" {WINE_ENV} DISPLAY={DISPLAY}\n'
+        f'export WINEPREFIX="{bottle}" {WINE_ENV} DISPLAY={DISPLAY}\n'
         f'unset PYTHONPATH PYTHONHOME\n'
         f'cd "{terminal}"\n'
-        f'"{_runner()}" "{editor.name}" /compile:"MQL5\\\\Experts\\\\{mq5.name}" >/dev/null 2>&1\n'
+        f'"{_runner()}" "{editor.name}" /compile:"MQL5\\\\Experts\\\\{mq5.name}" '
+        f'>"{report}" 2>&1\n'
     )
-    subprocess.run(_flatpak_argv(script), capture_output=True, timeout=300)
+    try:
+        subprocess.run(_flatpak_argv(script), capture_output=True, timeout=COMPILE_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        # Never fatal, and it used to be. The exception came out through
+        # install_expert and ensure_terminal, so the account was abandoned for
+        # the cycle: no terminal was started, nothing logged in, and the next
+        # cycle spent another five minutes arriving at exactly the same place.
+        # An account could sit like that indefinitely while the one thing that
+        # would have fixed it -- starting the terminal, which compiles the
+        # sources it finds -- was the thing being skipped.
+        #
+        # So this is now a slow compile, not a broken account. It costs the
+        # first launch, because the expert is attached before the terminal
+        # finishes compiling, and the supervisor's restart picks it up.
+        log.warning(
+            "MetaEditor did not finish within %ds in %s; leaving it to the "
+            "terminal, which compiles what it finds on startup. What Wine "
+            "said is in %s",
+            COMPILE_TIMEOUT, bottle.name, report,
+        )
+        # subprocess kills the shell it started, not the Wine process that
+        # shell started. Without this a timed-out compile leaves MetaEditor
+        # sitting on whatever stopped it, holding the prefix, and the next
+        # cycle adds another.
+        if killed := _kill_editors(bottle):
+            log.warning("killed %d MetaEditor process(es) left in %s", killed, bottle.name)
+        return
+
     if ex5.exists():
         log.info("compiled %s", ex5.name)
     else:
-        log.warning("%s did not compile; the terminal will try on its own", mq5.name)
+        log.warning(
+            "%s did not compile; the terminal will try on its own. What Wine said "
+            "is in %s", mq5.name, report,
+        )
 
 
 #: What the Experts tab of MetaTrader's options writes. Only the URL list is
