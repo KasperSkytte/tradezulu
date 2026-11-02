@@ -1028,3 +1028,61 @@ class TestChartsDoNotPileUp:
         tz.launch(tz.bottle_for(1), terminal, "9", "S", "p", ":78")
 
         assert list(default.glob("*.chr")) == []
+
+
+class TestAReusedAccountId:
+    """Deleting an account and adding it again must not inherit its prefix.
+
+    SQLite hands out the next rowid as max(rowid) + 1, so the new row takes the
+    id the deleted one had -- and a prefix is named after that id. Somebody
+    deleting an account normally adds the same one straight back, to get out of
+    whatever state it was in, so the id and the login both match and the prefix
+    read as its own. The one thing re-adding was meant to clear was the one
+    thing that survived it.
+    """
+
+    def _spec(self, created_at):
+        return {
+            "account_id": 5, "login": "176249607",
+            "server": "FalconMarkets-Server", "created_at": created_at,
+        }
+
+    def test_the_same_login_added_again_gets_a_fresh_prefix(self, bottles, monkeypatch):
+        prefix = tz.bottle_for(5)
+        prefix.mkdir()
+        tz.save_state(5, {"login": "176249607", "created_at": "2026-11-02T15:00:00+00:00"})
+        discarded = []
+        monkeypatch.setattr(tz, "discard_prefix", lambda b, why: discarded.append(why))
+
+        tz.ensure_terminal(
+            self._spec("2026-11-02T15:25:00+00:00"),
+            tz.Plan("u", "k", [], {}), prefix.parent / "template", Path("x"),
+        )
+
+        assert discarded and "added again" in discarded[0]
+
+    def test_the_same_incarnation_keeps_its_prefix(self, bottles, monkeypatch):
+        """Or every cycle would rebuild a terminal that is working."""
+        prefix = tz.bottle_for(5)
+        prefix.mkdir()
+        born = "2026-11-02T15:00:00+00:00"
+        tz.save_state(5, {"login": "176249607", "created_at": born})
+        monkeypatch.setattr(tz, "discard_prefix", lambda *a: pytest.fail("rebuilt a good prefix"))
+
+        tz.ensure_terminal(
+            self._spec(born), tz.Plan("u", "k", [], {}), prefix.parent / "template", Path("x")
+        )
+
+    def test_a_prefix_built_before_this_adopts_its_account(self, bottles, monkeypatch):
+        """No recorded birthday is not evidence of the wrong one."""
+        prefix = tz.bottle_for(5)
+        prefix.mkdir()
+        tz.save_state(5, {"login": "176249607"})
+        monkeypatch.setattr(tz, "discard_prefix", lambda *a: pytest.fail("threw away a good prefix"))
+
+        tz.ensure_terminal(
+            self._spec("2026-11-02T15:25:00+00:00"),
+            tz.Plan("u", "k", [], {}), prefix.parent / "template", Path("x"),
+        )
+
+        assert tz.load_state(5)["created_at"] == "2026-11-02T15:25:00+00:00"

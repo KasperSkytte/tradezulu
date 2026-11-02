@@ -464,6 +464,23 @@ def terminals(db: Session = Depends(get_db)) -> dict[str, Any]:
                 "server": server,
                 "broker": account.broker or "",
                 "password": password,
+                # Which *incarnation* of this account id this is.
+                #
+                # SQLite hands out the next rowid as max(rowid) + 1, so
+                # deleting the newest account and adding another gives the new
+                # one the same id -- and the provisioner names a terminal's
+                # prefix after that id. Re-adding the same login therefore
+                # lands on the old prefix, with whatever was wrong with it
+                # still in place, which is exactly the state someone deleting
+                # and re-adding an account is trying to get out of.
+                #
+                # The id alone cannot tell the two apart and the login cannot
+                # either. When the row was made can.
+                "created_at": (
+                    account.created_at.replace(tzinfo=timezone.utc).isoformat()
+                    if account.created_at
+                    else ""
+                ),
                 # A terminal is started for any account with credentials,
                 # whether or not copying is armed. copy_enabled decides whether
                 # the copier *acts*, not whether the account is connected --

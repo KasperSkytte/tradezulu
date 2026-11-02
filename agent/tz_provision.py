@@ -1384,10 +1384,29 @@ def ensure_terminal(
     # account's MetaTrader install -- its server list, its saved login, its
     # charts -- is the "leftover from before that is in the way" that no amount
     # of restarting clears, so identity is checked rather than assumed.
+    #
+    # The login is not enough to check it with. SQLite hands out the next rowid
+    # as max(rowid) + 1, so deleting the newest account and adding another
+    # gives the new row the same id -- and somebody deleting an account
+    # normally adds the *same* one straight back, to get out of whatever state
+    # it was in. Same id, same login, so the prefix looked like its own and was
+    # kept: the one thing re-adding an account is meant to clear was the one
+    # thing that survived it. When the row was made tells them apart.
     owner = str(state.get("login") or "")
+    born, want_born = str(state.get("created_at") or ""), str(spec.get("created_at") or "")
     if bottle.exists() and owner and owner != str(spec["login"]):
         discard_prefix(bottle, f"it belongs to account {owner}, not {spec['login']}")
         state = {}
+    elif bottle.exists() and born and want_born and born != want_born:
+        discard_prefix(bottle, f"account {spec['login']} was added again since it was built")
+        state = {}
+
+    # Recorded whether or not it was just cloned, so a prefix built before this
+    # existed adopts the account it is currently serving rather than being
+    # thrown away for having no answer.
+    if want_born and state.get("created_at") != want_born:
+        state["created_at"] = want_born
+        save_state(account_id, state)
 
     if not bottle.exists():
         clone_template(
