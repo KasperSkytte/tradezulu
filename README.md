@@ -14,25 +14,29 @@ More screenshots are in [docs/screenshots.md](docs/screenshots.md).
 
 ## Quick start
 
+You need a Linux machine with Docker and the Compose plugin. Nothing else is
+installed on the host.
+
 ```bash
 git clone https://github.com/KasperSkytte/tradezulu.git
 cd tradezulu
-./install.sh --brokers default,vantage
+./install.sh --brokers vantage,falcon
 ```
 
-That sets up everything: the site in Docker, and MetaTrader on the host with a
-terminal template per [broker](agent/brokers.json). It generates your `.env` and prints the login it
-made. Open <http://localhost:8420>, sign in, add your account, and a terminal
-is started and logged in for it within a minute.
+That builds a MetaTrader terminal image for each [broker](brokers.json) you
+name, generates your `.env` (printing the login it made), and starts the
+stack. Open <http://localhost:8420>, sign in, add your account, and a terminal
+container is started and logged in for it within a minute. Brokers without an
+entry of their own use `default`, the generic MetaQuotes terminal.
 
 Journal only, no copying or terminals:
 
 ```bash
-cp .env.example .env      # set TZ_SECRET_KEY and an admin password
-docker compose up -d
+./install.sh --no-terminals
 ```
 
-Everything lives in one SQLite file under `./data`.
+Everything TradeZulu knows lives in one SQLite database in the
+`tradezulu-data` Docker volume.
 
 The admin user is created on the **first** start only, so editing those
 variables later has no effect — change the password in Settings, or from
@@ -120,45 +124,62 @@ running their own MT5 server rather than to the people trading on it, and
 priced accordingly — for a business, not for one trader with one account. The
 only software that can speak to a broker's MT5 server is MetaTrader itself.
 
-So TradeZulu runs MetaTrader. Each account gets a real terminal on a virtual
-display, logged in automatically, with an Expert Advisor
-inside it reporting every deal back over plain HTTP. A provisioner handling all terminals opens the Options dialog on that
-display, measures where things are, and clicks through it.
+So TradeZulu runs MetaTrader. Each account gets a container of its own with a
+real terminal in it, under Wine on a virtual display, logged in automatically,
+with an Expert Advisor inside reporting every deal back over plain HTTP. Each
+broker has its own image — `tradezulu-terminal:vantage-6295-wine11.0` is
+Vantage's MetaTrader, build 6295, on Wine 11.0 — because brokers ship
+different builds and MetaTrader's anti-debugger check accepts some Wine
+versions and not others. A small orchestrator container keeps one terminal
+container per account running on the newest image for its broker.
 
+One permission the Expert Advisor needs is kept encrypted in MetaTrader's own
+config and can only be set through its Options dialog, so the terminal's
+supervisor opens the dialog, measures where things are, and clicks through it.
 Clicking buttons on a screen nobody is watching is not elegant. It is made as
 honest as it can be: nothing counts as done because a click seemed to land,
-only because that account's Expert Advisor actually reached the server; a
-terminal that starts but never reports is restarted, then rebuilt, then given
-up on loudly rather than left looking healthy. You can watch the display
-yourself with `agent/tz-view.sh watch` or through the app through a simple VNC window.
+only because that account's Expert Advisor actually reached the server. You can
+watch any terminal's screen, and use it, from the Accounts page.
 
-MetaTrader runs on the host rather than in a container, which is also not for
-want of trying — [docs/metatrader.md](docs/metatrader.md) covers how the whole
-thing is put together and what was ruled out.
+[docs/metatrader.md](docs/metatrader.md) covers how the whole thing is put
+together, how to add a broker or move to a new MetaTrader build, and what was
+ruled out on the way.
 
 ## Uninstalling
 
 ```bash
-./uninstall.sh --dry-run    # print what would happen, change nothing
-./uninstall.sh              # remove the software, keep the journal
-./uninstall.sh --all        # everything, including Wine and packages
+./uninstall.sh --dry-run       # print what would happen, change nothing
+./uninstall.sh                 # remove the stack and terminals, keep the journal
+./uninstall.sh --purge-images  # also remove the terminal images
+./uninstall.sh --all           # everything, including the journal
 ```
 
-The default keeps your trades: the database and the `.env` that decrypts it
-survive, so re-running `install.sh` picks up where you left off. `--purge-data`
-deletes them and asks you to type DELETE first.
+The default keeps your trades: the database volume and the `.env` that decrypts
+the passwords in it survive, so re-running `install.sh` picks up where you left
+off and every account reconnects by itself. `--purge-data` deletes them and
+asks you to type DELETE first.
 
-The whole compose stack goes: containers, images and the network, plus the data
-volume with `--purge-data`. Anything still carrying the project's label
-afterwards — a container from a service this compose file no longer describes,
-a volume from an older revision — is removed too, which `docker compose down`
-on its own will not do. Containers you started yourself carry no such label and
-are never in scope.
+Terminal containers and their volumes always go: they hold nothing the journal
+does not, and a reinstall logs every account in again. Only containers and
+volumes labelled as this stack's are touched; anything else on the machine is
+never in scope.
 
-MetaTrader prefixes that TradeZulu did not create are never touched, whatever
-you pass — only `tz-<account>` and `tz-template-*` are removed, so a terminal
-you set up yourself is safe. Wine and Bottles are left alone entirely if any
-other bottle is still installed.
+### Coming from a host-based install
+
+Versions before the containerised terminals ran MetaTrader on the host, with
+Bottles, the Soda Wine build and a `tradezulu-agent` service. Remove that once,
+then install as above — the journal and the accounts in it are kept:
+
+```bash
+sudo ./migrate-from-host.sh --dry-run
+sudo ./migrate-from-host.sh                 # add --purge-wine --purge-packages to remove
+                                            # Bottles, Soda and the X packages too
+./install.sh --brokers vantage,falcon
+```
+
+`install.sh` refuses to start while the old service is still installed: left
+running beside the orchestrator, every account would get two terminals, and
+two Expert Advisors on one master account copy every trade twice.
 
 ## Behind a reverse proxy (nginx example)
 
@@ -197,9 +218,10 @@ tags, timezone, currency, theme — are all on the **Settings** page.
 |---|---|---|
 | `TZ_SECRET_KEY` | *(random)* | Signs the session cookie. Set it, or restarts log you out. |
 | `TZ_ADMIN_USER` / `TZ_ADMIN_PASSWORD` | `admin` / — | Created on the first start. |
-| `TZ_INGEST_TOKEN` | *(generated)* | Key the terminals authenticate with. |
+| `TZ_INGEST_TOKEN` | *(generated)* | Key the terminals and the orchestrator authenticate with. |
 | `TZ_COOKIE_SECURE` | `false` | `true` when served over HTTPS. |
-| `TZ_PORT` | `8420` | Host port. |
+| `TZ_PORT` | `8420` | Host port, on 127.0.0.1. |
+| `TZ_IMAGE_OWNER` / `TZ_IMAGE_TAG` | `local` / `latest` | Which published app and orchestrator images to use. |
 | `TZ_DEMO` | unset | Generate example trades on an empty database. |
 
 The full list is in [.env.example](.env.example).
@@ -208,16 +230,24 @@ The full list is in [.env.example](.env.example).
 
 ```bash
 git pull
-docker compose up -d --build
+./install.sh --brokers vantage,falcon
 ```
 
 The schema catches itself up on every start — new columns and indexes are added
 to the database you already have. It only ever adds, never drops or retypes, so
-your history is not at risk. Back up first if you like; it is one file:
+your history is not at risk. Back up first if you like: see
+[docs/deployment.md](docs/deployment.md#backups).
+
+`install.sh` reuses terminal images that already exist. When an upgrade changes
+the Expert Advisor or the terminal image, or a broker ships a new MetaTrader
+build, rebuild them:
 
 ```bash
-cp ./data/tradezulu.db ./data/tradezulu.db.bak
+./install.sh --brokers vantage,falcon --rebuild   # or: terminal/build.sh vantage --refresh
 ```
+
+Running terminals move to the new image at the next weekly restart, or straight
+away when you press Restart on the Accounts page.
 
 ## Development
 
@@ -234,7 +264,13 @@ cd frontend && npm install && npm run dev   # proxies /api to the above
 ```bash
 cd backend  && pytest && ruff check .
 cd frontend && npm run build
+pytest orchestrator/tests
 ```
+
+The terminal side is `terminal/` (the image and the supervisor inside it) and
+`orchestrator/`. Both are plain standard-library Python; `docs/metatrader.md`
+describes how to run a second, throwaway stack beside a real one to try a
+change against demo accounts.
 
 FastAPI + SQLite behind a React single-page app; the copier's sizing and risk
 engine is in `backend/app/services/copier/`, kept as pure functions so every
