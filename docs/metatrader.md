@@ -25,17 +25,17 @@ their own account, at any price. What every trader is given instead is the
 terminal, and inside it MQL5, which can make an HTTP request.
 
 So "just use my account details" means *something* has to run a terminal.
-TradeZulu runs one for you, out of sight, on the same machine as the site. It
-is a normal MetaTrader install rather than a container, which is deliberate and
-is the subject of the [last section](#why-not-a-container).
+TradeZulu runs one for you, out of sight: a container per account, with a real
+MetaTrader in it under Wine, and an Expert Advisor inside that reports every
+deal back over plain HTTP.
 
 ### Yes, this is a hack
 
 It is worth being plain about it. Attaching an account means starting a real
 MetaTrader on a virtual display nobody looks at, letting it log itself in, and
-— once per terminal — driving its Options dialog by clicking coordinates,
-because the WebRequest allowlist the Expert Advisor depends on is kept
-encrypted in the terminal's own config and there is no other way in.
+driving its Options dialog by clicking, because the WebRequest allowlist the
+Expert Advisor depends on is kept encrypted in the terminal's own config and
+there is no other way in.
 
 That is GUI automation against a program that never agreed to be automated,
 and it can break: a MetaTrader update could move the dialog, a broker's build
@@ -43,16 +43,12 @@ could name things differently. What makes it liveable is that none of it is
 trusted:
 
 - The dialog is *measured* every time rather than clicked at from memory, so a
-  window that opens somewhere else is still found. It used to use fixed screen
-  coordinates, and when they went stale one click landed on Cancel — and the
-  provisioner logged success.
-- Nothing counts as done because a click appeared to work. The permission is
-  granted only when that account's Expert Advisor actually reaches the server.
-  Until then it retries, then rebuilds the terminal, then stops and says what
-  to check by hand.
-- You can look at exactly what the terminals are showing, at any time, with
-  [`agent/tz-view.sh`](#looking-at-a-terminal) — and, when looking is not
-  enough, take the mouse and use one.
+  window that opens somewhere else is still found.
+- Nothing counts as done because a click appeared to work. The permission
+  counts as granted only when that account's Expert Advisor actually reaches
+  the server. Until then it retries, and then it stops and says what to check.
+- You can look at exactly what any terminal is showing, at any time, from the
+  Accounts page — and, when looking is not enough, take the mouse and use it.
 
 The alternative was asking every user to install MetaTrader themselves, attach
 an Expert Advisor to a chart, and paste a URL and a token into its inputs. That
@@ -62,7 +58,7 @@ is not a hack, and it is a great deal worse.
 
 ## Account details
 
-**Settings → MetaTrader 5**:
+**Accounts → Master account credentials**:
 
 | Field | Example |
 |---|---|
@@ -72,7 +68,8 @@ is not a hack, and it is a great deal worse.
 
 Save, and within a minute or so a terminal exists for that account — logged in,
 with TradeZulu's Expert Advisor attached and reporting back. There is nothing
-else to do.
+else to do. Slaves are added on the same page, and get a terminal each the same
+way.
 
 ### Use the investor password
 
@@ -89,144 +86,271 @@ deliberate step.
 Encrypted in the database, never returned to the browser, and kept out of the
 settings document the UI reads wholesale.
 
-It leaves the server exactly once: the provisioner writes it into the terminal's
-startup file, MetaTrader reads it at launch, and the file is rewritten without
-it as soon as the terminal has connected. From then on MetaTrader keeps its own
-encrypted copy and TradeZulu's is gone.
+It is never in a container's environment either, so `docker inspect` does not
+show it. A terminal container is started knowing only its account's id and the
+ingest token; it fetches its own login from the site when it starts, writes it
+into MetaTrader's start-up file, and rewrites that file without it as soon as
+MetaTrader has logged in. From then on MetaTrader keeps its own encrypted copy
+on the terminal's volume.
 
-This is also why the command line is not used for it. Current MetaTrader builds
-ignore `/login:` and `/password:` entirely and sit on the new-account wizard
-instead, which looks exactly like a rejected password.
+The start-up file is used because the command line cannot be: current
+MetaTrader builds ignore `/login:` and `/password:` entirely and sit on the
+new-account wizard instead, which looks exactly like a rejected password.
 
-### What gets set up
+---
 
-Per broker, once:
+## How it is put together
 
-- A **template** — one MetaTrader install, built by `agent/make-template.sh`.
-  Broker-specific builds matter: the generic MetaQuotes terminal cannot resolve
-  a name like `VantageMarkets-Live` at all and offers to open a new account
-  instead.
-- Its **permissions**, by `agent/set-permissions.sh` — algorithmic trading on,
-  every "disable algorithmic trading when…" off, and TradeZulu on the WebRequest
-  allowlist. MetaTrader keeps that allowlist encrypted in its own config, so it
-  can only be set through the dialog. Doing it on the template means it happens
-  once rather than per account.
-
-Per account, automatically:
-
-- The template is copied. A copy is the same installation byte for byte, so it
-  inherits those permissions and no dialog is ever driven again.
-- The Expert Advisor is installed, with the callback URL and token written into
-  its preset. Both come from the server the provisioner is already authenticated
-  to, which is why nobody is ever asked for them — and why the URL is this
-  server's internal address, so putting a domain in front of the site later
-  changes nothing about how its terminals reach it.
-
-  It is compiled once, not once per account. The compiled `.ex5` is kept under
-  `.tz-state/builds` and copied to every terminal that wants the same one.
-  Broker branding does not affect this — a branded terminal is the same
-  MetaQuotes engine with a different logo — but the terminal's *build* does:
-  MetaTrader refuses bytecode produced by a newer MetaEditor than itself, and
-  brokers do not all ship the same build at once. So the cache is keyed by the
-  source and the build, and a terminal that has updated past its expert simply
-  builds a new one.
-- The terminal starts, logs in, and reports.
-
-Which template an account gets is decided by its **server name**, not its broker
-name: the server name always arrives correct because it comes from the broker,
-while a demo account may report its broker as something as unhelpful as "Demo
-Broker". Brokers live in [`agent/brokers.json`](../agent/brokers.json) — adding
-one is a name and an installer URL.
-
-### Weekly restart
-
-Terminals are restarted every Sunday at 3am, and templates refreshed at the same
-time.
-
-MetaTrader downloads updates while it runs and then asks to restart to install
-them. Left alone, that question sits on screen indefinitely and a terminal
-waiting on it is not copying anything — so the failure would arrive on whatever
-day a broker happened to ship a build. Restarting on a schedule applies updates
-during the quietest hour of the week, with no dialog, because a terminal that is
-already stopped installs them on the way up.
-
-Change it with `--maintenance-day` (Monday=0) and `--maintenance-hour`, or run
-one immediately:
-
-```bash
-python3 agent/tz_provision.py --maintenance-now --once
+```
+                         ┌──────────────── Docker network "tradezulu" ───────────────┐
+  browser ── nginx ──▶ tradezulu (site, API, SQLite)                                 │
+                         │   ▲  ▲                                                     │
+                         │   │  └── Expert Advisor polls over HTTP ──┐                │
+                         │   │                                       │                │
+                         │   └── plan / status ── orchestrator ──▶ tradezulu-terminal-1 (vantage-6295-wine11.0)
+                         │                         (Docker socket)  tradezulu-terminal-2 (vantage-6295-wine11.0)
+                         └── screen relay (VNC) ──────────────────▶ tradezulu-terminal-3 (falcon-6296-wine11.0)
 ```
 
-### When a terminal will not work
+### One image per broker and MetaTrader build
 
-Nothing here needs a person, and none of it involves uninstalling anything.
+`terminal/build.sh <broker>` builds an image from [`brokers.json`](../brokers.json)
+and tags it with what is in it:
 
-"Running" is the weakest possible statement about a MetaTrader terminal. It can
-be running while sitting on a login the broker refused, or on an update dialog,
-or with an Expert Advisor whose WebRequest permission never took — all of which
-look identical from outside and none of which copy a trade. So the provisioner
-does not ask whether a terminal is running. It asks when that account's expert
-last reached TradeZulu, and works down a ladder when the answer is "never" or
-"not lately":
+```
+tradezulu-terminal:vantage-6295-wine11.0     the broker, its MetaTrader build, the Wine it runs on
+tradezulu-terminal:vantage                   the newest build of that broker, for convenience
+```
+
+The broker's own installer runs at build time and the Expert Advisor is
+compiled there, with that image's own MetaEditor. So:
+
+- a terminal that starts has nothing left to download or compile, and starts in
+  seconds;
+- the compiled `.ex5` always matches the terminal — MetaTrader refuses bytecode
+  from a newer MetaEditor than itself, and brokers do not all ship the same
+  build at once;
+- an installer, or a MetaEditor, that refuses the Wine it was given fails the
+  build with a message saying so, instead of leaving a terminal on a dialog
+  nobody is watching.
+
+Broker-specific installers matter: the generic MetaQuotes terminal cannot
+resolve a name like `VantageMarkets-Live` at all and offers to open a new
+account instead. Brokers with no entry of their own use `default`.
+
+The images are not published anywhere: each carries a broker's MetaTrader, so
+each install builds its own.
+
+### Which image an account gets
+
+The orchestrator picks the broker from the account's **server name**, not its
+broker name: the server name always arrives correct because it comes from the
+broker, while a demo account may report its broker as something as unhelpful as
+"Demo Broker". Each broker's `matches` in `brokers.json` are what it looks for.
+
+Of that broker's images it uses the one with the highest MetaTrader build, and
+the newest of those. Only images tagged `<broker>-<build>-wine<version>` count,
+which is what makes rolling back a matter of untagging one (see
+[deployment.md](deployment.md#terminal-images)).
+
+### What the orchestrator does
+
+Every 15 seconds it reads the same plan the site has always published — which
+accounts should have a terminal — and makes the containers agree:
+
+| Situation | What happens |
+|---|---|
+| an account with credentials and no container | create one, with a volume for its data, and start it |
+| the password, login or server changed | replace the container; the volume is kept |
+| the account was deleted and added again | replace the container *and* the volume, so whatever was wrong goes too |
+| a newer image exists for the broker | move to it at the weekly restart, or when Restart is pressed — never mid-week on its own |
+| Restart pressed on the Accounts page | restart the container (and move it, as above) |
+| the container stopped | start it again, unless its supervisor gave up for a reason a restart will not fix |
+| the account was forgotten | remove the container and its volume |
+| the account still exists but has no password | remove the container, keep the volume |
+
+It only ever touches containers and volumes labelled with its own stack, and it
+writes each terminal's status back to the site, which is what the Accounts page
+shows.
+
+### What a terminal container does
+
+Its supervisor (`terminal/supervisor.py`) starts a virtual screen and a VNC
+server on it, puts the account's data on the volume, writes the Expert
+Advisor's preset (the site's address on the Docker network, and the token) and
+the start-up file, and starts MetaTrader. Then it watches:
 
 | | |
 |---|---|
-| under 5 minutes since it started | left alone; it is still logging in |
-| never reported | grant the WebRequest permission, up to 3 times |
-| still nothing, or it went quiet for 10 minutes | restart the terminal, twice |
-| still nothing | delete the prefix and rebuild it from the template, twice |
-| still nothing | stop, and log what to check by hand |
+| logged in, nothing reported after 20 s | grant the WebRequest permission, up to 3 times a minute apart |
+| still nothing | phase *failed*: "logged in, but the Expert Advisor never reached TradeZulu" |
+| the broker refused the login | phase *failed*, with the broker's reason; it keeps the screen up and keeps watching, so a corrected password is picked up |
+| MetaTrader's anti-debugger check refused this Wine | phase *failed*, permanently: the image needs another Wine version |
+| an update is downloaded and wants a restart | restart MetaTrader so it installs on the way up |
+| MetaTrader exited | start it again, backing off |
+| reporting, then silent for 90 s | phase *quiet* |
 
-Each rung is tried only because the one before it did not help. The counts are
-kept in `~/.var/app/.../data/bottles/.tz-state/<account>.json`, outside the
-prefix — which matters, because a count kept inside the thing being rebuilt
-cannot survive the rebuild, and a ladder that resets itself is a loop.
+"Running" is the weakest possible statement about a MetaTrader terminal. It can
+be running while sitting on a refused login, or on an update dialog, or with an
+Expert Advisor whose WebRequest permission never took — all of which look
+identical from outside and none of which copy a trade. So the supervisor never
+asks whether MetaTrader is running. It asks the site when that account's Expert
+Advisor last reached it.
 
-Silence is only acted on when the provisioner has been reaching TradeZulu
-continuously. Nothing can record a poll while the site is restarting, so after
-any outage every terminal looks like it has gone quiet at once, and restarting
-them all on that evidence would turn a minute of downtime into an outage.
+On `docker stop` MetaTrader is closed the way a person would close it, with a
+minute to finish, so it writes what it keeps on the way out.
 
-### Clearing one up by hand
+### Weekly restart
 
-```bash
-python3 agent/tz_provision.py --reset 22609000    # this account's terminal
-python3 agent/tz_provision.py --reset all         # every terminal
-```
+Terminals are restarted every Sunday at 3am by default — change it on the
+**Accounts** page, in the server's local time.
 
-This stops the terminal, clears whatever is left holding its prefix, and
-deletes the prefix. Nothing in TradeZulu is touched — no account, no trade, no
-password — so the next provisioning cycle finds an account with no terminal and
-builds a fresh one, a minute or two later. It takes account numbers, and it is
-the whole of "clear it up and start over": `uninstall.sh --all` is not the tool
-for a terminal that is stuck, and never was.
+MetaTrader downloads updates while it runs and then asks to restart to install
+them. The supervisor answers that itself now, but a scheduled restart is still
+when terminals move to a newer image, and the quietest hour of the week is the
+right time for both. The window is checked rather than scheduled, so a machine
+that was off on Sunday restarts its terminals when it comes back.
 
-Forgetting an account in the web interface does the same thing on its own. Its
-MetaTrader install is removed on the next cycle, because the account is no
-longer one the server lists.
+---
 
-### Troubleshooting
+## Adding a broker, or a new MetaTrader build
 
-```bash
-sudo journalctl -u tradezulu-agent -f   # what the provisioner is doing
-```
-
-The `sudo` is not optional. It is a system service running as its own
-account, and `journalctl` without privileges quietly shows you your own
-journal instead of saying it cannot see that unit — so it looks like the
-service is producing nothing.
-
-The Expert Advisor writes to the terminal's own log, under `MQL5/logs/` in that
-account's prefix
-(`~/.var/app/com.usebottles.bottles/data/bottles/bottles/tz-<account id>/`). It
-says plainly when something is wrong: an empty token, a URL that is not on the
-allowlist, algorithmic trading switched off.
-
-Those logs are UTF-16, so `grep` finds nothing in them until they are converted:
+A broker is an entry in [`brokers.json`](../brokers.json): a label, its
+installer, the Wine to build on, the server names it matches, and the servers
+to offer in the account form. Then:
 
 ```bash
-iconv -f UTF-16LE -t UTF-8 <logfile> | tail
+terminal/build.sh <broker>
 ```
+
+A broker that ships a new MetaTrader build needs nothing but a rebuild — the
+installer always fetches the current one:
+
+```bash
+terminal/build.sh vantage --refresh   # tradezulu-terminal:vantage-<new build>-wine11.0
+```
+
+Running terminals move to it at the next weekly restart, or when restarted from
+the Accounts page.
+
+### Picking a Wine version
+
+MetaTrader has an anti-debugger check, and some Wine builds trip it. When they
+do, the program shows a small box — *"A debugger has been found running in your
+system. Please, unload it from memory and restart your program."* — and waits
+for ever. Which builds trip it depends on the MetaTrader build *and* on the
+installer:
+
+| | Soda 9.0 | WineHQ 10.0 | WineHQ 11.0 | WineHQ 11.21 |
+|---|---|---|---|---|
+| broker terminals, build ≤ 6230 | ✅ | | | |
+| broker terminals, build 6295–6296 | ❌ | ❌ | ✅ | ✅ |
+| the generic MetaQuotes installer | | | ❌ | ✅ |
+
+That is why the Wine version is set per broker, in `brokers.json`, and is part
+of the image's tag. `build.sh` notices the box during the install and fails
+saying so; a terminal that meets it at run time reports *failed* with the same
+explanation. Either way the fix is another `wine` for that broker and a rebuild.
+
+---
+
+## When a terminal will not work
+
+Nothing here needs uninstalling anything. Look first:
+
+- **The Accounts page** says what the terminal's supervisor last reported, and
+  **Inspect** shows its screen — a refused login, a dialog, a missing Expert
+  Advisor are all visible there and nowhere else.
+- **Its log:**
+
+  ```bash
+  docker logs -f tradezulu-terminal-3      # what its supervisor did, and when
+  docker compose logs -f orchestrator      # why it was (or was not) started
+  ```
+
+- **MetaTrader's own logs**, which are on the terminal's volume. They are
+  UTF-16, so `grep` finds nothing in them until they are converted:
+
+  ```bash
+  docker exec tradezulu-terminal-3 sh -c \
+    'iconv -f UTF-16LE -t UTF-8 /data/logs/$(date +%Y%m%d).log | tail -40'
+  ```
+
+  The Expert Advisor's own messages (an empty token, a URL not on the
+  allowlist, algorithmic trading switched off) are on the **Experts** tab of
+  the terminal's screen; MetaTrader writes them to disk only now and then.
+
+### Starting one over
+
+**Restart** on the Accounts page restarts the container. To start from nothing —
+a fresh install from the image, a fresh login — remove the container and its
+volume; the orchestrator builds a new one on its next pass:
+
+```bash
+docker rm -f tradezulu-terminal-3
+docker volume rm tradezulu-terminal-3-data
+```
+
+Nothing in TradeZulu is touched — no account, no trade, no password. Forgetting
+an account in the web interface does the same on its own.
+
+---
+
+## The WebRequest permission
+
+An Expert Advisor may only reach a URL that is on the terminal's allowlist, and
+that list is kept encrypted in MetaTrader's own config — there is no file to
+write. The only way in is the Options dialog, so the supervisor drives it:
+Ctrl+O, the Experts tab, tick *Allow WebRequest for listed URL* if it is not,
+type the site's address into the list, OK.
+
+Wine draws the dialog's controls itself, so they are not X windows and cannot
+be found by name; only the dialog as a whole can. So the clicks are measured
+**against the dialog**, which is found by being the window that appeared, and
+its position is read with `xwininfo`. Not with `xdotool`, which under a
+window manager reports positions offset by the window's frame: that put every
+click one row low, and once typed TradeZulu's address into the *trade server*
+field instead.
+
+With the Wine builds that MetaTrader 6295+ needs, the allowlist is not written
+back to MetaTrader's config on exit, so it does not survive a restart. The
+supervisor grants it again on every start — about twenty seconds, and verified
+the same way as the first time, by the Expert Advisor reaching the site.
+
+The Expert Advisor's first polls fail until then. It resends anything that went
+out with a failed poll — the broker's symbol list above all — on the next one,
+so nothing is lost but those twenty seconds.
+
+---
+
+## How it got here
+
+The terminals were not always in containers, and the reasons are worth keeping.
+
+**The Python bridge (removed).** The first design ran a headless MetaTrader in
+a container and drove it with MetaQuotes' Python package. The terminal started
+and loaded an account, and `mt5.initialize()` timed out — the terminal accepted
+the IPC connection and never answered. Eliminated one at a time, all failing
+identically: Docker networking, host networking, seccomp and AppArmor, the
+clock, CA certificates, port reachability, WineHQ 8 through 11 including
+staging, Python 3.9 and 3.11, 32- and 64-bit, several versions of the Python
+package, generic and broker-branded terminals, root and non-root, four display
+configurations, `winhttp`/`wininet`, `mt5linux`, and two published reference
+projects built verbatim. That code is in the git history
+(`git log --diff-filter=D -- mt5-bridge/`).
+
+**Terminals on the host (replaced).** What did work was turning the direction
+round: an Expert Advisor inside the terminal, talking outwards over HTTP. That
+needs no inbound port, no credentials in flight at request time, and nothing
+from MetaTrader's IPC layer at all. It ran on the host, under Bottles' Soda
+9.0 Wine build, driven by a systemd service.
+
+**Containers again (now).** Brokers moving to MetaTrader build 6295–6296 ended
+that: under Soda, and under WineHQ 10, those builds stop on the anti-debugger
+box before they draw a window. WineHQ 11 passes — and since the Expert Advisor
+does not need the IPC layer that defeated the bridge, nothing stood in the way
+of putting the terminal back in a container. In one, each broker can have the
+Wine its installer accepts, which the host could never offer.
 
 ---
 
@@ -263,136 +387,22 @@ current rules. Notes, tags and ratings are keyed to the trade and survive it.
 
 ---
 
-## Why not a container
-
-TradeZulu is containerised. MetaTrader is not, and that is not an oversight.
-
-The original design ran a headless MetaTrader in its own container and drove it
-with MetaQuotes' Python package. The terminal starts and loads an account, and
-`mt5.initialize()` returns an IPC timeout — the terminal accepts the connection
-and never answers.
-
-Eliminated one at a time, all failing identically: Docker networking, host
-networking, seccomp and AppArmor, the clock, CA certificates, port reachability,
-WineHQ 8 through 11 including staging, Python 3.9 and 3.11, 32- and 64-bit,
-several versions of the Python package, generic and broker-branded terminals,
-root and non-root, four display configurations, `winhttp`/`wininet`, `mt5linux`,
-and two published reference projects built verbatim.
-
-Under Wine-TkG "Soda" 9.0 the error changes to `-6 Authorization failed` — the
-terminal *answering*. That is the build the provisioner uses, and it is why
-Bottles is installed as a runtime rather than as an application: Soda is built
-against that flatpak's libraries and does not work outside it.
-
-So the terminal runs where it demonstrably works, and reaches TradeZulu over
-plain HTTP from an Expert Advisor inside it. That is better than the original
-plan regardless of Wine: the terminal talks outwards, so there is no inbound
-port and no credentials in flight at request time, and a terminal on someone
-else's laptop works exactly like one sitting beside the server.
-
-The bridge container has been removed. If it is ever worth retrying, the code is
-in the git history (`git log --diff-filter=D -- mt5-bridge/`) and the list above
-is what not to try first.
-
-## The WebRequest permission
-
-An Expert Advisor may only reach a URL that is on the terminal's allowlist, and
-that list is kept encrypted in MetaTrader's own config -- there is no file to
-write. The only way in is the Options dialog, so the provisioner drives it.
-
-Wine draws the dialog's controls itself, so they are not X windows and cannot
-be found by name; only the dialog as a whole can. The clicks are therefore
-measured, but they are measured **against the dialog**, which is located by
-being the window that appeared and then read for its real geometry. Screen
-coordinates were the previous approach and were wrong the moment the dialog
-opened anywhere else -- on one live terminal the "OK" click landed on *Cancel*,
-discarding the change, and the run reported success.
-
-Nothing reports success on the strength of a click now. The permission counts
-as granted only when that account's Expert Advisor actually reaches the server,
-which the provisioner sees in the plan it already fetches. Until then it
-retries, and after a few attempts it says plainly what to do by hand.
-
-To check the layout after a MetaTrader update, or when a terminal is running
-and sending nothing:
-
-```bash
-./agent/tz-check-dialog.py 22609000
-```
-
-It opens the dialog, reports whether each click still lands inside it, and
-closes it with Escape — it changes nothing, so it is safe on a terminal that is
-trading.
-
 ## Looking at a terminal
 
-The terminals draw on a virtual display (`:77` by default), which is right
-until something goes wrong: a login that failed, a dialog waiting for an answer,
-an Expert Advisor that never attached. All of those are visible on screen and
-invisible in the logs.
+**Accounts → Inspect** shows a terminal's screen in the page, live. The site
+relays it from the VNC server inside the terminal's container over the same
+signed-in session as everything else; the VNC server publishes no port and is
+reachable only on the Docker network.
 
-`agent/tz-view.sh` reads that display, and — when you ask it to — lets you use
-it.
+The keyboard and mouse reach the terminal, so a dialog it is stuck on can be
+answered and a chart read. These are the real terminals, logged into real
+accounts: a click can place an order, and the supervisor may be typing into the
+same screen at the same moment. The viewer says so in red for as long as it is
+open.
+
+For a picture without the browser:
 
 ```bash
-./agent/tz-view.sh list             # which terminals are up, and their windows
-./agent/tz-view.sh shot             # a PNG of the whole display
-./agent/tz-view.sh shot 22609000    # just that account's window
-./agent/tz-view.sh front 22609000   # bring that account's window to the front
-./agent/tz-view.sh watch            # a live view over VNC
-./agent/tz-view.sh watch --control  # the same, with a working mouse
+docker exec tradezulu-terminal-3 import -window root /data/screen.png
+docker cp tradezulu-terminal-3:/data/screen.png .
 ```
-
-`list` is usually enough — MetaTrader puts the account number and server in the
-window title, so a terminal that is logged in says so, and one still sitting at
-a login prompt says that too:
-
-```
-display :77 (1400x1000)
-
-  2097164      22609000 - VantageMarkets-Live: Read Only
-  4194316      25862011 - VantageMarkets-Demo: Demo Account
-
-terminals running, by prefix:
-  pid 1805395  tz-1
-  pid 1802281  tz-2
-```
-
-`shot` needs ImageMagick and `watch` needs x11vnc; neither is installed by
-`install.sh`, because neither is needed to run anything — the script names the
-package when you reach for it. `watch` binds to loopback only, so it is
-reachable through an SSH tunnel and not from the network: the display holds
-logged-in trading terminals, and x11vnc's own authentication is not worth
-relying on. It prints the `ssh -L` command to paste.
-
-### Which window you get
-
-Every terminal is opened in the same place, so they sit on top of one another,
-and X11 hands out the pixels that are *on the screen* where a window is rather
-than the window's own — ask for a covered one and you get whatever is above it,
-or a black rectangle. There is no compositing manager on the virtual display to
-keep a copy. So naming a window brings it to the front first: `shot 22609000`
-raises that terminal before it photographs it and prints the title it caught,
-and `front` does the raising on its own, which is how you change what you are
-looking at while a viewer is connected.
-
-Raising leaves the keyboard where it is, so the provisioner goes on typing into
-whatever it was typing into; the one thing it can disturb is a click the
-provisioner is aiming at a dialog in that same second, and it re-raises the
-window it wants before clicking anyway. `list` and an unqualified `shot` touch
-nothing at all.
-
-### Using the terminals
-
-`watch` serves the display view-only. `watch --control` serves it with the
-mouse and keyboard connected, which is the only way to drive a terminal that is
-running headless — clicking through a dialog the provisioner did not expect,
-reading a chart, checking what an Expert Advisor is actually doing. Alt-tab
-moves between terminals where a window manager is running (`install.sh` puts
-openbox on the display), and `./agent/tz-view.sh front <account>` does the same
-from a second shell.
-
-These are the real terminals, logged into real accounts: a click can place an
-order, and the provisioner may be typing into the same display at the same
-moment. The tunnel is still the only way in — `--control` changes what a viewer
-may do, not who can reach it.
