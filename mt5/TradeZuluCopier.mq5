@@ -1210,7 +1210,7 @@ bool HttpPostFor(const string path, const string body, string &reply, const int 
 //| Make this chart a background for the status text, nothing more.  |
 //|                                                                  |
 //| The chart the copier sits on is not there to be read. Nobody      |
-//| chose its symbol -- the provisioner opens EURUSD H1 because       |
+//| chose its symbol -- the supervisor opens EURUSD H1 because         |
 //| something has to hold the expert -- and now that the terminal can |
 //| be watched from the web interface, a wall of candles nobody asked |
 //| for is the first thing on screen. What is worth reading is the    |

@@ -336,7 +336,7 @@ def remove_account(account_id: int, db: Session = Depends(get_db)) -> dict[str, 
     account = _get(db, account_id)
 
     # Removing the master takes its credentials with it. Leaving them behind
-    # would have the provisioner start a terminal for an account that is no
+    # would have the orchestrator start a terminal for an account that is no
     # longer here, which reports in, is adopted, and comes back -- the account
     # you just deleted, returning by itself.
     stored = str(credentials_status(db).get("login") or "").strip()

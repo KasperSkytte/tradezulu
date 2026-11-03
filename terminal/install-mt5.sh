@@ -27,7 +27,7 @@ for _ in $(seq 1 90); do
   if xdotool search --name '\.exe$' getwindowname %@ 2>/dev/null | grep -q .; then
     echo "error: the installer was refused by MetaTrader's anti-debugger check" >&2
     echo "       on this Wine build. Pick another 'wine' for this broker in" >&2
-    echo "       agent/brokers.json." >&2
+    echo "       brokers.json." >&2
     exit 3
   fi
   sleep 10

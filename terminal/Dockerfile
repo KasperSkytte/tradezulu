@@ -1,7 +1,7 @@
 # One MetaTrader terminal, for one broker, at one MetaTrader build.
 #
 # Built by terminal/build.sh, which reads the broker's installer and Wine
-# version from agent/brokers.json and tags the result
+# version from brokers.json and tags the result
 #
 #   tradezulu-terminal:<broker>-<mt5 build>-wine<wine version>
 #

@@ -370,7 +370,7 @@ function AccountRow({
  *  the only evidence any of this works, so it belongs next to the account it
  *  is evidence about.
  */
-//: How the provisioner's phases read, and how alarming each one looks.
+//: How the orchestrator's phases read, and how alarming each one looks.
 const PHASES: Record<string, { label: string; tone: string; icon: 'ok' | 'wait' | 'bad' }> = {
   running: { label: 'terminal up', tone: 'border-gain-500/40 bg-gain-500/10 text-gain-400', icon: 'ok' },
   installing: { label: 'installing', tone: 'text-[var(--tz-text-muted)]', icon: 'wait' },
@@ -392,7 +392,7 @@ function TerminalPill({ account }: { account: SlaveAccount }) {
   // silence is already unusual and two is something to look at.
   const reporting = seen > 0 && Date.now() - seen < 2 * 60 * 1000
 
-  // What the provisioner says, which is the only thing that can tell a
+  // What the orchestrator says, which is the only thing that can tell a
   // MetaTrader still installing from one that was given up on. It is not
   // always there -- an Expert Advisor can report from a terminal nothing here
   // provisioned -- so a terminal that is plainly working says so regardless.
@@ -408,7 +408,7 @@ function TerminalPill({ account }: { account: SlaveAccount }) {
     ) : (
       <Pill
         className="text-[var(--tz-text-muted)]"
-        title="No terminal has reported for this account, and no provisioner has said what it is doing"
+        title="No terminal has reported for this account, and no orchestrator has said what it is doing"
       >
         <CircleDot size={11} /> no terminal yet
       </Pill>

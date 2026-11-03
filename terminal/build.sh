@@ -4,7 +4,7 @@
 #   terminal/build.sh vantage            # build (or reuse the cached install)
 #   terminal/build.sh vantage --refresh  # run the installer again for the
 #                                          broker's current MetaTrader build
-#   terminal/build.sh all                # every broker in agent/brokers.json
+#   terminal/build.sh all                # every broker in brokers.json
 #
 # Tags:
 #   tradezulu-terminal:<broker>-<mt5 build>-wine<wine version>   e.g.
@@ -19,7 +19,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(dirname "${HERE}")"
 REPO="${TZ_TERMINAL_REPO:-tradezulu-terminal}"
-BROKERS="${ROOT}/agent/brokers.json"
+BROKERS="${ROOT}/brokers.json"
 
 refresh=0
 targets=()

@@ -25,7 +25,9 @@ wineserver -k || true
 
 if [ ! -s "${T}/MQL5/Experts/TradeZuluCopier.ex5" ]; then
   echo "error: MetaEditor did not produce TradeZuluCopier.ex5" >&2
-  [ -f "${T}/MQL5/Experts/compile.log" ] && iconv -f utf-16le -t utf-8 "${T}/MQL5/Experts/compile.log" >&2 || true
+  if [ -f "${T}/MQL5/Experts/compile.log" ]; then
+    iconv -f utf-16le -t utf-8 "${T}/MQL5/Experts/compile.log" >&2 || true
+  fi
   exit 1
 fi
 cp "${T}/MQL5/Experts/TradeZuluCopier.ex5" /opt/tz/ea/

@@ -405,7 +405,7 @@ export interface AppSettings {
   mt5: {
     sync_mode: 'ea' | 'off'
     /** Weekly restart window so MetaTrader's own updates install quietly.
-     *  Monday=0, matching the provisioner's weekday numbering. */
+     *  Monday=0, matching the orchestrator's weekday numbering. */
     restart_weekday: number
     restart_hour: number
     auto_sync_on_load: boolean
@@ -573,7 +573,7 @@ export interface SlaveAccount {
   symbol_map: Record<string, string>
   /** Master symbol -> this broker's name for it, as the copier worked it out. */
   symbol_learned: Record<string, string>
-  /** What the provisioner last said this terminal was doing. */
+  /** What the orchestrator last said this terminal was doing. */
   terminal_state: {
     phase?: string
     message?: string
