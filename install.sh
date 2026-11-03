@@ -15,12 +15,8 @@
 #   ./install.sh --rebuild                # rebuild terminal images, picking up
 #                                         # each broker's current MetaTrader build
 #   ./install.sh --no-terminals           # journal only, no copying
-#   ./install.sh --ignore-host-install    # a second, test stack on a machine that
-#                                         # still has the old host terminals
 #
-# To undo it, see ./uninstall.sh. Coming from a TradeZulu that ran its
-# terminals on the host (Bottles/Soda and the tradezulu-agent service)? Run
-# ./migrate-from-host.sh first.
+# To undo it, see ./uninstall.sh.
 #
 set -euo pipefail
 
@@ -28,16 +24,14 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BROKERS="default"
 TERMINALS=1
 REBUILD=0
-IGNORE_HOST=0
 
-usage() { sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --brokers) BROKERS="$2"; shift 2 ;;
     --no-terminals) TERMINALS=0; shift ;;
     --rebuild) REBUILD=1; shift ;;
-    --ignore-host-install) IGNORE_HOST=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -56,22 +50,6 @@ docker info >/dev/null 2>&1 || die \
   "Cannot talk to the Docker daemon. Add yourself to the docker group (and log in again), or run this with sudo."
 say "$(docker --version)"
 
-step "Checking for an older, host-based install"
-# The old provisioner ran a terminal per account on the host. Left running
-# beside the orchestrator, every account would get two terminals -- and two
-# Expert Advisors on one master is every trade copied twice.
-# --ignore-host-install is for a second stack with accounts of its own, where
-# that cannot happen.
-if [ "${IGNORE_HOST}" -eq 1 ]; then
-  say "not checked (--ignore-host-install)"
-elif [ -e /etc/systemd/system/tradezulu-agent.service ] \
-   || systemctl is-active --quiet tradezulu-agent 2>/dev/null; then
-  die "the tradezulu-agent service from a host-based install is still here.
-       Run ./migrate-from-host.sh first; it removes the old terminals and keeps your journal."
-else
-  say "none"
-fi
-
 step "Configuration"
 ENV_FILE="${HERE}/.env"
 random() { head -c 48 /dev/urandom | base64 | tr -d '/+=\n' | head -c "$1"; }
@@ -89,12 +67,6 @@ EOF
   say "sign in with:  admin  /  $(sed -n 's/^TZ_ADMIN_PASSWORD=//p' "${ENV_FILE}")"
 else
   say "keeping the existing .env"
-  # An install from before the terminals authenticated may not have one, and
-  # the orchestrator will not start without it.
-  if ! grep -q '^TZ_INGEST_TOKEN=.' "${ENV_FILE}"; then
-    printf 'TZ_INGEST_TOKEN=%s\n' "$(random 40)" >> "${ENV_FILE}"
-    say "added a TZ_INGEST_TOKEN"
-  fi
 fi
 PORT="$(sed -n 's/^TZ_PORT=//p' "${ENV_FILE}" | tail -1)"
 PORT="${PORT:-8420}"

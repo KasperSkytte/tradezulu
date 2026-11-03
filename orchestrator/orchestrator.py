@@ -1,8 +1,7 @@
 """Run one MetaTrader terminal container per TradeZulu account.
 
-Every pass it asks TradeZulu which terminals should exist (the same plan the
-host provisioner used to read), compares that with the terminal containers it
-owns, and makes them agree:
+Every pass it asks TradeZulu which terminals should exist, compares that with
+the terminal containers it owns, and makes them agree:
 
 * an account with credentials gets a container, on the newest image built for
   its broker (the image with the highest MetaTrader build, see
@@ -117,10 +116,9 @@ def tz(method: str, path: str, body: dict | None = None) -> dict | None:
 # --- choosing an image --------------------------------------------------------
 
 def broker_for(server: str) -> str:
-    """Which broker's terminal a server belongs to. The server name decides,
-    as it did for the host provisioner: it comes from the broker, so it is
-    always right, where the broker field is whatever the Expert Advisor last
-    said the company was called."""
+    """Which broker's terminal a server belongs to. The server name decides:
+    it comes from the broker, so it is always right, where the broker field is
+    whatever the Expert Advisor last said the company was called."""
     lowered = server.lower()
     for key, entry in BROKERS.items():
         if isinstance(entry, dict) and any(m in lowered for m in entry.get("matches", [])):

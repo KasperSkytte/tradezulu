@@ -234,7 +234,17 @@ IDLE_POLL_MS = 10_000
 
 
 def _poll_ms(db: Session, account: Account) -> int:
-    """How often this terminal should report in, in milliseconds."""
+    """How often this terminal should report in, in milliseconds.
+
+    The master gets the fast rate too, whenever any slave is armed. Nothing is
+    asked of it, but every copy waits on it: a slave cannot be told to open a
+    position the server has not heard about yet, and the server only hears
+    about it when the master's next heartbeat arrives.
+
+    Slow again when no slave is armed, because then nothing is waiting and a
+    fast poll is a request a second per terminal, all day, for a journal that
+    is only being written to.
+    """
     if account.role == "slave":
         return COPYING_POLL_MS if account.copy_enabled else IDLE_POLL_MS
     armed = db.scalar(
@@ -250,24 +260,6 @@ def _command_max_age_ms(account: Account) -> int:
     if account.role != "slave":
         return COMMAND_MAX_AGE_MS
     return max_copy_delay_ms(account.copy_settings or {})
-
-
-def _poll_seconds(db: Session, account: Account) -> int:
-    """The same thing in whole seconds, for an Expert Advisor from before the
-    millisecond field existed. Never zero: that would be a busy loop.
-
-    The master gets the fast rate too, whenever any slave is armed. It used to
-    be given the slow one on the grounds that nothing is asked of it -- but
-    every copy waits on it: a slave cannot be told to open a position the
-    server has not heard about yet, and the server only hears about it when
-    the master's next heartbeat arrives. Ten seconds there was ten seconds
-    added to every copy, and it was the largest part of the delay by far.
-
-    Slow again when no slave is armed, because then nothing is waiting and a
-    poll every two seconds is a request per second per terminal, all day, for
-    a journal that is only being written to.
-    """
-    return max(1, _poll_ms(db, account) // 1000)
 
 
 #: The longest a held request is kept before it is answered with nothing. Not
@@ -358,7 +350,6 @@ def _handle_poll(payload: AgentPollIn, db: Session) -> AgentPollOut:
         enabled=bool(account.copy_enabled),
         dry_run=bool(account.copy_dry_run),
         halted=bool(account.copy_halted),
-        poll_seconds=_poll_seconds(db, account),
         poll_ms=_poll_ms(db, account),
         command_max_age_ms=_command_max_age_ms(account),
         history_before_seconds=_history_seconds(charts, "history_days_before"),

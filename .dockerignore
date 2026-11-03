@@ -21,7 +21,6 @@ data/
 *.db
 *.db-*
 docs/
-mt5-bridge/
 screenshots/
 CHANGELOG.md
 README.md

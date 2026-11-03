@@ -251,23 +251,10 @@ def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]
     return out
 
 
-#: Modes that no longer exist, and what they became.
-RETIRED_SYNC_MODES = {
-    # "bridge" drove a containerised MetaTrader that this server logged in and
-    # polled. It never worked -- see docs/metatrader.md -- and an install that
-    # upgrades while still set to it would otherwise land on a mode nothing
-    # implements, which reads as the sync being broken rather than moved.
-    "bridge": "ea",
-}
-
-
 def get_app_settings(db: Session) -> dict[str, Any]:
     row = db.get(Setting, SETTINGS_KEY)
     stored = row.value if row and isinstance(row.value, dict) else {}
     merged = deep_merge(DEFAULT_SETTINGS, stored)
-    mode = merged.get("mt5", {}).get("sync_mode")
-    if mode in RETIRED_SYNC_MODES:
-        merged["mt5"]["sync_mode"] = RETIRED_SYNC_MODES[mode]
     _migrate_score_weights(stored, merged)
     _migrate_times(stored, merged)
     _migrate_chart_provider(merged)
