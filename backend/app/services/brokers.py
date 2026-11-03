@@ -1,12 +1,13 @@
 """The brokers TradeZulu knows about.
 
-One file describes them, shared with the provisioner: it decides which
-MetaTrader build gets installed, and it is what the account form offers so
+One file describes them, brokers.json at the top of the repository. It decides
+which terminal image a broker gets (terminal/build.sh, and the orchestrator
+that picks one), and it is what the account form offers so
 nobody has to remember whether their server is called VantageMarkets-Live or
 VantageInternational-Live.
 
 Which terminal that implies is deliberately not exposed. It is the
-provisioner's business, and asking someone to know which build their broker
+orchestrator's business, and asking someone to know which build their broker
 needs is the setup step this is meant to remove.
 """
 
@@ -21,11 +22,11 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-#: In the image the file sits beside the app; in a checkout it is under agent/.
+#: In the image the file sits beside the app; in a checkout, at the top.
 CANDIDATES = (
     Path(os.getenv("TZ_BROKERS_FILE", "")) if os.getenv("TZ_BROKERS_FILE") else None,
     Path("/app/brokers.json"),
-    Path(__file__).resolve().parents[3] / "agent" / "brokers.json",
+    Path(__file__).resolve().parents[3] / "brokers.json",
 )
 
 

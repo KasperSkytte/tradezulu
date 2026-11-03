@@ -20,7 +20,7 @@ import type { SyncStatus, SystemInfo } from '../lib/types'
 import { Card, CardHeader, Field, SegmentedControl, Toggle } from './ui'
 import { MT5Account } from './MT5Account'
 
-//: Monday first, matching Python's weekday numbering on the provisioner side.
+//: Monday first, matching Python's weekday numbering on the orchestrator side.
 const DAYS = [
   'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
 ]

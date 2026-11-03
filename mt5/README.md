@@ -9,8 +9,9 @@ One Expert Advisor doing both halves of the job:
 
 ## You do not need to install this
 
-`install.sh` creates a MetaTrader terminal per account and puts this in it,
-compiled, with the server URL and token already filled in. Adding an account in
+Every account gets a terminal container whose image has this compiled into it
+(`terminal/build.sh`), and the container fills in the server URL and token when
+it starts. Adding an account in
 the web interface is the whole procedure — see
 [`../docs/metatrader.md`](../docs/metatrader.md).
 

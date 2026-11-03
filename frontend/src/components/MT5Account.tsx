@@ -8,7 +8,7 @@
  * Picking a broker narrows the server list to that broker's own, which is the
  * point: MetaTrader has thousands of servers and the name has to be exact.
  * Which MetaTrader build the broker needs is deliberately not asked about —
- * that is the provisioner's business.
+ * that is the orchestrator's business.
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'

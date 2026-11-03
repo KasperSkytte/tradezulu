@@ -46,7 +46,7 @@ export function BrokerServerPicker({
   const [broker, setBroker] = useState('')
   const [touched, setTouched] = useState(false)
 
-  // A stored server names its broker: it is the same string the provisioner
+  // A stored server names its broker: it is the same string the orchestrator
   // matches on, so an account being edited reopens where it was left rather
   // than on "Select your broker…" with its server apparently unset.
   useEffect(() => {
