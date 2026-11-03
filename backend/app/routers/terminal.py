@@ -4,9 +4,9 @@
     WS   /api/terminal/{id}/stream   -> its screen, as RFB over a WebSocket
     POST /api/terminal/{id}/restart  -> stop it; the next cycle brings it back
 
-The screen is a VNC server the provisioner runs on that account's own display,
-on the host. A browser cannot speak RFB to a TCP socket, so this relays the
-two -- which is all websockify does, and it is not worth a second service to
+The screen is a VNC server inside that account's terminal container, on the
+container's own display. A browser cannot speak RFB to a TCP socket, so this
+relays the two -- which is all websockify does, and it is not worth a second service to
 do it.
 
 The screen is live in both directions: the keyboard and mouse reach the
@@ -55,9 +55,9 @@ def viewable(account_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
     """Whether this account's terminal can be watched, and what to say if not.
 
     Asked before the socket is opened so the page can explain itself. A
-    terminal that is still installing, or one on an install whose provisioner
-    has no x11vnc, is a perfectly ordinary state and deserves a sentence
-    rather than a failed connection.
+    terminal whose container is still starting, or has no image to start
+    from, is a perfectly ordinary state and deserves a sentence rather than a
+    failed connection.
     """
     account = _account(db, account_id)
     state = account.terminal_state or {}
@@ -72,9 +72,9 @@ def viewable(account_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
         "message": (
             ""
             if target is not None
-            else "No screen is being served for this terminal yet. It is either "
-            "still being set up, or x11vnc is not installed beside the "
-            "provisioner (apt install x11vnc)."
+            else "No screen is being served for this terminal yet. Its container "
+            "is either still starting or not running; the status above says "
+            "which."
         ),
     }
 
@@ -83,14 +83,14 @@ def viewable(account_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
 def restart(account_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
     """Ask for this terminal to be restarted.
 
-    Recorded rather than done: MetaTrader runs on the host and this does not,
-    so the provisioner carries it out on its next pass. It stops the terminal
-    and the same reconcile that recovers a crashed one starts it again --
-    there is no separate restart path to go wrong.
+    Recorded rather than done: the orchestrator carries it out on its next
+    pass, a few seconds later, by restarting the terminal's container -- and,
+    if a newer image has been built for the broker since, by moving it to
+    that one. MetaTrader is closed cleanly on the way, so nothing is lost.
     """
     account = _account(db, account_id)
     state = dict(account.terminal_state or {})
-    # The time it was asked for, which doubles as the token the provisioner
+    # The time it was asked for, which doubles as the token the orchestrator
     # compares against the last one it acted on.
     state["restart_requested"] = datetime.now(timezone.utc).isoformat()
     account.terminal_state = state
@@ -103,7 +103,7 @@ def _authenticated(websocket: WebSocket, db: Session) -> bool:
 
     A viewer is a window onto a logged-in trading terminal, so an unauthenticated
     one is refused at the handshake -- before the socket is accepted and before
-    anything is connected to on the host.
+    anything is connected to.
     """
     token = websocket.cookies.get(settings.cookie_name)
     if not token:

@@ -10,7 +10,7 @@ what was tried. A terminal talking outwards over plain HTTP has none of that
 problem, and it also means no inbound port, so a terminal behind NAT or on
 someone's laptop works exactly like one beside this server.
 
-Account credentials are still stored, encrypted: the provisioner needs them to
+Account credentials are still stored, encrypted: the orchestrator needs them to
 start a terminal and log it in. They are never used from here.
 """
 
@@ -257,7 +257,7 @@ def brokers(_user: CurrentUser) -> dict[str, Any]:
     """Brokers and their trade servers, for the account form.
 
     Which MetaTrader build each one needs is not included. That is the
-    provisioner's business, and having to know it is the setup step this
+    orchestrator's business, and having to know it is the setup step this
     exists to remove.
     """
     return {"brokers": list_brokers()}
@@ -301,7 +301,7 @@ def delete_credentials(_user: CurrentUser, db: DbSession) -> dict[str, Any]:
     account added with the same number.
 
     The terminal that was provisioned from these keeps running until the
-    provisioner's next pass, which stops asking for it once it is no longer in
+    orchestrator's next pass, which stops asking for it once it is no longer in
     the plan. Nothing is torn down from here.
     """
     master = db.scalar(select(Account).where(Account.role == "master"))

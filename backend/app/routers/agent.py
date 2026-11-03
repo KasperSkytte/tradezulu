@@ -50,7 +50,6 @@ from ..services.copier.config import max_copy_delay_ms
 from ..services.copier.waiting import wait_for_work, wake
 from ..services.credentials import credentials_status, get_credentials
 from ..services.crypto import decrypt
-from ..services.terminalview import bridge_address
 
 log = logging.getLogger(__name__)
 
@@ -381,16 +380,16 @@ def result(payload: AgentCommandResult, db: Session = Depends(get_db)) -> None:
 
 @router.post("/terminals/state", status_code=status.HTTP_204_NO_CONTENT)
 def terminal_states(payload: TerminalStatesIn, db: Session = Depends(get_db)) -> None:
-    """Record what the provisioner says each terminal is doing.
+    """Record what the orchestrator says each terminal is doing.
 
-    The provisioner is the only thing that can tell a MetaTrader still
+    The orchestrator (reading each terminal's own status) is the only thing that can tell a MetaTrader still
     installing from one sitting on a refused login from one that was given up
     on twenty minutes ago. Until it sent this, the journal knew only whether an
     Expert Advisor had ever reported, so all three read as "no terminal yet"
     and none of them suggested what to do about it.
 
     Unknown accounts are skipped rather than refused: an account can be
-    forgotten here between the provisioner reading its plan and reporting on
+    forgotten here between the orchestrator reading its plan and reporting on
     it, and that is not an error on either side.
     """
     when = datetime.now(timezone.utc).isoformat()
@@ -415,20 +414,17 @@ def terminal_states(payload: TerminalStatesIn, db: Session = Depends(get_db)) ->
 
 @router.get("/terminals")
 def terminals(db: Session = Depends(get_db)) -> dict[str, Any]:
-    """What terminals should be running, for whoever provisions them.
+    """What terminals should be running, for the orchestrator and the terminals.
 
-    The provisioner runs beside MetaTrader rather than inside this container,
-    because Wine will host a terminal reliably and a container has not. That
-    split is an implementation detail the user should never meet, so this
-    endpoint hands over everything a terminal needs -- which account, which
-    broker, and the URL and token its Expert Advisor should report back on.
-    The person adding an account types their broker credentials once, in the
-    web interface, and nothing else anywhere.
+    Read by two callers with the ingest token. The orchestrator reads it to
+    decide which terminal containers should exist; each terminal reads it to
+    fetch its own login, so no password is ever put in a container's
+    environment. The person adding an account types their broker credentials
+    once, in the web interface, and nothing else anywhere.
 
-    The callback URL is deliberately this server's *internal* address. The
-    terminal runs on the same machine, so putting a domain in front of
-    TradeZulu later changes how people reach the site and nothing about how
-    its terminals reach it.
+    The callback URL is deliberately this server's *internal* address, its
+    name on TradeZulu's Docker network. Putting a domain in front of the site
+    later changes how people reach it and nothing about how its terminals do.
     """
     # Repaired before anything is planned, not only when somebody opens the
     # Accounts page. This is the endpoint that decides how many terminals run,
@@ -469,10 +465,10 @@ def terminals(db: Session = Depends(get_db)) -> dict[str, Any]:
                 #
                 # SQLite hands out the next rowid as max(rowid) + 1, so
                 # deleting the newest account and adding another gives the new
-                # one the same id -- and the provisioner names a terminal's
-                # prefix after that id. Re-adding the same login therefore
-                # lands on the old prefix, with whatever was wrong with it
-                # still in place, which is exactly the state someone deleting
+                # one the same id -- and the orchestrator names a terminal's
+                # container and volume after that id. Re-adding the same login
+                # would therefore land on the old volume, with whatever was
+                # wrong with it still in place, which is exactly the state someone deleting
                 # and re-adding an account is trying to get out of.
                 #
                 # The id alone cannot tell the two apart and the login cannot
@@ -488,8 +484,8 @@ def terminals(db: Session = Depends(get_db)) -> dict[str, Any]:
                 # and a slave in dry-run has to be connected to report what it
                 # would have done, which is the whole point of dry-run.
                 "enabled": True,
-                # When this account's Expert Advisor last reached us. The
-                # provisioner has no other way to tell a terminal that is
+                # When this account's Expert Advisor last reached us. Nothing
+                # else has a way to tell a terminal that is
                 # working from one whose WebRequest permission never took: both
                 # look like a running terminal from the outside.
                 "last_seen": (
@@ -498,7 +494,7 @@ def terminals(db: Session = Depends(get_db)) -> dict[str, Any]:
                     else None
                 ),
                 # Set when somebody pressed Restart, and never cleared from
-                # here. The provisioner remembers the last one it acted on, so
+                # here. The orchestrator remembers the last one it acted on, so
                 # a token it has not seen before means restart and the same
                 # token means nothing -- which needs no acknowledgement, no
                 # clearing, and survives either side being restarted mid-way.
@@ -513,21 +509,16 @@ def terminals(db: Session = Depends(get_db)) -> dict[str, Any]:
         "callback_url": settings.internal_url.rstrip("/") + "/api",
         "api_key": settings.ingest_token or "",
         # Every account, including ones with no credentials, which is not the
-        # same list as the terminals above. It is what lets the provisioner
+        # same list as the terminals above. It is what lets the orchestrator
         # tell "this account has no password yet" from "this account was
-        # forgotten" -- and only the second means delete its MetaTrader
-        # install. Without it a forgotten account's terminal ran on here for
+        # forgotten" -- and only the second means delete its terminal's
+        # data. Without it a forgotten account's terminal ran on here for
         # ever, polling an account the server no longer had.
         "known_accounts": known,
         "maintenance": {
             "weekday": int(config["mt5"].get("restart_weekday", 6)),
             "hour": int(config["mt5"].get("restart_hour", 3)),
         },
-        # Where to serve each terminal's screen so this container can reach it.
-        # Sent from here because only this side knows the answer: it is the
-        # host end of the bridge this container is on, and the provisioner has
-        # no way to work out which bridge that is.
-        "vnc_bind": bridge_address(),
         "terminals": wanted,
     }
 

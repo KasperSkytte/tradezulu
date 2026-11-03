@@ -40,10 +40,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/app ./app
 COPY --from=frontend /build/dist ./static
 COPY mt5/ ./mt5/
-# The broker list is shared: the provisioner reads it from agent/ on the host,
-# and the web interface serves it from here so the account form can offer the
-# same brokers and servers.
-COPY agent/brokers.json ./brokers.json
+# The broker list is shared: terminal/build.sh builds an image per broker from
+# it, the orchestrator picks a broker's image with it, and the web interface
+# serves it from here so the account form offers the same brokers and servers.
+COPY brokers.json ./brokers.json
 # Read at runtime when TZ_VERSION was not passed in, so an image built without
 # the build arg still reports the release it was cut from rather than 0.0.0.
 COPY version.txt ./version.txt

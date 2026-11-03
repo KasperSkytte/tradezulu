@@ -22,6 +22,7 @@ works is TradeZulu having heard from this account's Expert Advisor.
 
 from __future__ import annotations
 
+import contextlib
 import glob
 import json
 import os
@@ -346,10 +347,8 @@ def main() -> None:
         elif os.path.lexists(stale):
             os.unlink(stale)
 
-    try:
+    with contextlib.suppress(OSError, ValueError):
         STATUS.update(json.loads((DATA / "status.json").read_text()))
-    except (OSError, ValueError):
-        pass
     STATUS.pop("fatal", None)
     build = (Path("/opt/tz/mt5-build").read_text().strip()
              if Path("/opt/tz/mt5-build").exists() else "")

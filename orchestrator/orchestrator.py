@@ -141,8 +141,14 @@ def images() -> dict[str, dict]:
             build = int(labels.get("tz.mt5.build") or 0)
         except ValueError:
             build = 0
+        # Only an image tagged with what is in it counts. An untagged one is
+        # either superseded (rebuilt under the same tag) or was untagged on
+        # purpose to roll back, and Docker keeps listing it for as long as a
+        # container still runs on it.
         tags = [t for t in image.get("RepoTags") or [] if t.count("-") >= 2 and ":build-" not in t]
-        ref = tags[0] if tags else image["Id"]
+        if not tags:
+            continue
+        ref = tags[0]
         key = (build, image.get("Created", 0))
         if broker not in best or key > best[broker]["key"]:
             best[broker] = {"key": key, "ref": ref, "id": image["Id"], "build": build}

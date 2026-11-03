@@ -4,7 +4,6 @@ Run from the repository root:  python3 -m pytest orchestrator/tests
 """
 
 import importlib
-import os
 import sys
 from pathlib import Path
 
@@ -16,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 @pytest.fixture()
 def orch(monkeypatch, tmp_path):
     monkeypatch.setenv("TZ_INGEST_TOKEN", "t")
-    monkeypatch.setenv("TZ_BROKERS", str(ROOT / "agent/brokers.json"))
+    monkeypatch.setenv("TZ_BROKERS", str(ROOT / "brokers.json"))
     monkeypatch.setenv("TZ_STATE", str(tmp_path / "state.json"))
     sys.path.insert(0, str(ROOT / "orchestrator"))
     try:
@@ -60,6 +59,16 @@ def test_the_alias_tag_is_not_used_as_the_reference(orch, monkeypatch):
     entry["RepoTags"] = ["tradezulu-terminal:vantage", "tradezulu-terminal:vantage-6295-wine11.0"]
     monkeypatch.setattr(orch, "docker", lambda *a, **k: [entry])
     assert orch.images()["vantage"]["ref"] == "tradezulu-terminal:vantage-6295-wine11.0"
+
+
+def test_an_untagged_image_is_never_chosen(orch, monkeypatch):
+    # Rolling back is untagging the newer image. Docker still lists it while a
+    # terminal runs on it, so it has to be skipped or the rollback never takes.
+    newer = image("vantage", 6296, 200, "tradezulu-terminal:vantage-6296-wine11.0", "new")
+    newer["RepoTags"] = []
+    older = image("vantage", 6295, 100, "tradezulu-terminal:vantage-6295-wine11.0", "old")
+    monkeypatch.setattr(orch, "docker", lambda *a, **k: [newer, older])
+    assert orch.images()["vantage"]["id"] == "old"
 
 
 def test_a_changed_password_changes_the_credentials_label(orch):
