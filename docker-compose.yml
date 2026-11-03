@@ -1,9 +1,12 @@
-# TradeZulu — copy .env.example to .env, edit it, then:
+# TradeZulu — copy .env.example to .env, edit it, build a terminal image for
+# each broker you use, then start it:
 #
+#   terminal/build.sh vantage        # tradezulu-terminal:vantage-<build>-wine<ver>
 #   docker compose up -d
 #
-# That is the whole site: journal, copier and API. MetaTrader itself runs on
-# the host rather than in a container -- see install.sh, which sets both up.
+# Everything runs in containers: the site (journal, copier, API), and an
+# orchestrator that runs one MetaTrader terminal container per account, each
+# on the image built for its broker. See docs/metatrader.md.
 
 services:
   tradezulu:
@@ -16,7 +19,7 @@ services:
         # Unset is fine: the image falls back to version.txt, which
         # release-please keeps current.
         VERSION: ${TZ_VERSION:-}
-    container_name: tradezulu
+    container_name: ${TZ_CONTAINER_NAME:-tradezulu}
     restart: unless-stopped
     env_file: .env
     environment:
@@ -25,12 +28,18 @@ services:
       TZ_DATABASE_URL: sqlite:////data/tradezulu.db
       TZ_STATIC_DIR: /app/static
       PORT: 8420
+      # What the terminals' Expert Advisors report to. A name on the Docker
+      # network, so it works the same on every machine; it has dots in it
+      # because MetaTrader's WebRequest list is only known to take those.
+      TZ_INTERNAL_URL: http://app.tradezulu.internal:8420
     ports:
-      # Bound to localhost: nginx on the host is what faces the network, and
-      # the MetaTrader terminals reach this address directly.
+      # Bound to localhost: nginx on the host is what faces the network.
       - "127.0.0.1:${TZ_PORT:-8420}:8420"
     volumes:
       - tradezulu-data:/data
+    networks:
+      tradezulu:
+        aliases: [app.tradezulu.internal]
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8420/api/health"]
       interval: 30s
@@ -38,5 +47,36 @@ services:
       retries: 3
       start_period: 20s
 
+  orchestrator:
+    image: ghcr.io/${TZ_IMAGE_OWNER:-local}/tradezulu-orchestrator:${TZ_IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: orchestrator/Dockerfile
+    container_name: ${TZ_ORCHESTRATOR_NAME:-tradezulu-orchestrator}
+    restart: unless-stopped
+    depends_on:
+      tradezulu:
+        condition: service_healthy
+    environment:
+      TZ_URL: http://app.tradezulu.internal:8420/api
+      TZ_INGEST_TOKEN: ${TZ_INGEST_TOKEN:?set TZ_INGEST_TOKEN in .env}
+      # The terminals join this network, and are named and labelled after
+      # this stack, so two stacks on one machine never touch each other's.
+      TZ_NETWORK: ${TZ_NETWORK:-tradezulu}
+      TZ_STACK: ${TZ_STACK:-tradezulu}
+    volumes:
+      # Root on the host, in effect. The orchestrator is small, uses only the
+      # standard library, and acts only on containers labelled as its own.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # The weekly restart window is in local time.
+      - /etc/localtime:/etc/localtime:ro
+      - orchestrator-state:/state
+    networks: [tradezulu]
+
+networks:
+  tradezulu:
+    name: ${TZ_NETWORK:-tradezulu}
+
 volumes:
   tradezulu-data:
+  orchestrator-state:
