@@ -142,8 +142,8 @@ only because that account's Expert Advisor actually reached the server. You can
 watch any terminal's screen, and use it, from the Accounts page.
 
 [docs/metatrader.md](docs/metatrader.md) covers how the whole thing is put
-together, how to add a broker or move to a new MetaTrader build, and what was
-ruled out on the way.
+together, how to add a broker or move to a new MetaTrader build, and which Wine
+versions MetaTrader accepts.
 
 ## Uninstalling
 
@@ -163,23 +163,6 @@ Terminal containers and their volumes always go: they hold nothing the journal
 does not, and a reinstall logs every account in again. Only containers and
 volumes labelled as this stack's are touched; anything else on the machine is
 never in scope.
-
-### Coming from a host-based install
-
-Versions before the containerised terminals ran MetaTrader on the host, with
-Bottles, the Soda Wine build and a `tradezulu-agent` service. Remove that once,
-then install as above — the journal and the accounts in it are kept:
-
-```bash
-sudo ./migrate-from-host.sh --dry-run
-sudo ./migrate-from-host.sh                 # add --purge-wine --purge-packages to remove
-                                            # Bottles, Soda and the X packages too
-./install.sh --brokers vantage,falcon
-```
-
-`install.sh` refuses to start while the old service is still installed: left
-running beside the orchestrator, every account would get two terminals, and
-two Expert Advisors on one master account copy every trade twice.
 
 ## Behind a reverse proxy (nginx example)
 

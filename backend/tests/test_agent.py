@@ -491,7 +491,7 @@ class TestTheProvisioningPlan:
     def test_every_account_is_named_whether_or_not_it_has_one(self, client, db, master, slave):
         """The list that says what has been forgotten and what merely has no password.
 
-        Without it the provisioner cannot tell the two apart, and the only safe
+        Without it the orchestrator cannot tell the two apart, and the only safe
         reading of "no terminal asked for" is to leave the MetaTrader install
         alone — which is how a forgotten account's terminal kept running for
         good, polling an account this server no longer had.
@@ -892,7 +892,7 @@ class TestTheChartWindowReachesTheTerminal:
 
 
 class TestReportingWhatATerminalIsDoing:
-    """The provisioner is the only thing that can tell why there is no terminal.
+    """The orchestrator is the only thing that can tell why there is no terminal.
 
     A MetaTrader still installing, one sitting on a login the broker refused,
     and one abandoned twenty minutes ago are identical from here: no Expert
@@ -945,7 +945,7 @@ class TestReportingWhatATerminalIsDoing:
         assert db.get(Account, slave.id).terminal_state["phase"] == "running"
 
     def test_an_account_forgotten_mid_cycle_is_not_an_error(self, auth_client):
-        """The provisioner read its plan before the account was removed."""
+        """The orchestrator read its plan before the account was removed."""
         response = auth_client.post(
             "/api/agent/terminals/state",
             json={"terminals": [{"account_id": 999_999, "phase": "starting"}]},
@@ -1096,16 +1096,6 @@ class TestHowOftenATerminalReportsIn:
         db.commit()
         payload = account_payload(slave.login, slave.server)
         assert auth_client.post("/api/agent/poll", json=payload).json()["poll_ms"] == 10_000
-
-    def test_an_older_expert_is_told_whole_seconds_it_can_use(self, auth_client, db, slave):
-        """It has no millisecond field, and a rounded-down 0 would be a busy
-        loop -- so the fallback is one second, not none."""
-        slave.copy_enabled = True
-        db.commit()
-        reply = auth_client.post(
-            "/api/agent/poll", json=account_payload(slave.login, slave.server)
-        ).json()
-        assert reply["poll_seconds"] == 1
 
 
 class TestNothingCopiesUntilItIsArmed:

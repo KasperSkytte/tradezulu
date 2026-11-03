@@ -27,7 +27,9 @@ terminal, and inside it MQL5, which can make an HTTP request.
 So "just use my account details" means *something* has to run a terminal.
 TradeZulu runs one for you, out of sight: a container per account, with a real
 MetaTrader in it under Wine, and an Expert Advisor inside that reports every
-deal back over plain HTTP.
+deal back over plain HTTP. The terminal always talks outwards: there is no
+inbound port, and nothing depends on MetaTrader's own inter-process interface,
+which under Wine accepts a connection and then never answers.
 
 ### Yes, this is a hack
 
@@ -206,8 +208,8 @@ Terminals are restarted every Sunday at 3am by default — change it on the
 **Accounts** page, in the server's local time.
 
 MetaTrader downloads updates while it runs and then asks to restart to install
-them. The supervisor answers that itself now, but a scheduled restart is still
-when terminals move to a newer image, and the quietest hour of the week is the
+them. The supervisor answers that itself, but a scheduled restart is when
+terminals move to a newer image, and the quietest hour of the week is the
 right time for both. The window is checked rather than scheduled, so a machine
 that was off on Sunday restarts its terminals when it comes back.
 
@@ -241,11 +243,10 @@ system. Please, unload it from memory and restart your program."* — and waits
 for ever. Which builds trip it depends on the MetaTrader build *and* on the
 installer:
 
-| | Soda 9.0 | WineHQ 10.0 | WineHQ 11.0 | WineHQ 11.21 |
-|---|---|---|---|---|
-| broker terminals, build ≤ 6230 | ✅ | | | |
-| broker terminals, build 6295–6296 | ❌ | ❌ | ✅ | ✅ |
-| the generic MetaQuotes installer | | | ❌ | ✅ |
+| | WineHQ 10.0 | WineHQ 11.0 | WineHQ 11.21 |
+|---|---|---|---|
+| broker terminals, build 6295–6296 | ❌ | ✅ | ✅ |
+| the generic MetaQuotes installer | | ❌ | ✅ |
 
 That is why the Wine version is set per broker, in `brokers.json`, and is part
 of the image's tag. `build.sh` notices the box during the install and fails
@@ -320,37 +321,6 @@ the same way as the first time, by the Expert Advisor reaching the site.
 The Expert Advisor's first polls fail until then. It resends anything that went
 out with a failed poll — the broker's symbol list above all — on the next one,
 so nothing is lost but those twenty seconds.
-
----
-
-## How it got here
-
-The terminals were not always in containers, and the reasons are worth keeping.
-
-**The Python bridge (removed).** The first design ran a headless MetaTrader in
-a container and drove it with MetaQuotes' Python package. The terminal started
-and loaded an account, and `mt5.initialize()` timed out — the terminal accepted
-the IPC connection and never answered. Eliminated one at a time, all failing
-identically: Docker networking, host networking, seccomp and AppArmor, the
-clock, CA certificates, port reachability, WineHQ 8 through 11 including
-staging, Python 3.9 and 3.11, 32- and 64-bit, several versions of the Python
-package, generic and broker-branded terminals, root and non-root, four display
-configurations, `winhttp`/`wininet`, `mt5linux`, and two published reference
-projects built verbatim. That code is in the git history
-(`git log --diff-filter=D -- mt5-bridge/`).
-
-**Terminals on the host (replaced).** What did work was turning the direction
-round: an Expert Advisor inside the terminal, talking outwards over HTTP. That
-needs no inbound port, no credentials in flight at request time, and nothing
-from MetaTrader's IPC layer at all. It ran on the host, under Bottles' Soda
-9.0 Wine build, driven by a systemd service.
-
-**Containers again (now).** Brokers moving to MetaTrader build 6295–6296 ended
-that: under Soda, and under WineHQ 10, those builds stop on the anti-debugger
-box before they draw a window. WineHQ 11 passes — and since the Expert Advisor
-does not need the IPC layer that defeated the bridge, nothing stood in the way
-of putting the terminal back in a container. In one, each broker can have the
-Wine its installer accepts, which the host could never offer.
 
 ---
 

@@ -220,7 +220,7 @@ class TestRemoving:
     def test_removing_the_master_forgets_its_credentials(self, auth_client, db):
         """Or the terminal it was provisioned from brings it straight back.
 
-        The provisioner starts a terminal for the stored credentials, that
+        The orchestrator starts a terminal for the stored credentials, that
         terminal reports in, and the account is adopted again -- the one just
         deleted, returning by itself a minute later.
         """
@@ -309,7 +309,7 @@ class TestTheMasterComesBack:
         assert master is not None
         assert (master.login, master.server) == ("5000123", "Test-Server")
 
-    def test_the_provisioner_is_told_to_start_its_terminal(self, auth_client, db, slave):
+    def test_the_orchestrator_is_told_to_start_its_terminal(self, auth_client, db, slave):
         """The symptom that led here: a configured account and no terminal."""
         self._forget_the_master(auth_client, db)
         auth_client.put(

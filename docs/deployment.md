@@ -190,26 +190,6 @@ docker rmi tradezulu-terminal:vantage-6230-wine11.0
 docker image prune -f
 ```
 
-### From a host-based install
-
-Earlier versions ran the terminals on the host, under Bottles and the Soda Wine
-build, driven by a `tradezulu-agent` systemd service. Remove that first — the
-journal is kept, and every account reconnects in a container by itself:
-
-```bash
-cd /opt/tradezulu
-git pull
-sudo ./migrate-from-host.sh --dry-run    # see what it will remove
-sudo ./migrate-from-host.sh              # add --purge-wine --purge-packages for
-                                         # Bottles, Soda and the X packages too
-./install.sh --brokers vantage,falcon
-```
-
-Expect copying to pause for the few minutes between the old terminals stopping
-and the new ones reporting. `install.sh` refuses to run while the old service is
-still installed, because the two side by side would run two terminals per
-account.
-
 ## Resource limits
 
 Worth adding on a shared Proxmox host:

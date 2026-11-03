@@ -435,10 +435,8 @@ void Poll()
    // Everything we just reported was accepted, so stop resending it.
    g_pending = "";
 
-   // Milliseconds if the server speaks them, seconds if it is an older one.
+   // The server sets the pace, in milliseconds.
    int wanted_ms = (int)StringToInteger(JsonValue(reply, "poll_ms"));
-   if(wanted_ms <= 0)
-      wanted_ms = (int)StringToInteger(JsonValue(reply, "poll_seconds")) * 1000;
    if(wanted_ms > 0 && wanted_ms != g_poll_ms)
    {
       g_poll_ms = wanted_ms;

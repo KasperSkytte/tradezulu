@@ -6,8 +6,7 @@ from app.services.terminalview import viewer_target
 def test_no_screen_until_the_orchestrator_says_where_it_is():
     assert viewer_target({}) is None
     assert viewer_target(None) is None
-    # Half an address is no address: a port alone used to mean "on the host",
-    # and nothing serves screens there any more.
+    # Half an address is no address.
     assert viewer_target({"vnc_port": 5900}) is None
     assert viewer_target({"vnc_host": "tradezulu-terminal-3"}) is None
 

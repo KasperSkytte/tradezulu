@@ -648,9 +648,7 @@ class AgentPollOut(BaseModel):
     halted: bool
     #: How long to wait before reporting in again. Milliseconds, because the
     #: interval is the floor under every copy and a whole second is too coarse
-    #: to be the smallest step. ``poll_seconds`` is the same thing rounded, for
-    #: an Expert Advisor from before this field existed.
-    poll_seconds: int = 5
+    #: to be the smallest step.
     poll_ms: int = 5_000
     #: How long a command stays worth carrying out, measured by the terminal
     #: from the moment it asked. A copy is worth having because it is the same

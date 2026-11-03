@@ -5,10 +5,10 @@ deals here with an API key; this server never reaches out to MetaTrader.
 
 That is not a preference so much as what works. Reaching a terminal from
 outside means driving MetaTrader's own inter-process interface, and under Wine
-it accepts a connection and then never answers -- see docs/metatrader.md for
-what was tried. A terminal talking outwards over plain HTTP has none of that
-problem, and it also means no inbound port, so a terminal behind NAT or on
-someone's laptop works exactly like one beside this server.
+it accepts a connection and then never answers. A terminal talking outwards
+over plain HTTP has none of that problem, and it also means no inbound port, so
+a terminal behind NAT or on someone's laptop works exactly like one in a
+container beside this server.
 
 Account credentials are still stored, encrypted: the orchestrator needs them to
 start a terminal and log it in. They are never used from here.
@@ -385,38 +385,6 @@ def status_(_user: CurrentUser, db: DbSession, config: AppConfig) -> SyncStatus:
         phase=phase,
         credentials_configured=creds["configured"],
         message=message,
-    )
-
-
-@router.post("/sync", response_model=MT5IngestResponse)
-def sync_now(
-    _user: CurrentUser,
-    db: DbSession,
-    config: AppConfig,
-    full: Annotated[bool, Query(description="Unused; kept so old clients do not break")] = False,
-) -> MT5IngestResponse:
-    """There is nothing to pull.
-
-    Deals arrive when a terminal's Expert Advisor sends them, so this server
-    never reaches out to MetaTrader. The endpoint stays because the UI has a
-    refresh button, and answering plainly is friendlier than a 404.
-    """
-    del full
-    if config["mt5"].get("sync_mode") == "off":
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            "Sync is turned off. Import a statement, or set sync mode to 'ea'.",
-        )
-    account = get_default_account(db)
-    return MT5IngestResponse(
-        account_id=account.id if account else None,
-        deals_received=0,
-        deals_new=0,
-        trades_upserted=0,
-        message=(
-            "Terminals push their own deals; there is nothing to pull. "
-            "If nothing is arriving, check the terminal is running."
-        ),
     )
 
 
