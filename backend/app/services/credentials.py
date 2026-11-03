@@ -2,8 +2,9 @@
 
 Kept out of the main settings document on purpose: that document is returned
 to the browser wholesale, and the password must never be part of it. The
-password is encrypted at rest and leaves this process exactly once -- to the
-provisioner, which starts a terminal with it and then removes its copy.
+password is encrypted at rest and leaves this process only to that account's
+own terminal container, which fetches it with the ingest token at start-up,
+hands it to MetaTrader, and removes its copy once MetaTrader has logged in.
 """
 
 from __future__ import annotations

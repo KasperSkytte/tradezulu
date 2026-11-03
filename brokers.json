@@ -4,18 +4,26 @@
     "",
     "Two jobs. It tells the web interface which brokers to offer and which trade",
     "servers each one has, so nobody has to remember whether their server is",
-    "called VantageMarkets-Live or VantageMarkets-Live 8. And it tells the",
-    "provisioner which MetaTrader build to install, which the user never sees.",
+    "called VantageMarkets-Live or VantageMarkets-Live 8. And it says how each",
+    "broker's terminal image is built (terminal/build.sh) and which image an",
+    "account gets (the orchestrator), which the user never sees.",
     "",
     "  label      what the account form shows",
     "  servers    the trade servers to offer. An empty list means the form asks",
     "             the user to type one, which is always allowed anyway.",
-    "  installer  the MetaTrader build to use. Where a broker ships its own, use",
-    "             it: the generic MetaQuotes terminal cannot resolve a name like",
-    "             VantageMarkets-Live at all and offers to open a new account",
-    "             instead, which looks exactly like a rejected password.",
+    "  installer  the MetaTrader installer baked into the image. Where a broker",
+    "             ships its own, use it: the generic MetaQuotes terminal cannot",
+    "             resolve a name like VantageMarkets-Live at all and offers to",
+    "             open a new account instead, which looks exactly like a",
+    "             rejected password.",
+    "  wine       the WineHQ package the image is built on. Pinned per broker",
+    "             because MetaTrader's anti-debugger check accepts some Wine",
+    "             builds and not others, and which ones differs between",
+    "             installers: the branded ones pass on 11.0 stable, the generic",
+    "             MetaQuotes one needs 11.21. A build that is refused fails",
+    "             terminal/build.sh with a message saying so.",
     "  matches    substrings that identify this broker from a server name, used",
-    "             to pick the template. The server name is what decides, because",
+    "             to pick the image. The server name is what decides, because",
     "             it always arrives correct -- it comes from the broker.",
     "",
     "WHERE THE SERVER LISTS COME FROM, and how to add a broker:",
@@ -28,7 +36,9 @@
     "It cannot be read off disk: the terminal keeps servers.dat encrypted, so",
     "this file is curated from what that dropdown shows rather than generated.",
     "Pick the entity carefully -- 'Vantage' alone returns five companies, and",
-    "each has its own servers."
+    "each has its own servers.",
+    "",
+    "Then: terminal/build.sh <key> builds its image."
   ],
   "vantage": {
     "label": "Vantage Markets",
@@ -58,7 +68,11 @@
       "VantageMarkets-Live 21",
       "VantageMarkets-Demo"
     ],
-    "tradingview_prefix": "VANTAGE:"
+    "tradingview_prefix": "VANTAGE:",
+    "wine": {
+      "branch": "stable",
+      "version": "11.0.0.0~noble-1"
+    }
   },
   "falcon": {
     "label": "Falcon Markets",
@@ -70,7 +84,11 @@
     "servers": [
       "FalconMarkets-Server"
     ],
-    "tradingview_prefix": "FALCON:"
+    "tradingview_prefix": "FALCON:",
+    "wine": {
+      "branch": "stable",
+      "version": "11.0.0.0~noble-1"
+    }
   },
   "dukascopy": {
     "label": "Dukascopy Bank",
@@ -80,13 +98,21 @@
     ],
     "_entity": "Dukascopy Bank SA -- MetaQuotes id Dukascopy",
     "servers": [],
-    "tradingview_prefix": "DUKASCOPY:"
+    "tradingview_prefix": "DUKASCOPY:",
+    "wine": {
+      "branch": "stable",
+      "version": "11.0.0.0~noble-1"
+    }
   },
   "default": {
     "label": "Other broker",
     "installer": "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe",
     "matches": [],
     "servers": [],
-    "tradingview_prefix": ""
+    "tradingview_prefix": "",
+    "wine": {
+      "branch": "devel",
+      "version": "11.21~noble-1"
+    }
   }
 }

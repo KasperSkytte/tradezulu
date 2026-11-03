@@ -1,9 +1,9 @@
 /**
  * One account's MetaTrader terminal, on screen.
  *
- * The terminals run on virtual displays on the host that nobody has a monitor
- * for. Seeing one used to mean an SSH tunnel and a VNC viewer; this draws the
- * same pixels into a canvas on the page.
+ * Each terminal runs in a container of its own, on a virtual display nobody
+ * has a monitor for. This draws that display into a canvas on the page,
+ * relayed by the site from the VNC server inside the container.
  *
  * One account per viewer, because the display underneath it holds one
  * account's terminal and nothing else. That is where the isolation lives --
@@ -193,7 +193,7 @@ export function TerminalControls({ accountId, login }: { accountId: number; logi
     setRestarting(true)
     try {
       await api.post(`/terminal/${accountId}/restart`, {})
-      // Asked for, not done: the provisioner carries it out on its next pass,
+      // Asked for, not done: the orchestrator carries it out on its next pass,
       // and saying "restarted" here would be a claim about something that has
       // not happened yet.
       setNote('Restart requested. It stops within a minute and comes back on its own.')

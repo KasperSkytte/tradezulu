@@ -412,6 +412,13 @@ void Poll()
    if(!HttpPostFor(path, PollBody(), reply, timeout))
    {
       g_status = "server unreachable";
+      // Whatever went out with this poll did not arrive -- the symbol list
+      // above all, which is only sent every few minutes. Send it again on the
+      // next poll rather than then. Without this, a terminal whose first poll
+      // failed (always, until its WebRequest permission is granted) had no
+      // symbol list on the server for five minutes, and every copy in that
+      // window was skipped as "no symbol matching".
+      g_next_symbols = 0;
       return;
    }
 
@@ -1203,7 +1210,7 @@ bool HttpPostFor(const string path, const string body, string &reply, const int 
 //| Make this chart a background for the status text, nothing more.  |
 //|                                                                  |
 //| The chart the copier sits on is not there to be read. Nobody      |
-//| chose its symbol -- the provisioner opens EURUSD H1 because       |
+//| chose its symbol -- the supervisor opens EURUSD H1 because         |
 //| something has to hold the expert -- and now that the terminal can |
 //| be watched from the web interface, a wall of candles nobody asked |
 //| for is the first thing on screen. What is worth reading is the    |

@@ -38,12 +38,11 @@ jobs:
           TZ_BCRYPT_ROUNDS: '4'
         run: pytest -q
 
-  # The provisioner and the install scripts run on the user's own server, where
-  # a mistake surfaces as a failed provisioning cycle rather than a failed test.
-  # Neither was checked by anything until a `re.escape` call shipped without the
-  # import, which only failed once a terminal reached the point of needing it.
-  agent:
-    name: Agent and scripts
+  # The orchestrator, the terminal supervisor and the install scripts run on
+  # the user's own server, where a mistake surfaces as a terminal that never
+  # starts rather than as a failed test.
+  terminals:
+    name: Orchestrator, terminal and scripts
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -55,31 +54,43 @@ jobs:
       - name: Install ruff and pytest
         run: pip install ruff pytest
 
-      # The backend's configuration, so both halves are held to one standard.
-      # F821 is the rule that matters most here: this code has no test suite to
-      # find an undefined name for it.
-      - name: Lint the provisioner
-        run: ruff check --config backend/pyproject.toml agent/
+      # The backend's configuration, so every part is held to one standard.
+      # F821 matters most: the supervisor has no test suite to find an
+      # undefined name for it, only a terminal that stops on reaching it.
+      - name: Lint
+        run: ruff check --config backend/pyproject.toml orchestrator/ terminal/
 
-      - name: Check it parses and imports
-        run: python -c "import ast, pathlib; [ast.parse(p.read_text()) for p in pathlib.Path('agent').rglob('*.py')]"
+      # Which image an account gets, when a container is replaced, when the
+      # weekly restart runs. None of it needs Docker, so none of it goes
+      # untested.
+      - name: Test the orchestrator
+        run: pytest orchestrator/tests -q
 
-      # What the provisioner decides -- when a terminal counts as working, what
-      # to do with one that does not, whose prefix is whose. None of it needs
-      # Wine, so none of it goes untested.
-      - name: Test the provisioner
-        run: pytest agent/tests -q
+      - name: brokers.json is valid and complete
+        run: |
+          python3 - <<'PY'
+          import json
+          brokers = {k: v for k, v in json.load(open("brokers.json")).items() if isinstance(v, dict)}
+          assert "default" in brokers, "brokers.json needs a default entry"
+          for key, entry in brokers.items():
+              for field in ("label", "installer", "wine", "matches", "servers"):
+                  assert field in entry, f"{key}: missing {field}"
+              assert {"branch", "version"} <= set(entry["wine"]), f"{key}: wine needs branch and version"
+          print("ok:", ", ".join(brokers))
+          PY
 
-      # Every script in the repo, at a version that does not move. Two of these
-      # were never linted at all, and the two that were had been checked by
-      # whatever shellcheck the runner image happened to ship -- so an install
-      # script that passed locally failed here on an "info" the newer release
-      # no longer reports. A lint that changes with the runner is a lint that
-      # fails on a day nothing changed.
+      # Every script in the repo, at a version that does not move: a lint that
+      # changes with the runner image is a lint that fails on a day nothing
+      # changed.
       - name: Lint the shell scripts
         run: |
           docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.10.0 \
             $(git ls-files '*.sh')
+
+      # Built, not run: running one needs a broker's MetaTrader, which is
+      # downloaded when a terminal image is built on the server.
+      - name: Build the orchestrator image
+        run: docker build -f orchestrator/Dockerfile -t tradezulu-orchestrator:ci .
 
   frontend:
     name: Frontend

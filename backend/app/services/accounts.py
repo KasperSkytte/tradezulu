@@ -23,7 +23,7 @@ def single_master(db: Session) -> Account | None:
     placeholder master to adopt, but Forget deletes it, and the placeholder is
     only ever created on an empty database -- so on an install that also has a
     slave, entering credentials again left the master with nowhere to land.
-    The interface said the account was configured, the provisioner was never
+    The interface said the account was configured, the orchestrator was never
     told to start a terminal for it, and nothing anywhere said why.
 
     There is only ever one account trades are copied *from*, and until now
