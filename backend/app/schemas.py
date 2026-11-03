@@ -631,6 +631,10 @@ class TerminalStateIn(BaseModel):
     #: The port that display's screen is served on, keyboard and mouse
     #: included -- there is one server per display and it is not view-only.
     vnc_port: int | None = None
+    #: Where that screen is, when it is not on the host: the terminal's own
+    #: container, by its name on the Docker network. Empty means the host end
+    #: of this container's bridge, which is where the host provisioner serves.
+    vnc_host: str = Field(default="", max_length=128)
 
 
 class TerminalStatesIn(BaseModel):

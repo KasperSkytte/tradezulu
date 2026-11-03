@@ -75,5 +75,7 @@ def viewer_target(terminal_state: dict | None) -> tuple[str, int] | None:
     port = state.get("vnc_port")
     if not port:
         return None
-    host = bridge_address() or "127.0.0.1"
+    # A terminal in its own container names itself; one on the host is on the
+    # far end of this container's bridge.
+    host = str(state.get("vnc_host") or "") or bridge_address() or "127.0.0.1"
     return host, int(port)

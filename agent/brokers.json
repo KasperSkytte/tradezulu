@@ -28,7 +28,13 @@
     "It cannot be read off disk: the terminal keeps servers.dat encrypted, so",
     "this file is curated from what that dropdown shows rather than generated.",
     "Pick the entity carefully -- 'Vantage' alone returns five companies, and",
-    "each has its own servers."
+    "each has its own servers.",
+    "",
+    "  wine       the WineHQ package the broker's terminal image is built on",
+    "             (terminal/build.sh). Pinned per broker because MetaTrader's",
+    "             anti-debugger check accepts some Wine builds and not others,",
+    "             and which ones differs between installers: the branded ones",
+    "             pass on 11.0 stable, the generic MetaQuotes one needs 11.21."
   ],
   "vantage": {
     "label": "Vantage Markets",
@@ -58,7 +64,11 @@
       "VantageMarkets-Live 21",
       "VantageMarkets-Demo"
     ],
-    "tradingview_prefix": "VANTAGE:"
+    "tradingview_prefix": "VANTAGE:",
+    "wine": {
+      "branch": "stable",
+      "version": "11.0.0.0~noble-1"
+    }
   },
   "falcon": {
     "label": "Falcon Markets",
@@ -70,7 +80,11 @@
     "servers": [
       "FalconMarkets-Server"
     ],
-    "tradingview_prefix": "FALCON:"
+    "tradingview_prefix": "FALCON:",
+    "wine": {
+      "branch": "stable",
+      "version": "11.0.0.0~noble-1"
+    }
   },
   "dukascopy": {
     "label": "Dukascopy Bank",
@@ -80,13 +94,21 @@
     ],
     "_entity": "Dukascopy Bank SA -- MetaQuotes id Dukascopy",
     "servers": [],
-    "tradingview_prefix": "DUKASCOPY:"
+    "tradingview_prefix": "DUKASCOPY:",
+    "wine": {
+      "branch": "stable",
+      "version": "11.0.0.0~noble-1"
+    }
   },
   "default": {
     "label": "Other broker",
     "installer": "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe",
     "matches": [],
     "servers": [],
-    "tradingview_prefix": ""
+    "tradingview_prefix": "",
+    "wine": {
+      "branch": "devel",
+      "version": "11.21~noble-1"
+    }
   }
 }
