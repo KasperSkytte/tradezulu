@@ -1,5 +1,32 @@
 # Changelog
 
+## [2.0.0](https://github.com/KasperSkytte/tradezulu/compare/v1.36.1...v2.0.0) (2026-11-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* MetaTrader no longer runs on the host. An install from before this needs `sudo ./migrate-from-host.sh` once, then `./install.sh --brokers <the brokers you use>`. The journal and the accounts in it are kept.
+
+### Features
+
+* run every MetaTrader terminal in its own container ([9b07c54](https://github.com/KasperSkytte/tradezulu/commit/9b07c542dda60fcd5962c4ea11fe1445a9ba1d6b))
+
+
+### Bug fixes
+
+* **ea:** resend the symbol list after a failed poll ([73ee9f8](https://github.com/KasperSkytte/tradezulu/commit/73ee9f8cf56445b25c28b3826354d65dc5f185ec))
+
+
+### Refactoring
+
+* drop what only an upgrade from the host-based version needed ([b76cdf4](https://github.com/KasperSkytte/tradezulu/commit/b76cdf431a5b7bf9955bbc713224e9d4a2d29f07))
+* remove the host provisioner now that terminals run in containers ([c13c000](https://github.com/KasperSkytte/tradezulu/commit/c13c000146d8259ff836270d4fa6d9d4f8cf884c))
+
+
+### Documentation
+
+* describe the containerised terminals ([bddb7c8](https://github.com/KasperSkytte/tradezulu/commit/bddb7c8c8b1682857ba3d9b593fba96524b22375))
+
 ## [1.36.1](https://github.com/KasperSkytte/tradezulu/compare/v1.36.0...v1.36.1) (2026-11-02)
 
 
